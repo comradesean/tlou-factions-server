@@ -68,3 +68,36 @@ per-service post-hello payload shapes, and evidence.
 | `facebook-server` | confirmed (shared function, 2 call sites) | `protos/0x11_facebook_server_hello.ksy` / `_hello_response.ksy` |
 | `single-player-server` | confirmed (shared function, 2 call sites) | `protos/0x11_single_player_server_hello.ksy` / `_hello_response.ksy` |
 | `invite-server` | no live call site found - likely dead/unused in this build | — |
+
+## `NetMatchmaking*` family: Session Manager connection (separate opcode namespace again)
+
+Also not part of `net_event_type`, and not part of the ticket-server `0x11`
+family either - a **third**, independent raw-TCP protocol, opcodes `0x12d`-`0x148`
+(301-328), opened by `g_pSessionManager::Init()` right after the ticket-server
+handshake finishes. **This is the connection behind the
+`g_pSessionManager->Init()() failed` / `recv() failed (errno=9)` failure that
+was the live blocker going into this session** - root-caused and confirmed via
+a live RPCS3 syscall-log capture: `Init()` opens a brand-new connection to the
+same redirected host as ticket-server but **port 7314** (not 7320), the
+connect silently fails (`s=-1` on every subsequent syscall), and `Init()`
+never checks the connect's return value before blindly sending/receiving on
+the dead connection. **Not dependent on ticket-server's message D content in
+any way** - see `docs/protocol/session_manager_and_matchmaking.md` for the
+full evidence trail and the concrete unblock (a stub listener on port 7314).
+
+All 28 `NetMatchmaking*` opcodes have confirmed numeric IDs and wire sizes
+(cross-checked three independent ways: static decompile, live TTY capture, and
+the receive dispatcher's own switch-case literals). The cipher this family
+uses to key its post-handshake traffic reuses the exact same static key as
+ticket-server (see `docs/known-keys.md`), so `tools/ticket_cipher.py`'s already
+-solved ARX implementation should carry over once the frame format is
+confirmed.
+
+| # | Name | Opcode | Size | `.ksy` |
+|---|---|---|---|---|
+| 0 | `NetMatchmakingClientHello` | 0x12d | 48 | `protos/netmatchmaking_client_hello.ksy` |
+| 1 | `NetMatchmakingServerHello` | 0x12e | 16 | `protos/netmatchmaking_server_hello.ksy` |
+| 2-27 | `NetMatchmakingRoomCreate` ... `NetMatchmakingClientHello2` | 0x12f-0x148 | see doc | opcode ID + size confirmed, full field-level `.ksy` not yet written (11 of 26 already have their receive-handler decompiled - see doc) |
+
+Full 28-entry table, evidence, and the live-capture root-cause trail:
+`docs/protocol/session_manager_and_matchmaking.md`.

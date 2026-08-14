@@ -83,6 +83,33 @@ entries as fully trustworthy, anything less as still provisional.
   *key* is confirmed even though the surrounding decrypt code is not yet working end
   to end - not a statement of doubt about the key itself).
 
+## Ticket-server key, reused verbatim for the Session Manager / NetMatchmaking connection
+
+The same 16 bytes above (`78 56 34 12 32 54 76 98 88 ef cd ab ef cd ab 89`) are
+also present at a **second** rodata address, `0x00ed8030`, resolved via the same
+TOC-chain method (base `0x012feca0`, offset `-0x7f44`). This second copy is the
+key `g_pSessionManager::Init()` (`FUN_00ad71a0`, the function that opens a new
+raw TCP connection to port 7314 during NetInit, right after the ticket-server
+handshake - see `docs/protocol/session_manager_and_matchmaking.md`) passes into
+the exact same `FUN_00db5ec0` key-schedule function ticket-server uses, keyed by
+a per-connection seed read from that connection's own `NetMatchmakingServerHello`
+response (offset 8) rather than anything from ticket-server.
+
+- **Confidence**: **confirmed** (static TOC-chain resolution, same mechanical
+  method already used for the first copy) that these are the identical 16
+  bytes at a second address - not yet independently confirmed live via a
+  debugger read the way the first copy was, since this connection has never
+  successfully completed its handshake (see the doc above for why: the
+  connection to port 7314 currently fails before any real
+  `NetMatchmakingServerHello` has ever been received to test the cipher
+  against).
+- **Practical implication**: `tools/ticket_cipher.py`'s already-solved and
+  verified key-schedule/round functions should apply unchanged to this second
+  protocol - no new cipher reversal expected to be needed, only new framing
+  work (whether post-handshake `NetMatchmaking*` frames use the same 20-byte
+  encrypt-then-MAC header as ticket-server's messages C/D was not confirmed
+  this pass).
+
 ## Not yet found
 
 - The exact key-mixing formula inside `FUN_00db5ec0` that combines the static key
