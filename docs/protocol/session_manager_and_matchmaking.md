@@ -4,6 +4,33 @@ Companion doc for:
 - `protos/netmatchmaking_client_hello.ksy`
 - `protos/netmatchmaking_server_hello.ksy`
 
+**2026-08-14 correction, see `research/notes/2026-08-14-voice-server-discovery.md`
+for full detail:** the "what's still open" items below turned out NOT to be the
+live-testing blocker they were assumed to be. `Init()` does not wait for a response
+to `ClientHello2`, and the receive/dispatch loop is non-blocking/polled - a client
+with nothing past `ClientHello`/`ClientHello2` implemented will not hang on this
+connection. `ClientHello2`'s real on-wire opcode is confirmed **`0x146`** (not `0x148`
+as the naive `opcode = 0x12d + table-index` formula below implied), and the periodic
+keepalive `Ping` uses literal **`0x145`** (not `0x147`) - the formula is confirmed
+wrong for at least these two tail entries; the 11 receive-dispatch cases (`0x131`-
+`0x144`) are unaffected, those were read directly off switch-statement literals.
+Also newly confirmed: post-handshake `NetMatchmaking*` traffic is plain unframed
+bytes (`[4-byte opcode][payload]`), not wrapped in ticket-server's encrypt-then-MAC
+frame - this resolves open item #3 below. The actual "connecting..." hang turned out
+to be a previously-undocumented fourth port, 7313 - see the new note.
+
+**2026-08-14 second correction, see `research/notes/2026-08-14-room-create-joined.md`:**
+with the port-7313 hang fixed, live testing progressed further and hit a new error,
+"Lobby Server Error" - this comes from the client's own client-side timeout after
+sending `RoomCreate` (opcode `0x12f`, live-captured at the full 232 bytes the table
+predicts) and getting no reply. Decompiling `FUN_00ad7604`'s `iVar8 == 0x132`
+(`RoomJoined`) case against the live capture found another size-table error: the real
+wire size for `RoomJoined` is **120 bytes (`0x78`), not the declared 160** - the
+dispatch code's own buffer-advance amount is authoritative. Field-level layout and the
+stub's reply are in `tools/session_manager_stub.py`'s `build_room_joined()`; several
+fields (an 18x-`u16` "attribute" block, offset 16:52) are still unconfirmed/zeroed -
+see that function's docstring and the note for what's still open.
+
 **status: ROOT CAUSE FOUND AND LIVE-CONFIRMED for the `g_pSessionManager->Init()()
 failed` blocker.** The `NetMatchmaking*` opcode/size table (28 entries) is fully
 mapped at high confidence. Full field-level payload schemas for the 26 opcodes
