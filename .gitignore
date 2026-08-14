@@ -13,6 +13,12 @@ research/ghidra/*.lock
 research/ghidra/*.lock~
 research/disasm/*.asm
 
+# Raw packet captures - unfiltered captures include unrelated machine traffic
+# (other apps, general browsing). Keep locally; commit only deliberately-trimmed
+# exports containing just the relevant streams, if ever needed.
+captures/*.pcap
+captures/*.pcapng
+
 # OS/editor cruft
 .DS_Store
 *.swp
