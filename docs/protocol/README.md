@@ -1,11 +1,66 @@
 # Protocol Documentation Index
 
-**Numeric opcode IDs are confirmed** for 115 `NetEventType` values (0-114) — recovered directly from an in-memory enum-to-name table via Ghidra, see `protos/common/opcodes.ksy` and `research/notes/ghidra-opcode-recovery.md`. **Per-opcode wire payload structure is still unconfirmed** — no individual `protos/0x<hex>_<name>.ksy` payload file exists yet, since that needs decompiled serialization code and/or a live capture to correlate against (see `docs/methodology.md`). The project is still in the static-analysis-only phase; no live capture has happened.
+**Numeric opcode IDs are confirmed** for 115 `NetEventType` values (0-114) — recovered directly from an in-memory enum-to-name table via Ghidra, see `protos/common/opcodes.ksy` and `research/notes/ghidra-opcode-recovery.md`. **The opcode-to-payload dispatch mechanism is now found and fully mapped** (a 115-entry allocator jump table at `0x0038ec40`, keyed directly by opcode) — see `docs/protocol/net_event_dispatch_and_simple_opcodes.md` for the discovery and `research/notes/2026-08-14-gameplay-opcode-mapping.md` for the full per-opcode status ledger. 16 opcodes have fully confirmed, `ksc`-validated payload schemas so far; every other opcode has at least a known object size and (for ~82 of them) a known constructor address ready for the next pass. The project is still in the static-analysis-only phase; no live capture has happened.
 
 Also known: a 38-entry catalog of lobby/match state names (`NET_SM_*`) pulled from the binary's string table, status unconfirmed either way (state-machine states vs. actual wire opcodes) — see `protos/pending/net_sm_states_catalog.md`.
 
+## `net_event_type` gameplay-event family (opcodes 0-114)
+
+See `docs/protocol/net_event_dispatch_and_simple_opcodes.md` for the dispatch mechanism, the confirmed BitStream field-level API, and the common per-event wire envelope (continuation bit + opcode byte + payload + optional recipient-list trailer — this also confirms `protos/common/packet_header.ksy`'s `opcode: u1` field at high confidence).
+
 | Opcode (hex) | Name | Status | Confidence | `.ksy` | Doc |
 |---|---|---|---|---|---|
-| — | — | — | — | — | — |
+| 0x00 | `start_connection` | confirmed (empty payload) | high | `protos/0x00_start_connection.ksy` | net_event_dispatch_and_simple_opcodes.md |
+| 0x01 | `connection_done` | confirmed structurally; field semantics medium confidence | high (type) / medium (semantics) | `protos/0x01_connection_done.ksy` | net_event_dispatch_and_simple_opcodes.md |
+| 0x03 | `ready_to_start` | confirmed | high | `protos/0x03_ready_to_start.ksy` | net_event_dispatch_and_simple_opcodes.md |
+| 0x06 | `end_round` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | `protos/0x06_end_round.ksy` | net_event_dispatch_and_simple_opcodes.md |
+| 0x14 | `assign_team_done` | confirmed (empty payload) | high | `protos/0x14_assign_team_done.ksy` | net_event_dispatch_and_simple_opcodes.md |
+| 0x32 | `play_vox` | confirmed structurally; partial semantics | high (type) / medium (semantics) | `protos/0x32_play_vox.ksy` | net_event_dispatch_and_simple_opcodes.md |
+| 0x34 | `simple_snapshot_phys_fx` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | `protos/0x34_simple_snapshot_phys_fx.ksy` | net_event_dispatch_and_simple_opcodes.md |
+| 0x37 | `complete_task` | confirmed structurally; partial semantics | high | `protos/0x37_complete_task.ksy` | net_event_dispatch_and_simple_opcodes.md |
+| 0x38 | `start_net_task` | confirmed | high | `protos/0x38_start_net_task.ksy` | net_event_dispatch_and_simple_opcodes.md |
+| 0x3c | `coop_team_failed` | confirmed | medium-high | `protos/0x3c_coop_team_failed.ksy` | net_event_dispatch_and_simple_opcodes.md |
+| 0x3e | `spawn_entity` | confirmed | high | `protos/0x3e_spawn_entity.ksy` | net_event_dispatch_and_simple_opcodes.md |
+| 0x3f | `kill_entity` | confirmed | high | `protos/0x3f_kill_entity.ksy` | net_event_dispatch_and_simple_opcodes.md |
+| 0x40 | `animation_sync` | confirmed structurally; partial semantics | high (type) / medium (semantics) | `protos/0x40_animation_sync.ksy` | net_event_dispatch_and_simple_opcodes.md |
+| 0x4a | `deny_ownership_request` | confirmed structurally; partial semantics | high (type) / medium (semantics) | `protos/0x4a_deny_ownership_request.ksy` | net_event_dispatch_and_simple_opcodes.md |
+| 0x4b | `net_go` | confirmed (empty payload) | high | `protos/0x4b_net_go.ksy` | net_event_dispatch_and_simple_opcodes.md |
+| 0x55 | `debug` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | `protos/0x55_debug.ksy` | net_event_dispatch_and_simple_opcodes.md |
+| 0x00–0x72 (all 115) | *(remaining ~99 opcodes)* | not yet payload-confirmed; every opcode has a known object size, ~82 have a known constructor address | — | — | `research/notes/2026-08-14-gameplay-opcode-mapping.md` (full per-opcode ledger) |
 
-This table gets a row per opcode once its numeric ID is confirmed and a `protos/0x<hex>_<name>.ksy` file exists.
+## `ticket-server` control-channel family (separate opcode namespace)
+
+Not part of the `net_event_type` gameplay-event table above - this is a
+distinct raw-TCP control-channel protocol (port 7320) used during `NetInit`,
+after RPCN issues the client's NP ticket, multiplexed by service-name string
+rather than by `net_event_type`. See
+`docs/protocol/0x11_ticket_server_hello.md` for full evidence.
+
+**Every post-hello message on this whole family (ticket-server's C/D and
+every sibling's post-hello payload below) is wrapped in a shared,
+keyed encrypt-then-MAC frame - see "Encrypted frame layer" in
+`0x11_ticket_server_hello.md`, confirmed byte-exact against a real 272-byte
+live capture on 2026-08-14.**
+
+| # | Name | Status | Confidence | `.ksy` |
+|---|---|---|---|---|
+| A | `ticket_server_hello` | confirmed | high | `protos/0x11_ticket_server_hello.ksy` |
+| B | `ticket_server_hello_response` | confirmed structurally; session_token confirmed as live encrypted-frame key material (not inert) | high | `protos/0x11_ticket_server_hello_response.ksy` |
+| C | `ticket_server_ticket_submit` | confirmed frame format (byte-exact live match); cipher decompiled, not yet reimplemented/verified | high (framing) / medium (cipher) | `protos/0x11_ticket_server_ticket_submit.ksy` |
+| D | `ticket_server_ticket_submit_response` | confirmed to share message C's frame format; size NOT fixed-16 as previously stated (withdrawn); content unconfirmed | medium (framing) / unconfirmed (content) | `protos/0x11_ticket_server_ticket_submit_response.ksy` |
+
+### Sibling `*-server` family (same opcode-0x11 hello, different service_name)
+
+Four more services confirmed to share ticket-server's exact hello/hello_response
+handshake (same function, `FUN_00acc424`); a fifth (`invite-server`) has no
+live code call site in this build. See
+`docs/protocol/0x11_sibling_servers_family.md` for the full survey,
+per-service post-hello payload shapes, and evidence.
+
+| Service | Hello/ack | `.ksy` (hello / hello_response) |
+|---|---|---|
+| `heartbeat-server` | confirmed (shared function) | `protos/0x11_heartbeat_server_hello.ksy` / `_hello_response.ksy` |
+| `leaderboard-server` | confirmed (shared function, 4 call sites) | `protos/0x11_leaderboard_server_hello.ksy` / `_hello_response.ksy` |
+| `facebook-server` | confirmed (shared function, 2 call sites) | `protos/0x11_facebook_server_hello.ksy` / `_hello_response.ksy` |
+| `single-player-server` | confirmed (shared function, 2 call sites) | `protos/0x11_single_player_server_hello.ksy` / `_hello_response.ksy` |
+| `invite-server` | no live call site found - likely dead/unused in this build | — |

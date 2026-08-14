@@ -73,10 +73,21 @@ isn't a real, correctly-keyed HMAC (which no repack had, since that region was
 mistakenly being Blowfish-encrypted along with the body instead of computed as
 plaintext). That's now fixed at the source in `tools/psarc_crypt.py`.
 
-**Current deployed state**: `tools/served_content/net1.bin.psarc.crypt` is a freshly
-repacked, IP-patched (`50.18.104.153` -> `192.168.1.100`) file built entirely from the
-corrected `encrypt_crypt_file()` - reports `HMAC OK` on its own re-verification, and
-differs from the known-good extraction in exactly the intended 13-byte IP field.
-**Live client acceptance (does it get renamed instead of deleted this time) is the
-next thing to confirm** - not yet re-tested as of this edit. If it's accepted,
-`tools/watch_and_patch_net1bin.py`'s live-patch workaround can finally be retired.
+**CONFIRMED LIVE (2026-08-14)**: `tools/served_content/net1.bin.psarc.crypt` - the
+freshly repacked, IP-patched (`50.18.104.153` -> `192.168.1.100`) file built entirely
+from the corrected `encrypt_crypt_file()` - was accepted by the real client on a live
+RPCS3 run. RPCS3's own TTY log shows `connect to 192.168.1.100:7320 ... connect ok`:
+the client renamed the download into place (not deleted), decrypted it, verified the
+HMAC, and used our redirected IP to open a real TCP connection - the first time this
+has ever happened for a repacked file. The repack-rejection problem is fully closed.
+`tools/watch_and_patch_net1bin.py`'s live-patch race-condition workaround is retired -
+no longer needed, the served `.crypt` file is correct on its own.
+
+What's next isn't crypto anymore: the connection to `192.168.1.100:7320` succeeds, but
+`tools/catch_tcp.py` (in `--echo` mode) doesn't speak the real ticket-server protocol,
+so the client resets the connection after getting its own request echoed back
+(`Connection reset by peer` in `captures/tcp_catch.log`) - surfaces in-game as "Error
+connecting to authentication server". This is the pre-existing, separately-tracked
+"what does the ticket-server actually respond with" question from earlier in the
+investigation (see the 7320/`ticket-server` protocol capture notes) - not a new
+problem, and not related to `net1.bin.psarc.crypt` at all anymore.
