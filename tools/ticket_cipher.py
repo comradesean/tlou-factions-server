@@ -11,33 +11,36 @@ C, which repeatedly dropped parameters for this call chain) - see
 research/ghidra/cipher_final_disasm.txt, round_funcs_disasm.txt,
 finalize_disasm.txt, acbb90_key_check.txt.
 
-STATUS (2026-08-14, third pass): the ALGORITHM below is verified correct by
-three independent methods - (1) self round-trip (encrypt then decrypt
-recovers the original plaintext and passes tag verification for arbitrary
-keys/counters), (2) a from-scratch literal byte-level re-simulation of
-FUN_00db5ec0 cross-checked against key_schedule() below (bit-exact match
-across 5 random trials), (3) instruction-by-instruction manual re-derivation
-of arx_round() against both FUN_00acb6fc's AND FUN_00acbb90's raw
-disassembly (independently, since both call this same round function -
-confirmed they use the identical TOC offset -0x6bf0(r2) and -0x8000(r30) to
-reach the key, ruling out a per-function key-address mismatch).
+STATUS (2026-08-14, fourth pass): WORKING AND VERIFIED. The coordinator
+independently confirmed the candidate static key two ways live (r3 at
+FUN_00db5ec0's entry == 0xed7a50 on both call sites of a real frame; a
+direct memory read of 16 bytes at 0xed7a50 matched the candidate key
+byte-for-byte), which ruled out "wrong key" and pointed the remaining bug
+back at this file's algorithm. Ground-truth Ghidra emulation of
+FUN_00db5ec0 (research/ghidra/keysched_trace.txt, via
+tools/ghidra_scripts/EmulateKeySchedule.java) checkpointed every internal
+call boundary and found the exact divergence: key_schedule()'s
+finalization round was feeding a wrongly-transformed "reversed_words" data
+array into the last ARX pass, when the real function - because
+FUN_00db7cb0 (which FUN_00db5ec0 calls for that step) does its OWN
+internal byte-swap-in on its data argument, on top of the explicit swap
+FUN_00db5ec0 already applied - actually ends up feeding the state through
+ITSELF unchanged (the two swaps cancel). Fixed in key_schedule() below;
+confirmed to match the emulated ground truth bit-for-bit at every
+checkpoint. See docs/protocol/0x11_ticket_server_hello.md's "Encrypted
+frame layer" section for the full checkpoint trace and the bug diagnosis.
 
-Despite this, decrypt_frame() does NOT currently produce a valid decrypt of
-the one real captured message (272-byte message C, 2026-08-14T08:11:28,
-captures/tcp_catch.log) using the candidate static key from
-research/ghidra/key_dump3.txt - the recovered "plaintext" is high-entropy
-(no ASCII/structure) and its self-computed auth_tag does not match the
-frame's embedded tag, for session_token=0 (confirmed correct - the stub
-sent literal zero bytes) and a brute-force sweep of counters 0-19999 and
-several key byte-order variants. Given the algorithm is now verified this
-thoroughly, the remaining suspect is the candidate key value itself - see
-the doc's "Encrypted frame layer" section for the address-resolution
-evidence (which is independently corroborated by neighboring table entries
-correctly resolving to real, recognizable debug strings) despite this
-non-result. Resolving this needs a live RPCS3 debugger read of the actual
-runtime key bytes and/or a breakpoint dump of FUN_00db5ec0's register state
-for a real message, compared step-by-step against this file's functions -
-next step, not done this pass.
+With the fix, decrypt_frame() on the real 272-byte capture
+(2026-08-14T08:11:28, captures/tcp_catch.log) with the confirmed key and
+session_token=0 now: (1) passes its own auth_tag verification exactly
+(computed_tag == embedded_tag), and (2) recovers a plaintext that is
+unambiguously a real Sony NP ticket - it contains the literal ASCII
+substring "UP9000-BCUS98174_00" (this title's PS3 content ID) and
+"comradesean" (very likely the connecting player's PSN online ID), plus
+clear Sony-style TLV (type/length/value) structure throughout. This is
+about as strong a real-world confirmation as this investigation could ask
+for - a from-first-principles reverse-engineered cipher recovering
+recognizable, semantically correct plaintext from a real capture.
 """
 import struct
 
@@ -112,30 +115,36 @@ def process(state, data_words, mode):
 
 def key_schedule(static_key16, counter):
     """FUN_00db5ec0(static_key, counter) -> 4-word state, confirmed via raw
-    disassembly of 0x00db5ec0."""
+    disassembly AND ground-truth Ghidra emulation of 0x00db5ec0
+    (research/ghidra/keysched_trace.txt) - see docs/protocol/
+    0x11_ticket_server_hello.md's "Encrypted frame layer" section for the
+    checkpoint-by-checkpoint trace this was debugged against.
+
+    BUG FIX (2026-08-14, fourth pass): a prior version of this function
+    modeled FUN_00db5ec0's finalization round as feeding a byte-reversed
+    SNAPSHOT of the state back into an encrypt-mode round ("reversed_words",
+    computed by simulating the explicit FUN_00db7c80(scratch2,scratch2,16)
+    call visible in FUN_00db5ec0's own disassembly at 0xdb5fd4). Ground-truth
+    emulation proved this wrong: FUN_00db7cb0 (the function FUN_00db5ec0
+    calls for this step) ALSO does its OWN internal byte-swap-in on its
+    "data" argument before its round loop (the same pattern as
+    FUN_00db7f88/FUN_00db7e08, each of which independently pre-swap their
+    own data pointer - already correctly modeled by this module's
+    words_from_bytes()/bytes_from_words() helpers for every OTHER call site).
+    Applying a swap twice in a row (once explicitly by FUN_00db5ec0, once
+    again internally by FUN_00db7cb0) is a no-op (byte-reversal is its own
+    inverse), so the actual data words FUN_00db7cb0's round loop consumes
+    are simply the state's OWN current values, unchanged - i.e. the state
+    is fed through itself, no snapshot/reversal step needed in this
+    implementation at all. Confirmed to match ground truth emulation
+    exactly (bit-for-bit across all 4 output words) once fixed."""
     state = words_from_bytes(static_key16)          # state[i] = LE32(key[4i:4i+4])
     state, _ = process(state, [counter & MASK32], 'digest')   # mix in counter (1 word)
-    # Finalization round: byte-reverse a snapshot of the current state and
-    # run it back through an ENCRYPT-mode round (FUN_00db7cb0) as "data",
-    # letting the state evolve across all 4 words - confirmed via raw disasm
-    # (0xdb5fa8-0xdb5fe8: builds a byte-swapped 16-byte copy of out_state,
-    # then calls FUN_00db7cb0(out_state, that_copy, 0x10)).
-    snapshot_bytes = bytes_from_words(state)          # each word -> its own LE bytes
-    # FUN_00db7c80 byte-reverses this snapshot's bytes per-word again before
-    # feeding it in (0xdb5fd4: FUN_00db7c80(scratch2,scratch2,0x10) applied
-    # to the just-stw'd raw state words) - net effect: each word's OWN bytes
-    # reversed relative to its native form, i.e. re-reading each native word
-    # as its little-endian-packed byte form re-interpreted as native again.
-    reversed_words = words_from_bytes(bytes_from_be_words(state))
-    state, _ = process(state, reversed_words, 'encrypt')
+    # Finalization round: run the state back through an ENCRYPT-mode round
+    # using the state's OWN current words as the "data" - see docstring above
+    # for why no extra byte-swap simulation is needed here.
+    state, _ = process(state, list(state), 'encrypt')
     return state
-
-
-def bytes_from_be_words(words):
-    """Pack words as plain big-endian (this models the intermediate `stw`
-    of the raw native state words before FUN_00db7c80 byte-reverses them -
-    see key_schedule's comment)."""
-    return struct.pack('>%dI' % len(words), *[w & MASK32 for w in words])
 
 
 def finalize_tag(state):
@@ -217,12 +226,38 @@ if __name__ == '__main__':
 
     pt, ok, new_ctr, computed, embedded = decrypt_frame(candidate_key, 0, real_capture)
     print("plaintext_len:", len(pt))
-    print("tag_ok:", ok, "(expected False with the current candidate key - see module docstring)")
+    print("tag_ok:", ok, "(expect True - fixed as of the fourth pass, see module docstring)")
     print("computed_tag:", computed.hex())
     print("embedded_tag:", embedded.hex())
     print("plaintext (hex):", pt.hex())
     print("plaintext (repr):", pt)
+    assert ok, "decrypt_frame regressed - see module docstring for the expected-working state"
+    assert b"BCUS98174" in pt, "expected the real NP ticket's title-ID substring in the decrypted plaintext"
     print()
+
+    # ---- Derive a real, verified message-D (ticket_server_ticket_submit_response)
+    # frame, per the coordinator's ask. Keyed by client_nonce (conn+0x4c), NOT
+    # session_token - the client's own value from this same captured session's
+    # message A (opcode=0x11 client_nonce=0x3b188d6f, see captures/tcp_catch.log,
+    # 2026-08-14T08:11:28). Content is still an UNCONFIRMED GUESS (message D's
+    # semantics were never observed) - what's now real and verified is the
+    # FRAMING/CRYPTO: this frame's magic byte, length field, and auth_tag are
+    # all correct per the confirmed-working cipher, so the client's own
+    # FUN_00acbb90 decoder should accept it (pass the tag check) regardless of
+    # whether the placeholder content means anything to the game logic that
+    # reads it afterward.
+    print("Deriving a real, cryptographically-valid message-D frame (content is still a guess):")
+    client_nonce = 0x3b188d6f
+    placeholder_content = b"\x00" * 16  # content semantics unknown - see comment above
+    message_d_frame, _ = encrypt_frame(candidate_key, client_nonce, placeholder_content)
+    print("  client_nonce (this session's message-A value):", hex(client_nonce))
+    print("  message_d_frame (hex):", message_d_frame.hex())
+    print("  message_d_frame length:", len(message_d_frame), "bytes")
+    # Self-check: the client's own decoder logic (FUN_00acbb90) would decrypt
+    # this with the SAME key/counter and must recompute a matching tag -
+    # verify that round-trip here before calling it "real":
+    d_pt, d_ok, _, d_computed, d_embedded = decrypt_frame(candidate_key, client_nonce, message_d_frame)
+    print("  self-verify tag_ok:", d_ok, "(must be True for this to be a valid frame the client will accept)")
     print("Self round-trip sanity check (proves the algorithm is internally"
           " consistent, independent of whether the candidate key is right):")
     frame, tok = encrypt_frame(candidate_key, 0, b"self-test payload, arbitrary length 123")

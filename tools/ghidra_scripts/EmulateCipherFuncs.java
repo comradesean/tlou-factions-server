@@ -150,8 +150,8 @@ public class EmulateCipherFuncs extends GhidraScript {
                     steps++;
                 }
                 log("Stopped after " + steps + " steps at PC=" + emu.readRegister(emu.getPCRegister()));
-                log("Decrypted word bytes at " + hex32(dataBufAddr) + ": " + bytesHex(space.getAddress(dataBufAddr), 4));
-                log("Post-call state (16 bytes at " + hex32(outStateAddr) + "): " + bytesHex(space.getAddress(outStateAddr), 16));
+                log("Decrypted word bytes at " + hex32(dataBufAddr) + ": " + bytesHex(emu, space.getAddress(dataBufAddr), 4));
+                log("Post-call state (16 bytes at " + hex32(outStateAddr) + "): " + bytesHex(emu, space.getAddress(outStateAddr), 16));
 
             } finally {
                 emu.dispose();

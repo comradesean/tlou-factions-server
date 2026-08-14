@@ -47,17 +47,19 @@ doc: |
   protos/0x11_ticket_server_hello_response.ksy and the "Encrypted frame
   layer" section of docs/protocol/0x11_ticket_server_hello.md.
 
-  UPDATE (2026-08-14, third pass): the ARX (add-rotate-xor) construction
-  across FUN_00db5ec0/FUN_00db7f88/FUN_00db7c80/FUN_00db5e50/FUN_00db7cb0
-  has been reimplemented in `tools/ticket_cipher.py` and verified correct
-  three independent ways (self round-trip, literal byte-level
-  re-simulation, manual re-derivation against raw disassembly of both the
-  encode AND decode paths) - see the doc's "Encrypted frame layer" section.
-  It does NOT yet successfully decrypt this real capture with the candidate
-  static 16-byte key found via static analysis (`research/ghidra/
-  key_dump3.txt`) - the algorithm is now considered solid; the key is the
-  remaining suspect. A live RPCS3 debugger read of the actual runtime key
-  bytes is the concrete next step - see the doc's "Next steps".
+  UPDATE (2026-08-14, fourth pass): SOLVED. The ARX (add-rotate-xor)
+  construction across FUN_00db5ec0/FUN_00db7f88/FUN_00db7c80/FUN_00db5e50/
+  FUN_00db7cb0 is reimplemented in `tools/ticket_cipher.py` and now
+  correctly decrypts this real capture - the static key was independently
+  confirmed via a live RPCS3 memory read (matching the statically-resolved
+  candidate byte-for-byte), which isolated the remaining bug to this
+  module's own reconstruction of FUN_00db5ec0's finalization round (found
+  and fixed via ground-truth Ghidra emulation, see the doc's "Encrypted
+  frame layer" section for the full diagnosis). `decrypt_frame()` now
+  passes its own auth_tag check and recovers a plaintext containing the
+  literal strings "UP9000-BCUS98174_00" (this title's content ID) and
+  "comradesean" (very likely the player's online ID) - a genuine, verified
+  NP ticket.
 doc-ref: ../docs/protocol/0x11_ticket_server_hello.md
 seq:
   - id: frame_magic
@@ -71,7 +73,7 @@ seq:
     doc: "Length of the ORIGINAL UNENCRYPTED payload (the raw NP ticket bytes here), big-endian - NOT the on-wire ciphertext length. Confirmed via disassembly (`sth len,...`) and matches the real capture (0x00fa = 250, plausible for an NP ticket; an earlier RPCS3 log line from an unrelated session observed 248, so ticket size legitimately varies run-to-run)."
   - id: auth_tag
     size: 16
-    doc: "Keyed authentication tag over the plaintext, computed by the client's encoder (FUN_00db5ec0 keystream-init + FUN_00db7f88 digest + FUN_00db5e50 finalize) and independently RECOMPUTED and compared by the client's own decoder (FUN_00acbb90) whenever IT receives a frame from the server - meaning ticket_server_ticket_submit_response (message D) must carry a tag the client will recompute and verify, or the client closes the connection. Keyed by the session_token counter (this direction) + a static 16-byte table embedded in the client binary. Algorithm reimplemented and cross-verified in tools/ticket_cipher.py (see doc); the candidate key has not yet produced a working decrypt of the one real capture - needs live verification, see doc's Next Steps."
+    doc: "Keyed authentication tag over the plaintext, computed by the client's encoder (FUN_00db5ec0 keystream-init + FUN_00db7f88 digest + FUN_00db5e50 finalize) and independently RECOMPUTED and compared by the client's own decoder (FUN_00acbb90) whenever IT receives a frame from the server - meaning ticket_server_ticket_submit_response (message D) must carry a tag the client will recompute and verify, or the client closes the connection. Keyed by the session_token counter (this direction) + a static 16-byte table embedded in the client binary (both confirmed live - see doc). CONFIRMED WORKING: tools/ticket_cipher.py recomputes this tag and it matches the real capture's embedded tag exactly."
   - id: ciphertext
     size: plaintext_len + pad_count
-    doc: "The plaintext (raw NP ticket bytes) plus pad_count padding bytes, encrypted in place via a keystream produced by the same ARX construction as auth_tag (FUN_00db7cb0 - identical math to FUN_00db7f88's digest pass but writes the mixed state back over the buffer instead of only accumulating it). NOT yet decrypted/verified this pass - the algorithm is fully decompiled but not yet reimplemented and tested against the real 272-byte capture. Once decrypted, the first plaintext_len bytes should be the raw NP ticket exactly as sceNpManagerGetTicket returned it."
+    doc: "The plaintext (raw NP ticket bytes) plus pad_count padding bytes, encrypted in place via a keystream produced by the same ARX construction as auth_tag (FUN_00db7cb0 - identical math to FUN_00db7f88's digest pass but writes the mixed state back over the buffer instead of only accumulating it). CONFIRMED WORKING: tools/ticket_cipher.py decrypts this and recovers a real NP ticket (contains \"UP9000-BCUS98174_00\" and \"comradesean\" in plaintext, with consistent Sony TLV structure) - the first plaintext_len bytes are the raw NP ticket exactly as sceNpManagerGetTicket returned it."

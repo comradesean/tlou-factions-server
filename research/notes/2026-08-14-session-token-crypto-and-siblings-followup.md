@@ -246,3 +246,73 @@ and should work here too.
   `finalize_disasm.txt`, `acbb90_key_check.txt`, `alt_keys.txt` - raw
   disassembly evidence backing all of the above.
 - New Ghidra script: `tools/ghidra_scripts/DumpBytesAt.java`.
+
+## Addendum 2 (same day, fourth pass): SOLVED - key confirmed live, bug found via emulation, real ticket decrypted
+
+The coordinator broke into a live RPCS3 process at `FUN_00db5ec0`'s entry
+during a real NetInit run and confirmed, directly from process memory: `r3`
+(key pointer) = `0xed7a50` on both call sites within one frame, and the 16
+bytes actually AT that address matched the candidate key byte-for-byte;
+`r4` (counter) = `0` on both hits. This independently confirmed the key two
+ways (static TOC-chain resolution + live memory read) and correctly
+concluded the remaining bug had to be in this project's own Python
+reconstruction of the algorithm, not the key material - and asked for a
+concrete, byte-by-byte trace comparison to pin it down rather than further
+architectural guessing.
+
+**Method: ground-truth Ghidra emulation, not more disassembly reading.**
+Wrote `tools/ghidra_scripts/EmulateKeySchedule.java`, using
+`ghidra.app.emulator.EmulatorHelper` (Ghidra's own PPC pcode emulator) to
+actually *execute* `FUN_00db5ec0` with the confirmed key and `counter=0`
+against a scratch memory region, checkpointing the 4-word state at every
+internal call boundary (full trace: `research/ghidra/keysched_trace.txt`).
+Comparing each checkpoint against the equivalent value computed by
+`tools/ticket_cipher.py` found that every step matched exactly except the
+very last one (the finalization round).
+
+**The bug**: `key_schedule()`'s finalization step modeled
+`FUN_00db5ec0`'s explicit `FUN_00db7c80` byte-swap of a state snapshot as
+producing a "reversed_words" array to feed into the final ARX round. This
+double-counted a transformation: `FUN_00db7cb0` (the function actually
+called for that step) *also* performs its own internal byte-swap-in on its
+data argument - the same pattern this module's `words_from_bytes()`/
+`bytes_from_words()` helpers already correctly modeled for every other call
+site in the whole cipher. Two byte-swaps in a row cancel out (it's an
+involution), so the real data fed into the finalization round is simply the
+state's own current words, unchanged - the state is fed through itself.
+One-line fix in `key_schedule()`; confirmed to match the emulated ground
+truth bit-for-bit at every checkpoint afterward.
+
+**Result: `tools/ticket_cipher.py` now correctly decrypts the real
+capture.** `decrypt_frame()` on the message-C capture, confirmed key, and
+`session_token=0` passes its own tag check exactly
+(`computed_tag == embedded_tag`) and recovers a 250-byte plaintext that is
+unambiguously a real Sony NP ticket: it contains the literal ASCII
+substrings `"UP9000-BCUS98174_00"` (this title's own content ID) and
+`"comradesean"` (very likely the connecting player's PSN online ID), with
+consistent Sony-style TLV structure throughout. This is about as strong a
+confirmation as this investigation could hope for.
+
+**Message D**: derived a real, cryptographically valid frame via
+`encrypt_frame()` keyed by this session's own `client_nonce`
+(`0x3b188d6f`), self-verified by round-tripping it back through
+`decrypt_frame()`. Content is still a 16-byte all-zero placeholder - message
+D's real content was never captured/observed, so this remains a guess, but
+the wrapper (magic byte, length, auth_tag) around it is now real and
+correct, which is what actually mattered for unblocking live testing.
+
+### Deliverables from this addendum
+
+- `tools/ticket_cipher.py` - bug fixed, decrypt confirmed working against
+  real capture, message-D frame derivation added to the demo.
+- `tools/ghidra_scripts/EmulateKeySchedule.java`,
+  `tools/ghidra_scripts/EmulateCipherFuncs.java` - new Ghidra emulation
+  scripts (ground-truth execution, not just disassembly reading).
+- `research/ghidra/keysched_trace.txt`, `emu_trace.txt`,
+  `acbb90_key_check.txt` - emulation evidence.
+- `docs/protocol/0x11_ticket_server_hello.md` - "Encrypted frame layer"
+  section rewritten again with the working status, the bug diagnosis, and
+  the decrypted ticket confirmation; confidence table and next-steps
+  updated accordingly.
+- `protos/0x11_ticket_server_ticket_submit.ksy` /
+  `_ticket_submit_response.ksy` - updated to CONFIRMED WORKING status.

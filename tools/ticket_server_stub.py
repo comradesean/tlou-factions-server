@@ -3,16 +3,23 @@
 
 Implements the 4-message handshake reversed via Ghidra decompilation - see
 protos/0x11_ticket_server_*.ksy and docs/protocol/0x11_ticket_server_hello.md
-for the full evidence trail. Response CONTENT beyond the required 0x22 magic
-byte is UNCONFIRMED - this is a best-guess (zero-filled) placeholder
-implementation for live testing, not a verified-correct server. The point is
-to get past the client's hard "abort unless first response byte is 0x22"
-check and observe what it does next, iterating on real client reactions.
+for the full evidence trail. Messages C and D are real, verified encrypted
+frames now (tools/ticket_cipher.py - key confirmed live via debugger, cipher
+bug found and fixed, decrypt confirmed against a real captured NP ticket
+containing "comradesean" / "UP9000-BCUS98174_00"). The only remaining
+unknown is message D's *content* (never observed) - still a zero-filled
+placeholder, but now wrapped in a real, correctly-tagged encrypted frame the
+client should actually accept, instead of raw unencrypted zero bytes.
 """
 import socket
 import sys
 import datetime
 import threading
+
+sys.path.insert(0, ".")
+import ticket_cipher
+
+CANDIDATE_KEY = bytes.fromhex("78 56 34 12 32 54 76 98 88 ef cd ab ef cd ab 89".replace(" ", ""))
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 7320
 LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else "/mnt/f/ClaudeHole/tlou_factions/captures/tcp_catch.log"
@@ -53,29 +60,38 @@ def handle(conn, addr, log_lock, log):
 
         # Message 2: our 8-byte response (0x22_ticket_server_hello_response.ksy)
         # ack_magic MUST be 0x22 or the client aborts immediately - confirmed.
-        # unknown1(3) + session_token(4): content unconfirmed, zero placeholder.
-        resp1 = bytes([0x22, 0x00, 0x00, 0x00]) + (0).to_bytes(4, "big")
+        # session_token: this becomes the counter that keys the client's message-C
+        # encryption (confirmed - see decrypt_frame below). Using 0, matching the
+        # value verified live via debugger and used in the confirmed-working decrypt.
+        session_token = 0
+        resp1 = bytes([0x22, 0x00, 0x00, 0x00]) + session_token.to_bytes(4, "big")
         conn.sendall(resp1)
-        entry += f"-- sent hello_response (8 bytes) --\n{hexdump(resp1)}\n"
+        entry += f"-- sent hello_response (8 bytes, session_token={session_token}) --\n{hexdump(resp1)}\n"
 
-        # Message 3: diagnostic-first. Don't assume the 2-byte-length-prefix schema
-        # yet - do a raw, unstructured recv with a generous timeout and log exactly
-        # what arrives, so a wrong assumption here is visible instead of silently
-        # causing a 10s stall (as it did the first time this was tried: parsed
-        # "ticket_length=13058" from what should have been a ~248-byte NP ticket).
-        conn.settimeout(15)
-        raw3 = conn.recv(65536)
-        entry += f"-- recv message 3, raw, unstructured ({len(raw3)} bytes) --\n{hexdump(raw3)}\n"
-        if len(raw3) >= 2:
-            as_be16 = int.from_bytes(raw3[:2], "big")
-            entry += f"   first 2 bytes as BE u16 = {as_be16} (sanity check against the ticket_length hypothesis)\n"
-        ticket_data = raw3
+        # Message 3: an encrypted frame (see docs/protocol/0x11_ticket_server_hello.md's
+        # "Encrypted frame layer" section) - [0x33][pad][BE u16 plaintext_len][16B
+        # auth_tag][ciphertext]. Read the fixed 20-byte header first to know exactly
+        # how many more bytes to expect, rather than guessing a buffer size.
+        header = recv_exact(conn, 20)
+        plen = int.from_bytes(header[2:4], "big")
+        pad = header[1]
+        ciphertext = recv_exact(conn, plen + pad)
+        raw3 = header + ciphertext
+        entry += f"-- recv message 3, encrypted frame ({len(raw3)} bytes) --\n{hexdump(raw3)}\n"
 
-        # Message 4: our 16-byte response (ticket_server_ticket_submit_response.ksy)
-        # Content fully unconfirmed - zero placeholder.
-        resp2 = b"\x00" * 16
-        conn.sendall(resp2)
-        entry += f"-- sent ticket_submit_response (16 bytes) --\n{hexdump(resp2)}\n"
+        plaintext, tag_ok, _, computed_tag, embedded_tag = ticket_cipher.decrypt_frame(
+            CANDIDATE_KEY, session_token, raw3)
+        entry += f"   tag_ok={tag_ok} computed_tag={computed_tag.hex()} embedded_tag={embedded_tag.hex()}\n"
+        entry += f"   decrypted plaintext ({len(plaintext)} bytes): {plaintext!r}\n"
+        ticket_data = plaintext
+
+        # Message 4: a real encrypted frame, keyed by client_nonce (the client's
+        # receive-side counter, confirmed - see decrypt_frame's docstring/the
+        # companion doc). Content is still an unconfirmed placeholder (16 zero
+        # bytes) - only the crypto wrapper is verified, not what should be inside.
+        frame_d, _ = ticket_cipher.encrypt_frame(CANDIDATE_KEY, client_nonce, b"\x00" * 16)
+        conn.sendall(frame_d)
+        entry += f"-- sent ticket_submit_response, encrypted frame ({len(frame_d)} bytes) --\n{hexdump(frame_d)}\n"
 
         # Handshake complete per current understanding - watch for anything further
         # (a 5th message would mean our understanding is incomplete).

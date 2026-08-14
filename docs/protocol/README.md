@@ -39,15 +39,19 @@ rather than by `net_event_type`. See
 **Every post-hello message on this whole family (ticket-server's C/D and
 every sibling's post-hello payload below) is wrapped in a shared,
 keyed encrypt-then-MAC frame - see "Encrypted frame layer" in
-`0x11_ticket_server_hello.md`, confirmed byte-exact against a real 272-byte
-live capture on 2026-08-14.**
+`0x11_ticket_server_hello.md`. The cipher itself is SOLVED: `tools/
+ticket_cipher.py` decrypts a real captured message C, passes its own
+auth_tag check, and recovers a genuine Sony NP ticket (contains
+"UP9000-BCUS98174_00" and "comradesean" in plaintext) - confirmed
+2026-08-14 via a live RPCS3 memory read of the static key plus ground-truth
+Ghidra emulation to debug the Python reimplementation.**
 
 | # | Name | Status | Confidence | `.ksy` |
 |---|---|---|---|---|
 | A | `ticket_server_hello` | confirmed | high | `protos/0x11_ticket_server_hello.ksy` |
 | B | `ticket_server_hello_response` | confirmed structurally; session_token confirmed as live encrypted-frame key material (not inert) | high | `protos/0x11_ticket_server_hello_response.ksy` |
-| C | `ticket_server_ticket_submit` | confirmed frame format (byte-exact live match); cipher decompiled, not yet reimplemented/verified | high (framing) / medium (cipher) | `protos/0x11_ticket_server_ticket_submit.ksy` |
-| D | `ticket_server_ticket_submit_response` | confirmed to share message C's frame format; size NOT fixed-16 as previously stated (withdrawn); content unconfirmed | medium (framing) / unconfirmed (content) | `protos/0x11_ticket_server_ticket_submit_response.ksy` |
+| C | `ticket_server_ticket_submit` | CONFIRMED WORKING - cipher decrypts real capture, recovers genuine NP ticket | high | `protos/0x11_ticket_server_ticket_submit.ksy` |
+| D | `ticket_server_ticket_submit_response` | frame format/crypto confirmed working (real frame constructible via `tools/ticket_cipher.py`); content still unconfirmed (never captured) | high (framing/crypto) / unconfirmed (content) | `protos/0x11_ticket_server_ticket_submit_response.ksy` |
 
 ### Sibling `*-server` family (same opcode-0x11 hello, different service_name)
 

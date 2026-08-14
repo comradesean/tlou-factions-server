@@ -499,35 +499,95 @@ byte-swap of the state as originally guessed - `X = state[0]^state[1]^
 state[2]^state[3]`; `tag = concat(LE32(X^state[i]) for i in 0..3)`. A
 final whitening XOR, not just an endian conversion.
 
-**Reimplementation attempt (2026-08-14): algorithm verified correct,
-decrypt of the real capture NOT yet successful.** A full Python
-reimplementation (`tools/ticket_cipher.py`) was built from the above and
-verified three independent ways: (1) self round-trip (encrypt then decrypt
-recovers the original plaintext and passes tag verification, for arbitrary
-keys/counters); (2) a from-scratch literal byte-level re-simulation of
-`FUN_00db5ec0` cross-checked bit-exact against the simplified
-implementation across 5 random trials; (3) manual instruction-by-
-instruction re-derivation of the round function against raw disassembly
-from BOTH `FUN_00acb6fc` (encode) and `FUN_00acbb90` (decode)
-independently - confirmed both reach the key via the identical TOC offsets
-(`-0x6bf0(r2)` then `-0x8000(r30)`), ruling out a per-function key-address
-mismatch. Despite this, running `decrypt_frame()` against the real
-272-byte capture with the candidate key from `research/ghidra/
-key_dump3.txt` and `session_token=0` (confirmed correct - the stub sent
-literal zero bytes) produces a high-entropy, non-ticket-looking
-"plaintext" whose self-computed auth_tag does not match the frame's
-embedded tag. A brute-force sweep of counters 0-19999 and several key
-byte-order variants (full reverse, per-word reverse, word-order reverse)
-found no match either. **Given the algorithm is now this thoroughly
-verified, the remaining suspect is the candidate key value itself** -
-despite the address-resolution mechanism being independently corroborated
-(neighboring table entries at the same TOC-resolved base correctly resolve
-to real, recognizable debug strings, including `"connect to %s:%i"`,
-already known from earlier sessions of this investigation). Resolving this
-needs a live RPCS3 debugger read of the actual runtime key bytes and/or a
-breakpoint dump of `FUN_00db5ec0`'s register state for a real message,
-compared step-by-step against `tools/ticket_cipher.py` - flagged as the
-top next step.
+### Reimplementation: WORKING AND VERIFIED (2026-08-14, fourth pass)
+
+**The cipher is fully solved.** `tools/ticket_cipher.py` correctly decrypts
+the real 272-byte capture, passes its own auth_tag verification, and
+recovers a plaintext that is unambiguously a real Sony NP ticket.
+
+**How the key got independently confirmed, closing off the "wrong key"
+hypothesis.** The coordinator broke into a live RPCS3 process at
+`FUN_00db5ec0`'s entry (`0x00db5ec0`) during a real NetInit run and
+directly read process memory: `r3` (the key pointer argument) was
+`0xed7a50` on both call sites within one frame (matching this doc's
+two-call pattern - once for the digest/tag pass, once for the encrypt
+pass), and a direct memory read of 16 bytes at that address matched the
+candidate key byte-for-byte (`78 56 34 12 32 54 76 98 88 ef cd ab ef cd ab
+89`). `r4` (the counter argument) was `0` on both hits, confirming
+`session_token=0` for the first frame of a connection. This ruled out
+"wrong key" and "wrong counter" as explanations, which meant the bug had
+to be in this doc's/`tools/ticket_cipher.py`'s reconstruction of the
+algorithm itself.
+
+**Finding the actual bug: ground-truth Ghidra emulation, checkpointed.**
+Rather than re-reading disassembly again (which had already been done
+multiple times without finding the error), this pass used Ghidra's own
+PPC pcode emulator (`ghidra.app.emulator.EmulatorHelper`, scripted via
+`tools/ghidra_scripts/EmulateKeySchedule.java`) to actually *execute*
+`FUN_00db5ec0` with the confirmed key and `counter=0`, dumping the 4-word
+state at every internal call boundary (after the initial key byte-swap,
+after the counter-mixing digest round, before/after the finalization
+snapshot's byte-swap, and after the finalization round) - full trace in
+`research/ghidra/keysched_trace.txt`. Comparing each checkpoint against the
+equivalent intermediate value in `tools/ticket_cipher.py` found that
+**every step matched exactly except the very last one** (the finalization
+round, `FUN_00db7cb0` applied to a snapshot of the state).
+
+**The bug**: the prior `key_schedule()` modeled `FUN_00db5ec0`'s explicit
+`FUN_00db7c80(scratch2,scratch2,16)` byte-swap of the state snapshot (the
+"reversed_words" step) and fed that transformed data into the finalization
+round. This was subtly wrong: `FUN_00db7cb0` (the function being called for
+that step) *also* performs its own internal byte-swap-in on its data
+argument before its round loop - the same pattern every other round
+function in this chain uses, and which `words_from_bytes()`/
+`bytes_from_words()` already correctly model for every *other* call site in
+this module. Applying a byte-swap twice in a row is a no-op (it's an
+involution), so the two swaps - one explicit in `FUN_00db5ec0`, one
+implicit inside `FUN_00db7cb0` - cancel out completely. The real data fed
+into the finalization round's loop is simply **the state's own current
+words, unchanged** - the state is fed through itself. Fixed in
+`key_schedule()`; confirmed to match the emulated ground truth bit-for-bit
+at every checkpoint (`python3 tools/ticket_cipher.py`'s internal asserts
+now pass).
+
+**Confirmation against the real capture, with the fix applied**:
+`decrypt_frame()` on the real message-C capture, confirmed key, and
+`session_token=0` now passes its own tag check exactly
+(`computed_tag == embedded_tag == bb75efe643c725d53abfca6802a0f7a7`) and
+recovers this plaintext (250 bytes, hex-dumped for anyone who wants to
+cross-check against RPCN's own ticket format):
+
+```
+00f8210100000000 00f0300000a40008 0014333100000000 0000000000000000
+0000000000000000 0001000400000100 0007000800001a00 2e47280007000800
+0001a0003c02c800 0200080000000000 0002000400 "comradesean" (padded)
+...0008000462 72000000040004 75 6e000000080018 "UP9000-BCUS98174_00"
+...
+```
+
+This is a genuine, semantically valid Sony NP ticket - it contains the
+literal ASCII substrings `"UP9000-BCUS98174_00"` (this title's PS3 content
+ID, `BCUS98174` matching the game's own title ID given in this
+investigation's briefing) and `"comradesean"` (very likely the connecting
+player's PSN online ID), surrounded by clear Sony-style TLV
+(type/length/value) framing throughout. This is about as strong a
+real-world confirmation as static + emulation-assisted reverse engineering
+can produce short of Sony's own source.
+
+**Message D**: with the cipher confirmed working, a real, cryptographically
+valid `ticket_server_ticket_submit_response` frame can now be constructed
+for any server implementation - `tools/ticket_cipher.py`'s `encrypt_frame()`
+keyed by `client_nonce` (this captured session's message A gave
+`client_nonce=0x3b188d6f`) produces a frame the client's own decoder
+(`FUN_00acbb90`) will accept (correct magic byte, correct self-consistent
+auth_tag) - self-verified in the module's `__main__` block by decrypting
+the frame it just built and checking the tag matches. **The framing/crypto
+is now real and verified; message D's *content* (what bytes should
+actually go inside once decrypted) is still an unconfirmed guess** - no
+message D has ever been captured, so nothing establishes what the client
+expects to find there beyond a validly-framed, tag-correct wrapper. A
+16-byte all-zero placeholder is used in the module's demo for exactly this
+reason - swap in whatever content is decided on next.
 
 ### What this means for the sibling services (see companion doc)
 
@@ -622,34 +682,30 @@ generalizes.
 | Message B: unknown1 | medium | Byte range confirmed unread by the validating function; whether truly inert elsewhere is not proven |
 | Message B: session_token | high (as key material), unconfirmed (its exact starting-value requirements) | Confirmed via disassembly of the actual consumer (`FUN_00acb6fc`) that it's read/used/incremented as frame-encryption key material, and byte-exact-matched against a real capture's frame math; NOT confirmed whether the client requires anything specific about its *value* beyond internal self-consistency (a server picks it, so this may be moot) |
 | Message C: frame_magic, pad_count, plaintext_len, auth_tag(existence)/ciphertext(existence) | high | Byte-exact match (two independent arithmetic checks) against a real 272-byte live capture, plus full disassembly of both the encode and decode paths |
-| Message C: auth_tag/ciphertext algorithm (round function, CFB feedback, key schedule, tag finalize) | high (as an algorithm), unconfirmed (that it reproduces the real hardware's exact output) | Every operation independently re-derived from raw disassembly (not decompiled C) of both the encode path (`FUN_00acb6fc`) and decode path (`FUN_00acbb90`), cross-checked 3 independent ways (self round-trip, literal byte-level re-simulation, manual instruction-by-instruction re-derivation); reimplemented in `tools/ticket_cipher.py`; does NOT yet successfully decrypt the one real capture with the candidate key - see "Reimplementation attempt" above |
-| Message C: static key bytes | low-medium (unchanged from prior pass) | Resolution chain independently re-confirmed from BOTH `FUN_00acb6fc` and `FUN_00acbb90` (same TOC offsets); neighboring table entries correctly resolve to real debug strings (including a string already known from earlier sessions); despite this, does not currently produce a successful decrypt - remains unconfirmed pending a live debugger check |
-| Message D: frame format | high (structural, by analogy) | Confirmed to share the same decoder (`FUN_00acbb90`) and header format as message C via decompile; no independent live capture of an actual message D exists yet (never captured - no server has sent one) |
-| Message D: content | unconfirmed | Never observed; no other code path explains it |
+| Message C: auth_tag/ciphertext algorithm (round function, CFB feedback, key schedule, tag finalize) | high, CONFIRMED WORKING | Independently re-derived from raw disassembly of both the encode (`FUN_00acb6fc`) and decode (`FUN_00acbb90`) paths, debugged against ground-truth Ghidra emulation (`research/ghidra/keysched_trace.txt`) until every checkpoint matched exactly; `tools/ticket_cipher.py` now decrypts the real 272-byte capture and passes its own auth_tag verification |
+| Message C: static key bytes | high, CONFIRMED (2 independent methods) | Static resolution (TOC-chain, same across both encode/decode paths) AND a live RPCS3 memory read at `FUN_00db5ec0`'s entry both give the identical 16 bytes at `0xed7a50` |
+| Message C: recovered plaintext is a real NP ticket | high | Contains literal ASCII `"UP9000-BCUS98174_00"` (this title's content ID) and `"comradesean"` (very likely the player's online ID), with consistent Sony-style TLV structure throughout |
+| Message D: frame format | high (structural, by analogy - crypto layer confirmed working) | Confirmed to share the same decoder (`FUN_00acbb90`), header format, and now-verified-working cipher as message C; a real, self-consistent frame can be constructed (`tools/ticket_cipher.py`'s `encrypt_frame()`), but no independent live capture of an actual message D exists to confirm the client accepts it end-to-end |
+| Message D: content | unconfirmed | Never observed; no other code path explains it - framing/crypto is solved, content is a placeholder |
 
 ## Next steps (prioritized)
 
-1. **Live RPCS3 debugger session to resolve the static key** - the single
-   remaining blocker. `tools/ticket_cipher.py` is a verified-correct
-   (against raw disassembly, 3 independent cross-checks) implementation of
-   the frame cipher; it does not currently decrypt the one real capture
-   with the candidate key found via static analysis
-   (`research/ghidra/key_dump3.txt`, address `0x00ed7a50`). Set a
-   breakpoint at `FUN_00db5ec0`'s entry (`0x00db5ec0`) or at
-   `FUN_00acb6fc`'s call into it (`0x00acb788`), dump the actual 16 bytes
-   at whatever address is really in `r3` at that point, and/or step through
-   the round function comparing register values against
-   `tools/ticket_cipher.py`'s `arx_round()` step-by-step for a real
-   message. The same live-debugger technique already worked for the
-   `.crypt` HMAC key (`research/notes/2026-08-14-repack-rejection-investigation.md`)
-   and would be decisive here in a single session, unlike further static
-   analysis.
-2. **Once the key is confirmed, update `tools/ticket_server_stub.py`** to
-   build protocol-legal encrypted frames using `tools/ticket_cipher.py` -
-   the current stub's all-zero 16-byte message-D reply is almost certainly
-   not valid (wrong magic byte, wrong/missing tag), and a real decrypt of
-   message C's ticket bytes would let the stub actually read what RPCN
-   issued instead of ignoring it.
+1. **Decide message D's real content and test it live** - the cipher is no
+   longer the blocker. `tools/ticket_cipher.py`'s `encrypt_frame()`, keyed
+   by `client_nonce` from the connection's own message A, produces a frame
+   the client's decoder should accept (correct magic byte, self-consistent
+   auth_tag - verified by round-tripping the generated frame through
+   `decrypt_frame()` in the module's own demo). What remains is a game-logic
+   question, not a crypto one: what should the *content* be once decrypted?
+   Best next move is probably sending something minimal/inert (matching
+   this doc's original "session grant / final auth confirmation" hypothesis)
+   and observing whether NetInit proceeds past this handshake for the first
+   time ever.
+2. **Update `tools/ticket_server_stub.py`** to build real encrypted frames
+   using `tools/ticket_cipher.py` instead of the current all-zero 16-byte
+   placeholder (which is very likely not a valid frame - wrong magic byte,
+   no correct tag) - this is the concrete change that would let a live test
+   actually exercise the newly-working cipher.
 3. **Confirm the "shared handshake AND shared frame layer" hypothesis** for
    the sibling services - now separately tracked in
    `docs/protocol/0x11_sibling_servers_family.md` (messages A/B confirmed
