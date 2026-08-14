@@ -21,8 +21,9 @@ Any future session should re-verify the SHA256 before assuming findings still ap
 | Ghidra 12.0 (`/mnt/e/ghidra`) | present | Stock install only — no PS3-specific loader by default. See `docs/ghidra-setup.md` for the required setup (found via prior-art search, not yet fully applied — see that doc for what's outstanding and why). |
 | `kaitai-struct-compiler` (`ksc`) | present | Used to validate every `.ksy` file in `protos/` compiles cleanly. |
 | `git` 2.43.0 | present | Repo initialized this session. |
-| `tshark` / `wireshark` / `mitmproxy` | **not installed, deliberately deferred** | No task in the groundwork phase needs live capture. Confirmed available via `apt` (universe component, no extra repo needed) for whenever the capture-session phase starts. |
-| `scapy` / `pwntools` (pip) | **not installed, deliberately deferred** | Same reasoning — packet crafting/replay tools with no role until capture/testing exists. |
+| `tshark` (4.2.2) | present (installed 2026-08-14, capture-session phase) | Capture itself happens in Wireshark on the Windows host running RPCS3 (see `docs/capture-howto.md`); `tshark` here is for analyzing the resulting `.pcapng` files. |
+| Python `scapy` 2.7.0 | present, in a local venv at `tools/.venv/` (gitignored — recreate with `python3 -m venv tools/.venv && tools/.venv/bin/pip install scapy`) | No system-wide pip / no passwordless sudo in this environment, hence the venv. |
+| `mitmproxy` / `pwntools` | not installed | No concrete task needs them yet. |
 
 ## Ghidra language/compiler-spec decision
 

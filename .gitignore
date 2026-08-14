@@ -4,6 +4,7 @@ EBOOT.*
 
 # Vendored/cloned external tooling — referenced by URL + commit hash in docs instead
 tools/external/
+tools/.venv/
 
 # Ghidra project (binary, not diffable) and large raw dumps — keep distilled findings, not raw output
 research/ghidra/*.gpr
