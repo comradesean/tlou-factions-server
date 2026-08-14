@@ -10,14 +10,15 @@ import datetime
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 80
 LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else "/mnt/f/ClaudeHole/tlou_factions/captures/http_catch.log"
+STATUS = sys.argv[3] if len(sys.argv) > 3 else "404 Not Found"
 
 RESPONSE = (
-    b"HTTP/1.1 200 OK\r\n"
-    b"Content-Type: text/plain\r\n"
-    b"Content-Length: 0\r\n"
-    b"Connection: close\r\n"
-    b"\r\n"
-)
+    f"HTTP/1.1 {STATUS}\r\n"
+    f"Content-Type: text/plain\r\n"
+    f"Content-Length: 0\r\n"
+    f"Connection: close\r\n"
+    f"\r\n"
+).encode("ascii")
 
 def main():
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
