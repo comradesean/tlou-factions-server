@@ -1,8 +1,10 @@
-# NetEvent Catalog (names only — pending numeric IDs)
+# NetEvent Catalog (names — numeric IDs now confirmed, see opcodes.ksy)
 
 116 distinct `NetEvent*` names, extracted verbatim from `EBOOT.elf`'s string table (`strings -n 6 -t x`, filtered on `\bNetEvent[A-Za-z0-9]+`). Full raw list with file offsets: `research/notes/netevent_names.txt` and `research/notes/net_module_string_range.txt`.
 
-This is almost certainly the actual gameplay-protocol opcode set (movement, combat, interactables, scoring, revive, melee, spawning, etc.) — but **none of these have a confirmed numeric ID or wire structure yet**. That requires Ghidra decompilation of the dispatch logic (see `docs/ghidra-setup.md`) and/or correlation against a live capture. Do not promote an entry to `protos/0x<hex>_<name>.ksy` until its numeric ID is confirmed by one of those.
+**Update (session 1, Ghidra):** numeric IDs for 115 of these 116 names are now confirmed - see `protos/common/opcodes.ksy` and `research/notes/ghidra-opcode-recovery.md` for the recovery method. `NetEventCharacterMove` is the one name here that did *not* turn up in the recovered table (0-114 + `kNumNetEvents` sentinel) - likely a related class/symbol name rather than a distinct enum value, not otherwise investigated.
+
+This is almost certainly the actual gameplay-protocol opcode set (movement, combat, interactables, scoring, revive, melee, spawning, etc.) — numeric IDs are confirmed, but **per-opcode wire payload structure is still unconfirmed** (only the outer `packet_header.ksy` opcode field has corroborating, not yet proven, evidence). Do not promote an entry to `protos/0x<hex>_<name>.ksy` (full payload struct) until its field layout is confirmed by decompiled serialization code and/or a live capture.
 
 Likely-relevant source files (from `game/net/` and `game/net/net-event/` paths surviving as assert strings — see `research/notes/static-recon-findings.md`): `net-event.cpp`, `net-event/net-event-character-move.cpp`, `net-event/net-event-weapon.cpp`, `net-event/net-event-player.cpp`, `net-event/net-event-npc.cpp`, `net-event/net-event-pickup.cpp`, `net-event/net-event-breakable.cpp`, `net-event/net-event-carry-object.cpp`, `net-snapshot.cpp`, `net-character-death.cpp`, `net-character-reaction.cpp`.
 

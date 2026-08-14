@@ -1,8 +1,8 @@
 # Protocol Documentation Index
 
-No opcode has a confirmed numeric ID or wire structure yet — this project is still in the static-analysis-only groundwork phase (see `docs/methodology.md`).
+**Numeric opcode IDs are confirmed** for 115 `NetEventType` values (0-114) — recovered directly from an in-memory enum-to-name table via Ghidra, see `protos/common/opcodes.ksy` and `research/notes/ghidra-opcode-recovery.md`. **Per-opcode wire payload structure is still unconfirmed** — no individual `protos/0x<hex>_<name>.ksy` payload file exists yet, since that needs decompiled serialization code and/or a live capture to correlate against (see `docs/methodology.md`). The project is still in the static-analysis-only phase; no live capture has happened.
 
-What *is* known: a 116-entry catalog of likely gameplay opcode **names** (`NetEvent*`) and a 38-entry catalog of lobby/match state names (`NET_SM_*`), both pulled from the binary's string table. See `protos/pending/netevent_catalog.md` and `protos/pending/net_sm_states_catalog.md`. Neither has a confirmed numeric ID, dispatch width, or field layout yet — that requires either Ghidra decompilation of the dispatch logic (see `docs/ghidra-setup.md`) or a live capture to correlate against.
+Also known: a 38-entry catalog of lobby/match state names (`NET_SM_*`) pulled from the binary's string table, status unconfirmed either way (state-machine states vs. actual wire opcodes) — see `protos/pending/net_sm_states_catalog.md`.
 
 | Opcode (hex) | Name | Status | Confidence | `.ksy` | Doc |
 |---|---|---|---|---|---|

@@ -6,7 +6,7 @@ This is a legitimate reverse-engineering / game-preservation effort: the analysi
 
 ## Status
 
-Groundwork phase — see `docs/protocol/README.md` for the current opcode/packet documentation index and `research/prior-art.md` for what's already known from outside sources. No live capture has happened yet.
+Groundwork phase — see `docs/protocol/README.md` for the current opcode/packet documentation index and `research/prior-art.md` for what's already known from outside sources. No live capture has happened yet, but numeric IDs for 115 `NetEventType` gameplay opcodes are already confirmed via static analysis — see `protos/common/opcodes.ksy`.
 
 ## Layout
 
