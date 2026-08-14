@@ -3,6 +3,7 @@
 EBOOT.*
 tools/served_content/
 research/net1bin/
+ref/
 
 # Vendored/cloned external tooling — referenced by URL + commit hash in docs instead
 tools/external/
@@ -29,3 +30,4 @@ captures/tcp_catch.log
 # OS/editor cruft
 .DS_Store
 *.swp
+__pycache__/
