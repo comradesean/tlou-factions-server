@@ -1,0 +1,972 @@
+ e69000 game/menu/menuhost.cpp
+ e69018 Are the DC files out of date?
+ e69038 menuPage.m_controls
+ e69050 BUTTON_QUICKACTION_%i
+ e69068 background_mp.dds
+ e69080 Nothing connected to BUTTON_KIOSK_DEMO_TASK1
+ e690b0 Nothing connected to BUTTON_KIOSK_DEMO_TASK2
+ e690e0 !g_loadingHeap.HasAllocatedStealable()
+ e69108 m_numPageEventHandlers < kMaxPageEventHandlers
+ e69138 movie1/%s.m2v
+ e69170 thissss_is_large_text._this_is_large_text._this_is_large_text._this_is_large_text.
+ e69220 m_pFgDataBuffer
+ e69230 game/menu/menutreasurescene.cpp
+ e69250 Mesh not found in artgroup %s!
+ e69270 Skeleton for mesh %s not found!
+ e69298 m_pAnimData
+ e692a8 m_pInstance
+ e692b8 pArtItemGeo->m_prototypeId
+ e692d8 lake-ellie-backpack-hud
+ e69300 game/nav/nav-game-util.cpp
+ e69320 Deselect All
+ e69330 Display Polys
+ e69340 Display Polys (no trans)
+ e69360 Display Bounding Box
+ e69378 Display Poly Ids
+ e69390 Display Link Ids
+ e693a8 Display Poly Flags
+ e693c0 Display Connectivity
+ e693d8 Display Grid
+ e693e8 Display Sample Points
+ e69400 Display Cover APs
+ e69418 Display Cover AP Feature Details
+ e69440 Display Cinematic APs
+ e69458 Display Turret APs
+ e69470 Display Perch APs
+ e69488 Display Traversal APs
+ e694a0   DEBUG Fix Taps To Collision
+ e694c0 Display Traversal APs Detail
+ e694e0 Display NavMesh Stats
+ e694f8 Display Height Map
+ e69510 Display Nav Path Nodes
+ e69528 %s/actor%i/%s.pak
+ e69540 pSkeletonPart
+ e69550 game/net/custom-player-manager.cpp
+ e69578 pModelnames
+ e69588 pItemArray
+ e69598 team >= 0 && team < NetInfo::kMaxNetTeams
+ e695c8 pPalette
+ e695d8 Missing palette for %s
+ e695f0 More than %i models in custom slot
+ e69618 pPart->m_modelNames->m_count <= DC::kSwappableSlotModelsPerSlot
+ e69658 emblems/%s
+ e69668 emblems/spray-01
+ e69680 emblems/emblem-16-drips
+ e696a0 npManagerCallback
+ e697c0 [%s] SCE_NP_MANAGER_EVENT_GOT_TICKET
+ e697e8 	ticket error 0x%x
+ e69800 	ticket size %d
+ e69818 basicCb gets error. ret = 0x%x
+ e69838 too many basic handler. ignore ....
+ e69860 Refresh Upgrade Catalog
+ e69878 %s-THELASTOFUSONPAS
+ e69890 Net Clock = %f
+ e698a1 [0;31;40m[%3.4f]
+ e698b2 [0;30;47m 
+ e698c0 [udpp2p] : recv from %s:%d     %d
+ e698e8 game/net/flow.cpp
+ e69900 : |@CFFF0C828|
+ e69910 %id %ih %im
+ e69920 %ih %im
+ e69928 Unknown Value!
+ e69938 |@CFF999999|     
+ e69950 result %i
+ e69960 %s left match
+ e69970 ************** Asked to start Connection
+ e699a0 Kicking '%s' out!!!!!!!!
+ e699c0 New host : %s
+ e699d0 %s:%i : GOTO %s
+ e699e8 NET_SM_START_MATCHMAKING
+ e69a08 (v.%d) Recorded bytes = %i KB
+ e69a28 %24s %s
+ e69a30  Ping   LastS   LastR  SeqS  SeqR  SeqA PackD PackR    SentB    RecvB Status        IP      Bandwidth    RTT
+ e69aa0 %24s %3ims %7.2f %7.2f %5i %5i %5i %5i %5i %8i %8i %2i %12s:%-5i %5iKBps %3.2fms
+ e69af8 %24s  %i %i
+ e69b08 %i.%02i.%03i
+ e69b18 TICKETING SERVICE ID : %s
+ e69b38 sceNpManagerRegisterCallback() failed. ret = 0x%x
+ e69b70 sceNpManagerRequestTicket2() failed. ret = 0x%x
+ e69ba8 sceNpManagerGetTicket() error 0x%x
+ e69bd0 sceNpManagerGetTicket() failed. ret = 0x%x
+ e69c00 Issuer ID = %d
+ e69c10 t1.final.dev
+ e69c20 t1.final.prod
+ e69c30 %s joined match
+ e69c48 Clearing Initial Host Connection
+ e69c80 sceNpProfileCallGui(&g_selectedFriendNpId, NullSceNpProfileResultHandler, 0, 0)
+ e69cd0 sceNpProfileCallGui(&m_selectedPlayerMetNpId, NullSceNpProfileResultHandler, 0, 0)
+ e69d28 sceNpBasicAddFriend(&m_selectedPlayerMetNpId, g_textDb.GetText(StringId(0x2de07d54)), SYS_MEMORY_CONTAINER_ID_INVALID)
+ e69da0 Multiplayer LAN
+ e69db0 Invalid Data from Server
+ e69dd0 playercount
+ e69de0 dailycount
+ e69df0 location
+ e69e00 latitude = %f, longitude = %f
+ e69e20 heartbeat
+ e69e30 ************** Connection established for %s in %3.2f secs  canTalkToAll = %i (%i, %i)
+ e69e88 ************** ResetConnection %i %s
+ e69eb0 ************** StartConnection %s
+ e69ed8 ************** Connections done sending to host %s %i %i %i
+ e69f18 ********* Clear Player %s
+ e69f38 ************** ResetConnection2 %i %s
+ e69f60 *************** %s has left : timed out
+ e69f90 ****lost connection to party member %s, kicking from party
+ e69fd0 ****lost connection to party host %s, leaving party
+ e6a008 SendHeartBeat
+ e6a018 matchmaking
+ e6a028 playing
+ e6a030 %s heartbeat %s  headset %d party %d match_mode %d gametype %d nat %d playlist %d
+ e6a088 %s playercount
+ e6a098 GetLocation
+ e6a0a8 get-location %s
+ e6a0c0 facebook-server
+ e6a0d0 facebook-get-fid
+ e6a0e8 heartbeat-server
+ e6a100 heartbeat %s
+ e6a110 AutoMatchmaking
+ e6a120 Game Data Version = %x
+ e6a138 NetInit
+ e6a140 Multiplayer
+ e6a150 sceNpBasicGetEvent() failed. ret = 0x%x
+ e6a180 %s is offline
+ e6a190 %s has updated presence
+ e6a1b0 data = '%s'
+ e6a1c0 NetInit Started
+ e6a1d0 sceNpManagerGetNpId() failed. ret = 0x%x
+ e6a200 u3.beta.dev
+ e6a210 u3.beta.prod
+ e6a220 http://d2i3taxxse9z6x.cloudfront.net
+ e6a248 http://%s.naughtydog.com
+ e6a268 Content Delivery : %s
+ e6a280 http://%s.s3.amazonaws.com
+ e6a2a0 S3 bucket : %s
+ e6a2b0 net1.bin
+ e6a2c0 net5-beta.bin
+ e6a2d0 ticket-server
+ e6a2e0 %s/languages/%s
+ e6a2f0 sceNpBasicRegisterHandler() failed. ret = 0x%x
+ e6a320 g_pSessionManager->Init()() failed. ret = 0x%x
+ e6a350 g_udpSocket.Init() failed. 0x%x
+ e6a378 g_udpSocketWorld.Init() failed. 0x%x
+ e6a3a0 g_mNpConnectionManager->Init() failed. 0x%x
+ e6a3d0 Nat Type = %i
+ e6a3e8 english
+ e6a3f0 %s/build/%s/sound1/streams/speech/%s.psarc
+ e6a420 www.google-analytics.com
+ e6a440 utmwv=5.2.5&utmac=UA-27465290-1&utmn=%i&utmp=%s&utmipc=%s&utmcc=__utma=1.%d.%d.%d.%d.%i;+
+ e6a4a0 netinit
+ e6a4a8 GET /__utm.gif?%s HTTP/1.0
+ e6a4c4 Host: %s
+ e6a4ce Connection: close
+ e6a4e8 NetInit Done
+ e6a4f8 ERROR NET INIT %x
+ e6a510 !m_rBuffer
+ e6a520 game/net/in-game-commerce.cpp
+ e6a540 !m_buffer
+ e6a550 upgrades.txt.crypt
+ e6a568 upgrades-eu.txt.crypt
+ e6a580 upgrades-jp.txt.crypt
+ e6a598 upgrades-as.txt.crypt
+ e6a5b0 extras.txt.crypt
+ e6a5c8 extras-eu.txt.crypt
+ e6a5e0 extras-jp.txt.crypt
+ e6a5f8 extras-as.txt.crypt
+ e6a610 http://%s.s3.amazonaws.com/t1/upgrades/%s
+ e6a640 m_rBuffer
+ e6a658 Error Creating Info Req = 0x%x
+ e6a678 Error Creating Info Start = 0x%x
+ e6a6a0 Couldn't Find Product! = 0x%x
+ e6a6c0 Error Getting Result! = 0x%x
+ e6a6e0 Error Initing Product Info Results = 0x%x
+ e6a710 Error Getting Product Info = 0x%x
+ e6a738 Error Getting Sku Info = 0x%x
+ e6a758 Error Destroying Info Req = 0x%x
+ e6a780 ret >= 0
+ e6a790 Item doesn't have SKU info!! %s %s
+ e6a7b8 -DLCITEMS01
+ e6a7c8 -DLCITEMS02
+ e6a7d8 -DLCITEMSNEW01
+ e6a7e8 -DLCITEMSNEW02
+ e6a7f8 -DLCITEMSNEW03
+ e6a808 -DLCITEMSNEW04
+ e6a818 -DLCITEMSNEW05
+ e6a828 -DLCITEMSNEW06
+ e6a838 game/net/lobby-flow.cpp
+ e6a850 Leaving Matchmaking Game
+ e6a870 Going to Multiplayer Page
+ e6a890 NET_SM_CHOOSE_HOST_JOIN
+ e6a8a8 A party member couldn't talk to the game host
+ e6a8d8 flag >= 0 && flag < kNetLobbyFailCount
+ e6a900 pPartyMember
+ e6a910 pMatchMember
+ e6a920 NET_SM_READY_UP
+ e6a930 users.m_userCount <= 32
+ e6a948 NET_SM_CLIENT_CONNECT_TO_HOST
+ e6a968 NET_SM_LEAVE_GAME
+ e6a980 NET_SM_CUSTOM_GAME_PRE_LOAD_SCREEN
+ e6a9a8 NET_SM_CUSTOM_GAME_LOAD_SCREEN
+ e6a9c8 NET_SM_CUSTOM_GAME_LOAD_SCREEN_2
+ e6a9f0 NET_SM_CUSTOM_GAME_LOAD_SCREEN_3
+ e6aa18 Host NET_SM = %i
+ e6aa30 NET_SM_CLIENT_WAIT_FOR_PARTY_CONNECT_GAME_HOST
+ e6aa60 NET_SM_SETUP_TEAMS
+ e6aa78 NET_SM_SERVER_LOBBY
+ e6aa90 NET_SM_CUSTOM_GAME_HOST_WAIT_INFO
+ e6aab8 sceNpMatching2CreateJoinRoom() failed. ret = 0x%x
+ e6aaf0 NET_SM_CREATE_GAME_WAIT
+ e6ab08 Leave Game
+ e6ab18 Client NET_SM = %i
+ e6ab30 Join failed, no connection
+ e6ab50 NET_SM_CLIENT_RESERVE_SLOTS_WAIT
+ e6ab78 NET_SM_CLIENT_WAIT_FOR_PARTY_HOST_JOIN
+ e6aba0 Joining Request rejected
+ e6abc0 Joining Request timed out
+ e6abe0 sceNpMatching2JoinRoom() failed. ret = 0x%x
+ e6ac10 sceNpMatching2JoinRoom() failed. timed out
+ e6ac40 NET_SM_CLIENT_JOIN_GAME_WAIT
+ e6ac60 game/net/net-anim-command-generator.cpp
+ e6ac88 NetAnimList::AddAnim - too many animations
+ e6acb8 m_numAnims < kMaxAnims
+ e6acd0 NetSnapshotAnimCmdParser - not enough ice instances
+ e6ad08 NetSnapshotAnimCmdParser - missmatched hierarchy id
+ e6ad40 	 AnimCmdEvaluateCopyDown1: 
+ e6ad60 	 AnimCmdEvaluateCopy: Src %d Dest %d 
+ e6ad88 	 AnimCmdBreakLayer: 
+ e6ada0 	 AnimCmdBreakBindPose: Out %d 
+ e6adc8 	 AnimCmdBreakFlip: Out %d 
+ e6adf0 additive
+ e6ae00 	 AnimCmdBlend100: [%s] %f, Left %d, Right %d, Out %d 
+ e6ae38 	 AnimCmdBlend: [%s], Blend %1.2f, Left %d, Right %d, Out %d 
+ e6ae78 	 AnimCmdRetarget: [%s] [%s] [%s], Phase %1.2f / 1.00, Out %d 
+ e6aeb8 	 AnimCmdClip: [%s] [%s], Phase %1.2f / 1.00, Out %d 
+ e6aef0 	 AnimCmdCustomPluginLegIkFix: Blend %d Base %d Skel %d
+ e6af30 Snapshot [%d]: Time %f 
+ e6af50 cfov < 180.0f
+ e6af60 cfov2 < 180.0f
+ e6af70 iProcGroup < 2
+ e6af80 NetAnimCmdGenerator::CreateAnimCmds - doesn't have enough snapshots!
+ e6afe0 screenIndex >= 0 && screenIndex < 2
+ e6b008 game/net/net-booster-manager.cpp
+ e6b030 screenId >= 0 && screenId < 2
+ e6b050 storeMenuIconIndex >= 0 && storeMenuIconIndex < kMaxNetUpgradeBoosters
+ e6b098 boosterIndex >= 0 && boosterIndex < 64
+ e6b0c0 iScreen >= 0 && iScreen < 2
+ e6b0e0 Missing booster icon %s, replacing with %s
+ e6b110 Missing booster icon %s
+ e6b130 boosterSlot != -1
+ e6b148 slot != -1
+ e6b158 pWeapon
+ e6b160 game/net/net-buff-manager.cpp
+ e6b180 game/net/net-character-animate.cpp
+ e6b1e0 pp.GetAnimControl()
+ e6b1f8 game/net/net-character.cpp
+ e6b218 pp.GetAnimControl()->GetBaseStateLayer()
+ e6b248 m_isMenuPlayer
+ e6b258 GetAnimControl()->GetBaseStateLayer()
+ e6b280 pNetLayer
+ e6b290 !m_isMenuPlayer
+ e6b2a0 rightHand
+ e6b2b0 leftHand
+ e6b2c0 AnimTopInfo
+ e6b2d0 AnimNetPlayerInfo
+ e6b2e8 AnimNetPlayerTopInfo
+ e6b300 AnimNetPlayerInstanceInfo
+ e6b320 NetCharacter
+ e6b330 NetMove
+ e6b338 NetMelee
+ e6b348 FrontEnd
+ e6b358 PlayerBase
+ e6b368 animId != INVALID_STRING_ID
+ e6b388 game/net/net-character-death.cpp
+ e6b3b0 self.IsRagdollPhysicalized()
+ e6b3d0 Ragdoll
+ e6b3d8 m_pNetCharacter
+ e6b3e8 game/net/net-character-event-handler.cpp
+ e6b418 iPiece >= 0 && iPiece < kMaxArmorSlots
+ e6b440 damageTotal == 0 || pAttack->m_sourceWeaponId != StringId(0x11a8d025)
+ e6b488 NetCharacter - unsupported attack type
+ e6b4b0 set-script-face-anim-id - expects 1 argument
+ e6b4e0 !m_beltAttachment.HandleValid()
+ e6b500 pLayer
+ e6b508 game/net/net-character-fire-animation.cpp
+ e6b538 game/net/net-character-reaction.cpp
+ e6b560 Net Character
+ e6b570 [FACTION-PLURAL]
+ e6b588 [FACTION]
+ e6b598 [ENEMY-FACTION]
+ e6b5a8 [ENEMY-FACTION-PLURAL]
+ e6b5c0 [ENEMY-FACTION-CAPITAL]
+ e6b5d8 [ENEMY-FACTION-PLURAL-CAPITAL]
+ e6b5f8 pEvent
+ e6b600 game/net/net-clan-manager.cpp
+ e6b620 pStringList
+ e6b630 tier < 3 && tier >= 0
+ e6b648 index < 3 && index >= 0
+ e6b660 https://graph.facebook.com/%lld/picture?width=116&height=116&access_token=%s
+ e6b6b0 false && "Couldn't find mission??"
+ e6b6e0 m_missionChoicePeople[i] < 512
+ e6b700 m_missionUndoPeople[undo] < 512
+ e6b720 m_missionUndoPeople[undo] >= 0
+ e6b740 pMission
+ e6b750 mult >= 1.0f
+ e6b760 GetCurrentMission()
+ e6b778 false && "obsolete"
+ e6b810 game/net/net-clip-pages.cpp
+ e6b830 weaponListIndex >= 0
+ e6b850 +%i %s
+ e6b858 Invalid weapon loadout choice %s, weapon art def not found
+ e6b898 %s/%s.crypt
+ e6b8a8 %s/%s/%s.psarc.crypt
+ e6b8c0 %s/%s/%s.psarc
+ e6b8d0 %s/%s/%s/%s
+ e6b8e8 rigidBodyIndex < 256
+ e6b900 game/net/net.cpp
+ e6b918 m_numMessages > 0
+ e6b930 game/net/net-email.cpp
+ e6b948 pProcess
+ e6b958 game/net/net-event.cpp
+ e6b970 NetEventPlayVox - no me NetPlayerTracker
+ e6b9a0 pMeTracker
+ e6b9b0 NetEventPlayVox - invalid speaker type
+ e6b9d8 (animIndex & (-1<<NetSnapshot::kAnimIdBits)) == 0
+ e6ba10 Can't find animation '%s' in net art groups!
+ e6ba40 g_netGameManager.IsHost()
+ e6ba60 NetEventStartConnection
+ e6ba78 NetEventConnectionDone
+ e6ba90 NetEventLoadLevel
+ e6baa8 NetEventReadyToStart
+ e6bac0 NetEventStartGame
+ e6bad8 NetEventEndGame
+ e6bae8 NetEventEndRound
+ e6bb00 NetEventEmitProjectileBullet
+ e6bb20 NetEventSpawnProjectileThrowable
+ e6bb48 NetEventKillProjectileThrowable
+ e6bb68 NetEventEmitGrenade
+ e6bb80 NetEventSpawnExplosion
+ e6bb98 NetEventGrenadeStartFuse
+ e6bbb8 NetEventPlayerMove
+ e6bbd0 NetEventNpcMove
+ e6bbe0 NetEventAttackProjectile
+ e6bc00 NetEventAttackExplosion
+ e6bc18 NetEventKillInfo
+ e6bc30 NetEventAssignTeam
+ e6bc48 NetEventAssignTeamDesc
+ e6bc60 NetEventAssignTeamDone
+ e6bc78 NetEventRequestInteract
+ e6bc90 NetEventApprovedInteract
+ e6bcb0 NetEventDeniedInteract
+ e6bcc8 NetEventOnInteract
+ e6bce0 NetEventEndInteract
+ e6bcf8 NetEventAddDroppedInteractable
+ e6bd18 NetEventRemoveInteractable
+ e6bd38 NetEventSetInteractableAmmo
+ e6bd58 NetEventRespawnPlayer
+ e6bd70 NetEventSignalRespawnPlayer
+ e6bd90 NetEventSecureCarryObject
+ e6bdb0 NetEventSecuredFlagScore
+ e6bdd0 NetEventStartPackOrDeploy
+ e6bdf0 NetEventStopPackOrDeploy
+ e6be10 NetEventSpawnCarryObject
+ e6be30 NetEventCarryObjectDrop
+ e6be48 NetEventCarryObjectStopMove
+ e6be68 NetEventNpcSpawn
+ e6be80 NetEventNpcKill
+ e6be90 NetEventBreakableAttackProjectile
+ e6beb8 NetEventBreakableAttackProjectileWithResults
+ e6bee8 NetEventBreakableAttackExplosion
+ e6bf10 NetEventBreakableAttackExplosionWithResults
+ e6bf40 NetEventPlayerInfo
+ e6bf58 NetEventMessage
+ e6bf68 NetEventEvent
+ e6bf78 NetEventRevive
+ e6bf88 NetEventReviveFinished
+ e6bfa0 NetEventReviveCredit
+ e6bfb8 NetEventPlayVox
+ e6bfc8 NetEventSimpleSnapshot
+ e6bfe0 NetEventSimpleSnapshotPhysFx
+ e6c000 NetEventNpcPiecewiseHealthDepleted
+ e6c028 NetEventPlayerDeathCleanup
+ e6c048 NetEventCompleteTask
+ e6c060 NetEventStartNetTask
+ e6c078 NetEventPlayerHealth
+ e6c090 NetEventHeal
+ e6c0a0 NetEventKickGriefer
+ e6c0b8 NetEventCoopTeamFailed
+ e6c0d0 NetEventAbortInteract
+ e6c0e8 NetEventSpawnEntity
+ e6c100 NetEventKillEntity
+ e6c118 NetEventAnimationSync
+ e6c130 NetEventSyncStats
+ e6c148 NetEventSyncStatsPlayer
+ e6c160 NetEventSyncCarryObjects
+ e6c180 NetEventSyncCarryObjectStands
+ e6c1a0 NetEventSyncWeaponPickups
+ e6c1c0 NetEventSyncBreakable
+ e6c1d8 NetEventSyncPlayers
+ e6c1f0 NetEventRequestOwnership
+ e6c210 NetEventTransferOwnership
+ e6c230 NetEventDenyOwnershipRequest
+ e6c250 NetEventNetGo
+ e6c260 NetEventSwapBooster
+ e6c278 NetEventStartMelee
+ e6c290 NetEventAbortMelee
+ e6c2a8 NetEventAttackMeleeDamage
+ e6c2c8 NetEventSetMeleeHistory
+ e6c2e0 NetEventResetMeleeHistory
+ e6c300 NetEventMeleeAssist
+ e6c318 NetEventMeleeBlock
+ e6c330 NetEventNpdStat
+ e6c340 NetEventDebug
+ e6c350 NetEventNetSet
+ e6c360 NetEventClientNetGo
+ e6c378 NetEventLateJoinSyncDone
+ e6c398 NetEventLateJoinSyncDoneHost
+ e6c3b8 NetEventPhaseSnapshot
+ e6c3d0 NetEventSyncOddLives
+ e6c3e8 NetEventDebugCaption
+ e6c400 NetEventNpcHitReaction
+ e6c418 NetEventNpcDeathReaction
+ e6c438 NetEventNpcSetHost
+ e6c450 NetEventNpcOnScreen
+ e6c468 NetEventSetTension
+ e6c480 NetEventAudioGameplayEvent
+ e6c4a0 NetEventGiveItem
+ e6c4b8 NetEventItemReceived
+ e6c4d0 NetEventIncrementTallyStat
+ e6c4f0 NetEventIncrementScore
+ e6c508 NetEventSetPlayerExposed
+ e6c528 NetEventAddNetMarker
+ e6c540 NetEventPlayerLeft
+ e6c558 NetEventDismember
+ e6c570 NetEventKillAllMines
+ e6c588 NetEventSpawnVisibilityBlocker
+ e6c5a8 NetEventSyncProxyMine
+ e6c5c0 NetEventExplode
+ e6c5d0 NetEventSetWeaponUpgradeLevel
+ e6c5f0 NetEventDebugSwapPart
+ e6c608 NetEventEmitArrow
+ e6c620 NetEventSpawnArmorDestruction
+ e6c640 kNumNetEvents
+ e6c650 NetFriend::UpdatePresence
+ e6c670 sceNpBasicGetFriendPresenceByNpId(&m_user.userId, &m_pres, 0)
+ e6c6b0 Load Players Met
+ e6c6c8 https://graph.facebook.com/%lld?fields=name&access_token=%s
+ e6c708 NetFriends
+ e6c718 sceNpBasicGetFriendListEntryCount(&count)
+ e6c748 NetFriends::RoomMemberCallback
+ e6c768 sceNpMatching2GetEventData(id, eventKey, roomMembers, dataSize)
+ e6c7a8 Load Friends and Players Met
+ e6c7c8 facebook
+ e6c7d8 Adding player %s to players history
+ e6c800 sceNpBasicAddPlayersHistory failed %x
+ e6c828 Get Facebook name
+ e6c840 Add Players Met
+ e6c850 NetFriends::StaticLoadPlayersMet
+ e6c878 sceNpBasicGetPlayersHistoryEntryCount(SCE_NP_BASIC_PLAYERS_HISTORY_OPTIONS_ALL, &count)
+ e6c8d0 screenIndex > -1
+ e6c8e8 game/net/net-game-manager.cpp
+ e6c908 screenIndex < 2
+ e6c918 art/levels/airport/prototypes/multi/objects/office/air-multi-blackboard.ma
+ e6c968 index < s_numWeaponTable + pMap->m_count + pItems->m_count
+ e6c9a8 s_numWeaponTable + pMap->m_count < kMaxWeapons
+ e6c9d8 pArray
+ e6c9e0 NetObjectStateManager::LogState - Too many State Objects
+ e6ca20 m_numObjects < kMaxStateObjects
+ e6ca40 NetObjectStateManager::LogState - Too many Script Objects
+ e6ca80 NetGameManager - too many npcs for a network game!
+ e6cab8 %s-%i-%i
+ e6cac8 NetProjectile
+ e6cad8 NetSpawnEntity
+ e6cae8 |@S||@R8080FF|%i|@RFFFFFF||@N| %s
+ e6cb10 pTracker
+ e6cb20 team >= 0 && team <= 1
+ e6cb38 spawnSpot < 4
+ e6cb48 pPrimaryScreen
+ e6cb58 ------------------------------------- $$$$$$$$$$$$$$$ %s
+ e6cb98 NetGameManager::SendNetEventToHost - we don't have a host
+ e6cbe0 weightTotal > 0
+ e6cbf0 pGameArray
+ e6cc00 menu-default
+ e6cc10 ASSIGNING TEAMS=========================================
+ e6cc50 Player Parts Per Minute %s - %d
+ e6cc78 %s %i %i
+ e6cc88 %s team %d
+ e6cc98 !pTracker->IsActive() || pTracker->m_team >= 0
+ e6ccc8 totalAssignedPlayers == numPlayers
+ e6ccf0 pTracker->m_team < NetInfo::kMaxNetTeams
+ e6cd20 pTracker->m_team >= 0
+ e6cd38 pTasks
+ e6cd40 m_taskIndex >= 0 && m_taskIndex < pTasks->m_count
+ e6cd78 m_debugTaskIndex < pTasks->m_count
+ e6cda0 pTasks && pTasks->m_count > 0
+ e6cdc0 Too many rounds for net game
+ e6cde0 numDesiredTasks < NetInfo::kMaxNetRounds
+ e6ce10 pSubtasks
+ e6ce20 m_subtaskIndex >= 0 && m_subtaskIndex < pSubtasks->m_count
+ e6ce60 GetCurrentNetSubtask() != NULL
+ e6ce80 Missing coop spawner for player '%s'!
+ e6cea8 No open respawn points, using start spawn point
+ e6cee0 bestSpawner != INVALID_STRING_ID
+ e6cf08 missing continue for %s
+ e6cf28 pSubtask->m_continue
+ e6cf40 NetGameManager:: g_netInfo.m_netGameStartTime = %f
+ e6cf78 (m_version & 0xFFFFF000) == 0
+ e6cf98 game/net/net-info.cpp
+ e6cfb0 (playlist & 0xFFFFFF00) == 0
+ e6cfd0 (mode & 0xFFFFFFF0) == 0
+ e6cff0 [REDACTED-AWS-SECRET-KEY]
+ e6d020 [REDACTED-AWS-ACCESS-KEY-ID]
+ e6d038 NetInteractable
+ e6d048 NetInteractableManager - too many interactables! total = %i
+ e6d088 game/net/net-interactable-manager.cpp
+ e6d0b0 invite-server
+ e6d0c0 invite-list %s
+ e6d0d0 m_thread == 0
+ e6d0e0 game/net/net-invite.cpp
+ e6d0f8 invite-delete %s %s
+ e6d110 game/net/net-late-join.cpp
+ e6d130 NET_SM_CLIENT_CUSTOM_LATE_JOIN_SCREEN_3
+ e6d158 false && "Too many people Late Joining at once!"
+ e6d190 g_matchSession.IsHost()
+ e6d1a8 g_lateJoinStatus[0] < kLateJoinMax
+ e6d1d0 NET_SM_CLIENT_LATE_JOIN
+ e6d1e8 NET_SM_CLIENT_CUSTOM_LATE_JOIN_SCREEN
+ e6d210 g_lateJoinStatus[i] < kLateJoinMax
+ e6d238 Connections done
+ e6d250 Compare
+ e6d268 leaderboard-server
+ e6d280 leaderboard-get %i 1
+ e6d298 leaderboard-range %i %i %i 1
+ e6d2b8 leaderboard-update %i %s %lld %s
+ e6d2e0 %s/%s-1.psarc
+ e6d2f8 build/%s/actor%i
+ e6d310 build/%s/text1/%i.networking
+ e6d330 userdata/%s.txt
+ e6d380 game/net/net-matchmaking.cpp
+ e6d3a0 NET_SM_POST_VOTE_SCREEN
+ e6d3b8 NET_SM_CLIENT_GAME_LIST_PICK
+ e6d3d8 g_bestRoom
+ e6d3e8 *********** Joining Room %s %i players
+ e6d410 matchmaking room host left
+ e6d430 matchmaking room destroyed
+ e6d450 Kicked Out of Loading Screen because of timing out (or XMB invite)
+ e6d498 NET_SM_CLIENT_LATE_JOIN_SCREEN_3
+ e6d4c0 NET_SM_LOAD_LEVEL
+ e6d4d8 sceNpMatching2JoinRoom() failed. match session status failed
+ e6d518 PingCriteria failed %i < %i
+ e6d538 NET_SM_CLIENT_START
+ e6d550 Searching Game with Criteria %i
+ e6d578 NET_SM_CLIENT_GAME_LIST_WAIT
+ e6d598 retRtt = %x   retBandwidth = %x   Rtt = %i ms   Bandwidth = %i KBps
+ e6d5e0 Ping = %i ms  Bandwidth = %i KBps
+ e6d608 NET_SM_SERVER_VOTE_SCREEN
+ e6d628 Game starting in %i seconds
+ e6d648 ****************** GATHER ******************
+ e6d678 ****************** SEARCH ******************
+ e6d6a8 NET_SM_CLIENT_LATE_JOIN_SCREEN_2
+ e6d6d0 NET_SM_SELECT_CLAN_BOOSTER_SCREEN
+ e6d6f8 NET_SM_SELECT_LOADOUT_SCREEN
+ e6d718 NET_SM_CLIENT_LATE_JOIN_SCREEN
+ e6d738 ******************** %llx *************** %llx ***********
+ e6d778 Host Asked to leave the room      %i
+ e6d7a0 NET_SM_CLIENT_VOTE_SCREEN
+ e6d7c0 %lld seconds ago
+ e6d7d8 %lld minutes ago
+ e6d7f0 %lld hours ago
+ e6d800 %lld days ago
+ e6d810 %lld weeks ago
+ e6d820 validCount <= pTips->m_num
+ e6d840 game/net/net-menu.cpp
+ e6d858 pFriend
+ e6d860 https://graph.facebook.com/%lld/picture?type=square&access_token=%s
+ e6d8a8 clan/tutorial-supplies-2
+ e6d8c8 clan/tutorial-supplies-1
+ e6d8e8 controller-scheme/controller-scheme-sp
+ e6d910 controller-scheme/controller-scheme-en
+ e6d938 controller-scheme/controller-scheme-fr
+ e6d960 controller-scheme/controller-scheme-ger
+ e6d988 controller-scheme/controller-scheme-il
+ e6d9b0 I32(item.m_productName) != 1
+ e6d9e0 tip image not found: %s
+ e6da00 |@C%08x|%s|@CFFFFFFFF|
+ e6da18 clan/intro-world
+ e6da38 |@Cff7cce96|%s
+ e6da48 [%s] %s
+ e6da50 clan/hunter
+ e6da60 clan/firefly
+ e6da70 %s\\%s
+ e6da78 %s - |@C%08x|%02d:%02d
+ e6daa0 - %s / %s
+ e6dab0 |@H|%s
+ e6dabc %s%s%s
+ e6dac8 |@H|%s
+ e6dad4 %s%s%s
+ e6dae0 |@H|%s
+ e6daf0 |FB| %s
+ e6daf8 |@Cffff0000|%s %s
+ e6db10 |@Cff00ff00|%s %s
+ e6db28 https://graph.facebook.com/me/picture?type=square&access_token=%s
+ e6db70 |SELECT|
+ e6db80 |D-PAD-LR|
+ e6dbc8 %s|@Cff00ff00|$%s
+ e6dbe8 %3.0f%%
+ e6dc78 Skins...
+ e6dc88 Team 0 Override
+ e6dc98 Team 1 Override
+ e6dcb8 Helmets
+ e6dcc0 Force no communication from session server
+ e6dcf0 Show Debug Traffic
+ e6dd08 Disable Min Player Limit
+ e6dd28 Force Matchmaking Min Players
+ e6dd50 m_numVariations <= kMaxVariationsPerMap
+ e6dd78 game/net/net-menu-host.cpp
+ e6dd98 m_numMapInfos <= kMaxMapsPerGameType
+ e6ddc0 pGameArray->m_num <= 256
+ e6dde0 m_numGameTypeInfos <= kMaxGameTypeInfos
+ e6de08 Send Message %x, size %i
+ e6de28 %i messages : 
+ e6de40 Get Message %x, size %i
+ e6de60 Post Message %x, size %i
+ e6de80 Message already exists
+ e6de98 g_npMessageQueueNum < NP_MESSAGE_QUEUE_MAX
+ e6dec8 game/net/net-np-message.cpp
+ e6dee8 %s left party
+ e6def8 NET_SM_PARTY_ERROR
+ e6df10 %s joined party
+ e6df28 m_isSlave == isSlave
+ e6df40 game/net/net-player-data.cpp
+ e6df60 %s/lan-profiles-%d
+ e6df78 NetPlayerData
+ e6df88 GetNpId(&npId)
+ e6df98 profiles/%s/profile.%d
+ e6dfb0 %s/lan-profiles-%d/%s
+ e6dfc8 len == sizeof(m_tusData)
+ e6dfe8 sizeof(NetPlayerData) <= Memory::GetSize(ALLOCATION_NET_PLAYER_DATA)
+ e6e030 %s/lan-profiles-%d/
+ e6e048 dataName >= 0 && dataName < kLoadoutSize
+ e6e078 loadoutNum >= 0 && loadoutNum < kNumCustomLoadoutsPerMode
+ e6e0b8 pFirstNames
+ e6e0c8 pLastNames
+ e6e0d8 NetPlayerData Publish Thread
+ e6e0f8 sys_ppu_thread_create(&m_threadId, _RunPublishThread, (uint64_t)this, 1001, 20384, 0, "NetPlayerData Publish Thread")
+ e6e170 NetPlayerData Connect Thread
+ e6e190 sys_ppu_thread_create(&m_threadId, _RunConnectThread, (uint64_t)this, 1001, 20384, 0, "NetPlayerData Connect Thread")
+ e6e2a0 game/net/net-player-tracker.cpp
+ e6e2c0 teamId >= 0
+ e6e2d0 m_numAppliedBuffs < kMaxAppliedBuffs
+ e6e2f8 %s/badges/%s
+ e6e308 giftbox list %s not found!
+ e6e328 ScriptManager::LookupInModule<DC::NetGiftboxArray>(giftboxListId, StringId(0x4240ef2e), NULL)
+ e6e388 giftbox list %s is empty!
+ e6e3a8 ScriptManager::LookupInModule<DC::NetGiftboxArray>(giftboxListId, StringId(0x4240ef2e), NULL)->m_num > 0
+ e6e418 spawnOnAlly || spawnerId != INVALID_STRING_ID
+ e6e448 Missing spawner '%s' trying to spawn player, level %s
+ e6e480 IsFinite(bf.GetLocator())
+ e6e4a0 [no level]
+ e6e4b0 IsFinite(loc)
+ e6e4c0 m_screenId >= 0 && m_screenId < 2
+ e6e4e8 spawnerId != INVALID_STRING_ID
+ e6e508 !IsLoadoutChangePending(m_screenId)
+ e6e548 Presence Thread
+ e6e558 presence %s
+ e6e578 info %lld %s 1
+ e6e588 friends
+ e6e598 err %i
+ e6e5a0 presence
+ e6e5b0 %s: called outside of multiplayer
+ e6e5d8 game/net/net-script-funcs.cpp
+ e6e5f8 net-player-coop-id - invalid spawner index
+ e6e628 net-player-coop-id - no player tracker
+ e6e650 net-get-net-id-from-player: no player tracker with for process %s
+ e6e698 net-get-joypad-from-player - couldn't find player
+ e6e6d0 net-get-npc-fight-bound-frame: tracker has no NetCharacter
+ e6e710 net-get-npc-fight-bound-frame: no player tracker
+ e6e748 net-get-player-by-net-id - tracker has no character character
+ e6e788 net-get-player-by-net-id - no player tracker
+ e6e7b8 net-character-killed? - can't find player %i
+ e6e7e8 net-set-booster invalid process %s, not a player
+ e6e820 net-set-booster booster not found: %s
+ e6e848 net-set-booster slot index out of bounds: %i
+ e6e878 net-set-booster level %i out of bounds, clamped to %i
+ e6e8b0 iBooster != -1
+ e6e8c0 net-apply-npc-fight-damage: can't find player %i
+ e6e8f8 net-apply-npc-fight-damage: can't find player process %i
+ e6e938 net-apply-npc-fight-damage: can't find npc tracker %s
+ e6e970 net-apply-npc-fight-damage: no npc %s
+ e6e998 net-draw-objective-icon: couldn't find entity %s
+ e6e9d8 net-set-symbol: Couldn't find variable '%s'
+ e6ea08 net-set-boolean: Couldn't find variable '%s'
+ e6ea38 net-set-int32: Couldn't find variable '%s'
+ e6ea68 net-set-float: Couldn't find variable '%s'
+ e6ea98 client-net-go: Expected at least one argument (state-name string)
+ e6eae0 go: This command cannot be executed outside a state script
+ e6eb20 go: Expected one argument (state-name string)
+ e6eb50 net-update-fight-ref: No net player specified
+ e6eb80 net-update-fight-ref: Can't find npc tracker %s
+ e6ebb8 net-update-fight-ref: Can't find npc: "%s"
+ e6ebe8 net-update-fight-ref: Can't find net player tracker
+ e6ec20 net-update-fight-ref: Can't find net character
+ e6ec50 Adjusted Net Char
+ e6ec68 Adjusted NPC
+ e6ec78 net-is-host?
+ e6ec88 net-can-earn-money?
+ e6eca0 net-coop-host-script-id
+ e6ecb8 net-coop-team-failed?
+ e6ecd0 net-current-net-task
+ e6ece8 net-current-net-subtask
+ e6ed00 net-current-net-map-id
+ e6ed18 net-current-round
+ e6ed30 net-spawn-entity
+ e6ed48 net-spawn-entity-at
+ e6ed60 net-kill-entity
+ e6ed70 net-all-players-dead?
+ e6ed88 net-draw-objective-icon
+ e6eda0 net-draw-popup
+ e6edb0 net-player-coop-id
+ e6edc8 net-npc-confirm-coop-players-contact
+ e6edf0 net-get-player-by-net-id
+ e6ee10 net-is-player-local?
+ e6ee28 net-get-joypad-from-player
+ e6ee48 net-get-net-id-from-joypad
+ e6ee68 net-get-net-player-from-joypad
+ e6ee88 net-get-net-id-from-player
+ e6eea8 net-get-team
+ e6eeb8 net-get-npc-fight-bound-frame
+ e6eed8 net-apply-npc-fight-damage
+ e6eef8 net-character-killed?
+ e6ef10 net-get-carry-object
+ e6ef28 net-get-held-object-spawner
+ e6ef48 net-set-booster
+ e6ef58 net-get-grapple-time
+ e6ef70 net-update-fight-ref
+ e6ef88 net-active-player-count
+ e6efa0 net-go
+ e6efa8 client-net-go
+ e6efb8 net-set-fail-reason
+ e6efd0 net-all-players-spawned?
+ e6eff0 net-all-players-out-of-idle?
+ e6f010 net-set-float
+ e6f020 net-set-int32
+ e6f030 net-set-boolean
+ e6f040 net-set-symbol
+ e6f050 net-get-npc
+ e6f060 net-set-counter
+ e6f070 net-set-timer
+ e6f080 net-set-waves
+ e6f090 net-set-message
+ e6f0a0 net-signal-start
+ e6f0b8 net-igcs-enabled?
+ e6f0d0 net-joined-late?
+ e6f0e8 is-multi?
+ e6f0f8 net-get-game-type
+ e6f110 net-reparent-players
+ e6f128 net-start-countdown
+ e6f140 net-split-screen?
+ e6f158 net-joypad-valid?
+ e6f170 net-get-screen-index
+ e6f188 net-player-blocking?
+ e6f1a0 net-get-secured-team
+ e6f1b8 net-fade-to-black
+ e6f1d0 net-fade-from-black
+ e6f1e8 get-net-owner
+ e6f1f8 net-increment-stat
+ e6f210 net-increment-player-score
+ e6f230 net-increment-team-score
+ e6f250 net-get-score
+ e6f260 net-get-stat
+ e6f270 net-get-rounds-won
+ e6f288 net-player-exposed?
+ e6f2a0 net-set-player-spawner
+ e6f2b8 net-get-last-living-team
+ e6f2d8 net-get-team-count
+ e6f2f0 net-get-team-respawn-pool
+ e6f310 net-kill-all-mines
+ e6f328 net-add-radar-icon
+ e6f340 net-radar-and-objective
+ e6f358 Removing User '%s'
+ e6f370 Removing User '%s' failed!!!!!!
+ e6f398 SlotManager Updating User '%s' partyId %i
+ e6f3c8 SlotManager Timeout User '%s'
+ e6f3e8 SlotManager Adding User '%s' partyId %i
+ e6f418 SlotManager Adding User '%s' failed!!!!!
+ e6f448 m_numAnimCommands < kMaxAnimCommands
+ e6f470 game/net/net-snapshot.cpp
+ e6f490 netAnimGroup < DC::kNetAnimGroupNumGroups
+ e6f4c0 artGroup < kNumAnimArtGroups
+ e6f4e0 dicIndex <= numDicAnims
+ e6f4f8 Parser can't find anim group index %i
+ e6f520 pAnimArtGroup
+ e6f530 Parser can't find anim group name %s
+ e6f558 Parser can't find anim name %s
+ e6f580 Parser can't find anim index %i
+ e6f5a0 Parser can't find bind pose anim %s
+ e6f5c8 output > 1
+ e6f5d8 Parser can't find retarget anim group index %i
+ e6f608 Parser can't find retarget anim group name %s
+ e6f638 Parser can't find retarget anim name %s
+ e6f660 Parser can't find retarget anim index %i
+ e6f690 output - 1 >= outputOffset
+ e6f6b0 srcInstance >= 0
+ e6f6c8 destInstance >= 0
+ e6f6e0 blendedInstance >= 0
+ e6f6f8 baseInstance >= 0
+ e6f710 NetSnapshot::kAnimCmdCustomPlugin - unsuported custom plugin
+ e6f750 game/net/net-stats.cpp
+ e6f768 NetStatTally::Add - too many net stats
+ e6f790 m_numDcNetStats < kMaxDcNetStats
+ e6f7b8 NetStatTally::Add - too many net kill stats
+ e6f7e8 m_numDcNetKillStats < kMaxDcNetStats
+ e6f810 NetStatGame::AddNetKill - too many net kill stats
+ e6f850 player.m_team < NetInfo::kMaxNetTeams
+ e6f878 round < NetInfo::kMaxNetRounds
+ e6f898 i < m_numPlayers
+ e6f8b0 === Net Stats ===
+ e6f8c8 === Player %s ===
+ e6f8e0 %-16s = %i
+ e6f8f0 total score
+ e6f900 total score lost
+ e6f918 round score
+ e6f928 round score lost
+ e6f940 pRewardArray
+ e6f950 NetStatGame::IncrementDcNetStat - too many net stats
+ e6f988 Select Second User
+ e6f9a8 game/net/net-tus-variable.cpp
+ e6f9c8 RespawnFinder
+ e6f9d8 PartyLeader asked to leave the game %lld %lld
+ e6fa08 %s - %s %s
+ e6fa18 game/net/task-manager-online.cpp
+ e6fa40 NET_SM_ROUND_RESULTS
+ e6fa58 Save Game Stats
+ e6fa68 NET_SM_RESULTS
+ e6fa78 time left %i
+ e6fa88 NET_SM_RESET
+ e6faa0 ***** Windows Full *****
+ e6fac0 Cheating
+ e6fad0 Host quit for cheating
+ e6fae8 Leaving Game %i %i %i
+ e6fb00 Leaving Game Normally
+ e6fb18 ***** Connection Error *****
+ e6fb38 NET_SM_UPDATE
+ e6fb48 g_matchSession.IsHost() ? NET_SM_SERVER_LOBBY : NET_SM_CLIENT_LOBBY
+ e6fb90 g_matchSession.IsHost() ? NET_SM_CREATE_GAME_WAIT : NET_SM_CLIENT_LOBBY
+ e6fbd8 TaskManagerOnline
+ e6fbf0 EstablishConnection
+ e6fc08 LoadLevels
+ e6fc18 WaitReady
+ e6fc28 Playing
+ e6fc30 PreResetting
+ e6fc40 Resetting
+ e6fc50 ResettingReady
+ e6fc60 ShowResults
+ e6fc70 ShowRoundResults
+ e6fc90 (m_numDamagePoints & (-1 << 3)) == 0
+ e6fcb8 game/net/net-event/net-event-breakable.cpp
+ e6fce8 pAttackInfo->m_damageInfo.m_numPoints <= SimpleBreakable::kMaxNetDamagePoints
+ e6fd38 data.m_numBrokenJoints < 64
+ e6fd58 !g_netGameManager.IsHost()
+ e6fd78 pEvent->m_numCarryRecords < NetEventSyncCarryObjects::kMaxCarryRecords
+ e6fdc0 game/net/net-event/net-event-carry-object.cpp
+ e6fdf0 NetEventSyncCarryObjects - unsupported object state
+ e6fe28 pEvent->m_numStandRecords < NetEventSyncCarryObjectStands::kMaxStandRecords
+ e6fe78 pPickup
+ e6fe80 IsOrthogonal(&xForm)
+ e6fe98 game/net/net-event/net-event-character-move.cpp
+ e6fec8 pArtGroups
+ e6fed8 NetEventCharacterMove - %s has %i frames in %s but %i frames in %s
+ e6ff20 pArtItemAnim->m_pClipData->m_numTotalFrames == pAnim->m_pClipData->m_numTotalFrames
+ e6ff78 animIndex != -1
+ e6ff88 NetEventCharacterMove - too many anims
+ e6ffb0 NetEventCharacterMove - too many dic anims
+ e6ffe0 indexAnims[numAnims] < numDicAnims
+ e70008 NetEventCharacterMove - trying to flip something too many instances away
+ e70058 AnimCmd::kEvaluateCustomPlugin - unsuported custom plugin %s
+ e70118 NetEventGiveItem attempted to receive unknown item or recipe %s
+ e70168 game/net/net-event/net-event-npc.cpp
+ e70190 NetEventNpcSpawn - can't find NPC spawner %s
+ e701c8 NetEventNpcSpawn: trying to spawn NPC '%s' that already exists!
+ e70208 NetEventNpcSpawn: can't find spawner '%s'!!
+ e70238 pSpawner != NULL
+ e70250 Unable to spawn NPC from spawner '%s' check TTY for errors!!
+ e70290 pNpc != NULL
+ e702a0 NetEventNpcSpawn - failed to add to NetGameManager
+ e702e0 NetEventAddDroppedInteractable - unsupported type %s
+ e70318 m_pickupType != kPickupTypeInvalid
+ e70340 game/net/net-event/net-event-pickup.cpp
+ e70368 pNewObject
+ e70378 NetEventAddDroppedInteractable - failed to add weapon!
+ e703b0 NetEventAddDroppedInteractable - failed to add pickup
+ e703e8 m_roomId != 0
+ e703f8 game/net/net-event/net-event-player.cpp
+ e70420 m_spawnerId != INVALID_STRING_ID
+ e70448 pTracker->IsMe()
+ e70460 m_roomId == g_matchSession.GetRoomId()
+ e70488 pTracker && g_netGameManager.IsHost()
+ e704b0 pEvent->m_numPickupRecords < NetEventSyncWeaponPickups::kMaxPickupRecords
+ e70500 game/net/net-event/net-event-weapon.cpp
+ e70528 pSource
+ e70530 (m_animIndex & (-1<<NetSnapshot::kAnimIdBits)) == 0
+ e70568 m_animIndex != -1
+ e70580 pProjectile
+ e70590 projectileId != INVALID_STRING_ID
+ e705b8 NetGameManager - unknown ExplosionSettings %s
+ e705e8 pGrenade
+ e705f8 grenadeId != INVALID_STRING_ID
+ e70630 game/player/bow-aim-control.cpp
+ e70650 IsBlendNode(nodeSnapShot)
+ e70670 ../../shared/src/ndlib/anim/evaluate-anim-tree.h
+ e706a8 blendNode.m_leftIndex >= 0 && blendNode.m_leftIndex < pStateSnapshot->m_numUsedAnimNodeSnapshots
+ e70710 blendNode.m_rightIndex >= 0 && blendNode.m_rightIndex < pStateSnapshot->m_numUsedAnimNodeSnapshots
+ e70778 State %s missing left and right foot channels!  Please correct!
+ e707c0 lastSample < kMaxNumSamples
+ e707e0 game/player/calc-start-phase.cpp
+ e70808 pChanLeft->m_numSamples == pChanRight->m_numSamples
+ e70840 Animation %s missing left and right foot channels!  Please correct!
+ e708e0 index >= 0 && index < kNumProbes
+ e70908 ./game/player/can-stand.h
+ e70940 ValidCommonActionComponent(this, m_pMove)
+ e70970 game/player/commonactions.cpp
+ e70990 ValidCommonActionComponent(this, m_pFinishCondition)
+ e709c8 ValidCommonActionComponent(this, m_pUpdate)
+ e709f8 desiredState != INVALID_STRING_ID
+ e70a20 ./game/player/commonactions.h
+ e70a40 m_transitionName != INVALID_STRING_ID
+ e70a68 m_desiredState != INVALID_STRING_ID
+ e70a90 delta = %f %f %f
+ e70ae0 !m_coverList.IsFull()
+ e70af8 ./game/player/cover-ap-tracker.h
+ e70b20 kNumProbes <= m_sphereJob.NumProbes()
+ e70b48 game/player/cover-ap-tracker.cpp
+ e70b70 kNumProbes <= m_rayJob.NumProbes()
+ e70bc0 position.X() == position.X() && position.Y() == position.Y() && position.Z() == position.Z()
+ e70c20 game/player/cover-edge.cpp
+ e70c40 closestPoint.X() == closestPoint.X() && closestPoint.Y() == closestPoint.Y() && closestPoint.Z() == closestPoint.Z()
+ e70cb8 %s: %f
+ e70cc0 Using old %s anim - %s
+ e70d10 flashlight-flare
+ e70d28 flashlight-flare-beam
+ e70d40 fire-torch-handheld
+ e70d58 pProc->IsType(StringId(0x32c0d5f1))
+ e70d80 game/player/flashlight.cpp
+ e70da0 Flashlight
+ e70db0 pOutHintPoints
+ e70dc0 game/player/grenade-hint-mgr.cpp
+ e70e10 pThrower
+ e70e20 game/player/grenade-magnet.cpp
+ e70e40 %s: doesn't work in multiplayer
+ e70e68 grenade-director-enable
+ e70e80 grenade-director-disable
+ e70ea0 grenade-director-is-enabled?
+ e70ec0 grenade-director-change-settings
+ e70ee8 GroundMove
+ e70ef8 GroundMove Blend in
+ e70f10 Non ground move
+ e70f20 Blend in collision amount: %f
+ e70f40 delta pre: %f
+ e70f50 Control: %f
+ e70f60 delta post: %f
+ e70f70 IsFinite(currentFacing)
+ e70f88 game/player/ground-move-update-for-strafe-move.cpp
+ e70fc0 fall speed: %f
+ e70fd8 On ground: %s
+ e70fe8 Anim velocity: %f
+ e71000 Desired velocity: %f
