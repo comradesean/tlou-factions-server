@@ -95,22 +95,64 @@ isn't understood. Checked and ruled out as a simple integrity mechanism:
 - Doesn't correspond to any obvious size field (body length, file length, or block
   count) interpreted as big-endian `u32`s or `u64`s.
 
-Given no evidence it's derived from content, `build_crypt_file()` currently just
-**carries the original 24 bytes through unmodified** rather than attempting to
-regenerate something we don't understand. This is the one part of the round-trip not
-yet validated live - if the client checks this field against body content in a way we
-haven't observed yet (e.g. some kind of signature), a repacked file could still be
-rejected downstream. Next live test against the real client will confirm.
+`build_crypt_file()`/`wrap_and_encrypt()` carry the original 24 bytes through
+unmodified rather than attempting to regenerate something we don't understand.
+
+## Live-tested finding (2026-08-14): the raw ciphertext's first 4 bytes ARE meaningful
+
+Confirmed against the real client, not guessed: the **undecrypted ciphertext's first 4
+bytes**, read as a big-endian `u32`, equal exactly `toc_size + sum(zlengths)` - the real
+PSARC body length, excluding the wrapper and excluding any trailing Blowfish
+block-alignment pad bytes. This is read by the client's downloader *before or
+independent of* decryption - its own filesystem log showed it stopping the download at
+exactly that many bytes past the wrapper every time, consistently, across multiple
+repack versions with different (deliberately changed) values in that field. A stale
+value (carried over unmodified from a differently-sized original archive after
+recompressing a modified entry) causes the client to truncate a larger repacked body
+mid-archive.
+
+`wrap_and_encrypt()` (in `tools/psarc_crypt.py`) now overwrites the ciphertext's first 4
+bytes with the real new body length after encryption, every time. This is safe: those 4
+bytes' *decrypted* plaintext content is part of the otherwise-unused wrapper (nothing
+reads it - confirmed by three live "connect ok" sessions against an *earlier* repack
+that had this field stale, so corrupting that specific plaintext doesn't matter, only
+the raw ciphertext bytes carry meaning here).
+
+**This fix alone was not sufficient** to get a repacked file live-accepted. Filesystem
+logs show the real client renames its temp download (`net1.bin.psarc.dl`) into place on
+success, or deletes it and fails on rejection. The original (untouched) file is always
+renamed - reliably, every attempt. Every repacked file tested so far (even after fixing
+the length field, even with content otherwise byte-identical to what a full round-trip
+verified as correct) was **deleted**, not renamed, meaning something is rejecting
+repacked content at a level *past* both the length-field and the checksums already ruled
+out on the 24-byte wrapper. Not yet identified. Candidates not yet checked: a checksum
+over something other than the whole body (e.g. per-block, or over the TOC only), or a
+check tied to the wrapper's *plaintext* content matching something derived from the
+body (as opposed to a hash we'd recognize).
 
 ## Result
 
-`tools/psarc_crypt.py` CLI:
-- `decrypt <in> <out>` - raw Blowfish decrypt, no container parsing.
-- `list <in>` - decrypt + parse PSARC + print entries.
-- `extract <in> <out> --entry <name>` - decrypt + parse + extract one entry's content.
-- `repack <in> <out> [--replace FIND REPLACE] [--target-entry NAME]` - decrypt, parse,
-  optionally do a same-length find/replace inside one entry's content, rebuild the
-  PSARC container, re-encrypt, write a new `.crypt` file.
+`tools/psarc_crypt.py` CLI, split at two boundaries - crypto (`.crypt` <-> `.psarc`) and
+container (`.psarc` <-> a directory of entry files):
+
+- `decrypt <in.crypt> <out.psarc>` / `encrypt <in.psarc> <out.crypt>` - Blowfish layer
+  only. `decrypt` trims to the real body length (see above) and saves the wrapper header
+  to a `<out.psarc>.wrapper` sidecar; `encrypt` reads that sidecar back.
+- `unpack <in.psarc> <dir>` / `pack <dir> <out.psarc>` - container layer only. `unpack`
+  writes each entry to its own file plus a `_manifest.txt` (entry order - literally the
+  same newline-separated name list the archive's own manifest entry already is).
+  Container settings (version/compression/block_size/flags) aren't recorded anywhere;
+  `pack` just uses `build_psarc()`'s hardcoded defaults, which have matched every real
+  file seen so far (confirmed exact via `--debug`, which prints the real values found).
+- `extract <in.crypt> <dir>` / `repack <dir> <out.crypt>` - both boundaries combined in
+  one step; `extract`'s directory also gets a `_manifest.txt.wrapper` sidecar so
+  `repack` doesn't need the original `.crypt` again.
+- `list <in.crypt> [--debug]` - print entries (and, with `--debug`, the real container
+  settings).
+
+All three round-trip paths (`decrypt`->`encrypt`, `unpack`->`pack`, `extract`->`repack`)
+reproduce the original `.crypt` file **byte-for-byte identical**, not just
+content-equivalent - `cmp` confirmed, not just SHA256 of the extracted payload.
 
 `tools/served_content/net1.bin.psarc.crypt` has been replaced with the output of:
 

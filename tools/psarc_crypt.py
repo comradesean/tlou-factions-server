@@ -25,6 +25,7 @@ format family as Naughty Dog's PS3 titles):
     bytes, or the remainder for the last block of a file)
 """
 import hashlib
+import os
 import struct
 import sys
 import zlib
@@ -282,75 +283,183 @@ def build_psarc(entries, version=0x00010004, compression=b"zlib", block_size=655
     return header + bytes(toc_bytes) + zlen_bytes + b"".join(data_chunks)
 
 
-def build_crypt_file(wrapper_header, entries, **psarc_kwargs):
-    """Full repack: PSARC body + prepended (preserved, unmodified) wrapper header,
-    Blowfish-encrypted as a whole. wrapper_header's meaning is unconfirmed (not a
-    hash of the body under MD5/SHA1/SHA256, not a size field) so it is carried
-    through byte-for-byte from the original file rather than regenerated.
+def wrap_and_encrypt(wrapper_header, psarc_bytes):
+    """Prepend wrapper_header to already-built raw PSARC container bytes and
+    Blowfish-encrypt the whole thing. Confirmed live (2026-08-14): the raw
+    ciphertext's first 4 bytes are read by the client BEFORE/independent of
+    decryption as a big-endian u32 "expected PSARC body length" (wrapper_header
+    excluded) - the client's downloader stops reading once it has received exactly
+    that many bytes past the wrapper, and a stale value (carried over unmodified
+    from a differently-sized original archive) causes it to truncate a larger
+    repacked body mid-archive, corrupting it. Fixed by overwriting the ciphertext's
+    first 4 bytes with the real body length after encryption. This is safe: those 4
+    bytes' *decrypted* plaintext content is part of the otherwise-unused/unvalidated
+    wrapper (confirmed harmless when corrupted - nothing reads it), only the raw
+    ciphertext bytes carry meaning here.
+
+    NOTE: this alone hasn't been enough to make a repacked file live-accepted by
+    the real client (see research/notes/net1bin-server-list.md) - something else
+    is still rejecting repacked content past this length fix.
     """
-    body = build_psarc(entries, **psarc_kwargs)
-    plain = wrapper_header + body
+    plain = wrapper_header + psarc_bytes
     pad = (-len(plain)) % 8
     if pad:
         plain += b"\x00" * pad
     blowfish_init_key(SECRET_KEY)
-    return blowfish_encrypt(plain)
+    cipher = bytearray(blowfish_encrypt(plain))
+    cipher[0:4] = struct.pack(">I", len(psarc_bytes))
+    return bytes(cipher)
+
+
+def build_crypt_file(wrapper_header, entries, **psarc_kwargs):
+    """entries -> build_psarc -> wrap_and_encrypt, in one call."""
+    body = build_psarc(entries, **psarc_kwargs)
+    return wrap_and_encrypt(wrapper_header, body)
+
+
+def real_body_length(raw_ciphertext):
+    """The raw (undecrypted) ciphertext's first 4 bytes, big-endian - confirmed live
+    (2026-08-14) to be the real PSARC body length the client itself trusts, excluding
+    any trailing Blowfish block-alignment padding. See wrap_and_encrypt()."""
+    return struct.unpack(">I", raw_ciphertext[:4])[0]
+
+
+MANIFEST_FILENAME = "_manifest.txt"
+
+
+def _wrapper_sidecar_path(path):
+    return path + ".wrapper"
+
+
+def _write_manifest(outdir, entry_order):
+    with open(os.path.join(outdir, MANIFEST_FILENAME), "w") as f:
+        f.write("\n".join(entry_order))
+
+
+def _read_manifest(indir):
+    with open(os.path.join(indir, MANIFEST_FILENAME)) as f:
+        return f.read().split("\n")
 
 
 if __name__ == "__main__":
     import argparse
-    ap = argparse.ArgumentParser()
-    ap.add_argument("action", choices=["decrypt", "list", "extract", "repack"])
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("action", choices=["decrypt", "encrypt", "unpack", "pack",
+                                        "extract", "repack", "list"])
     ap.add_argument("infile")
     ap.add_argument("outfile", nargs="?")
-    ap.add_argument("--entry", help="entry name to extract (with --action extract)")
-    ap.add_argument("--replace", nargs=2, metavar=("FIND", "REPLACE"),
-                     help="with --action repack: byte string to find/replace in the "
-                          "target entry's content before repacking (same-length only)")
-    ap.add_argument("--target-entry", default=None,
-                     help="with --action repack: which entry to modify (default: the "
-                          "sole non-manifest entry)")
+    ap.add_argument("--debug", action="store_true",
+                     help="with unpack/extract/list: print the container's actual "
+                          "version/compression/block_size/flags, so you can tell if "
+                          "a file ever deviates from build_psarc()'s hardcoded "
+                          "defaults (every real file seen so far matches them)")
     args = ap.parse_args()
 
-    raw = open(args.infile, "rb").read()
-    blowfish_init_key(SECRET_KEY)
-    plain = blowfish_decrypt(raw)
+    def _print_debug(psarc):
+        if args.debug:
+            compression = struct.pack(">I", psarc["compression"])
+            print(f"[debug] version=0x{psarc['version']:08x} "
+                  f"compression={compression!r} "
+                  f"block_size={psarc['block_size']} flags={psarc['flags']}")
 
     if args.action == "decrypt":
-        open(args.outfile, "wb").write(plain)
-        print(f"wrote {len(plain)} bytes to {args.outfile}")
-    else:
+        # .crypt -> .psarc: Blowfish decrypt, trimmed to the real archive length (see
+        # real_body_length - drops inert trailing block-alignment pad bytes), wrapper
+        # header stripped off and saved to a <outfile>.wrapper sidecar for `encrypt`.
+        raw = open(args.infile, "rb").read()
+        blowfish_init_key(SECRET_KEY)
+        plain = blowfish_decrypt(raw)
         wrapper_header = plain[:WRAPPER_HEADER_SIZE]
-        psarc = parse_psarc(plain[WRAPPER_HEADER_SIZE:])
-        if args.action == "list":
-            for e in psarc["entries"][1:]:
-                print(f"{e.name}\t{e.length} bytes")
-        elif args.action == "extract":
-            for e in psarc["entries"][1:]:
-                if e.name == args.entry:
-                    content = psarc["read_entry_data"](e)
-                    open(args.outfile, "wb").write(content)
-                    print(f"wrote {len(content)} bytes to {args.outfile}")
-                    break
-            else:
-                print(f"entry {args.entry!r} not found")
-        elif args.action == "repack":
-            target_name = args.target_entry
-            entries_out = []
-            for e in psarc["entries"][1:]:
-                content = psarc["read_entry_data"](e)
-                if target_name is None or e.name == target_name:
-                    if args.replace:
-                        find, repl = args.replace[0].encode(), args.replace[1].encode()
-                        if len(find) != len(repl):
-                            raise SystemExit("--replace strings must be the same length "
-                                              "(archive/container layout is not being resized)")
-                        n = content.count(find)
-                        content = content.replace(find, repl)
-                        print(f"{e.name}: replaced {n} occurrence(s) of {find!r} with {repl!r}")
-                entries_out.append((e.name, content))
-            new_crypt = build_crypt_file(wrapper_header, entries_out,
-                                          version=psarc["version"], compression=psarc["compression"],
-                                          block_size=psarc["block_size"], flags=psarc["flags"])
-            open(args.outfile, "wb").write(new_crypt)
-            print(f"wrote {len(new_crypt)} bytes to {args.outfile}")
+        psarc_bytes = plain[WRAPPER_HEADER_SIZE:WRAPPER_HEADER_SIZE + real_body_length(raw)]
+        open(args.outfile, "wb").write(psarc_bytes)
+        open(_wrapper_sidecar_path(args.outfile), "wb").write(wrapper_header)
+        print(f"wrote {len(psarc_bytes)} bytes to {args.outfile} "
+              f"(+ wrapper header to {_wrapper_sidecar_path(args.outfile)})")
+
+    elif args.action == "encrypt":
+        # .psarc -> .crypt: read the wrapper header back from its sidecar (from a
+        # prior `decrypt`), wrap + Blowfish-encrypt.
+        psarc_bytes = open(args.infile, "rb").read()
+        wrapper_header = open(_wrapper_sidecar_path(args.infile), "rb").read()
+        new_crypt = wrap_and_encrypt(wrapper_header, psarc_bytes)
+        open(args.outfile, "wb").write(new_crypt)
+        print(f"wrote {len(new_crypt)} bytes to {args.outfile}")
+
+    elif args.action == "unpack":
+        # .psarc -> directory of entry files + _manifest.txt (entry order - container
+        # settings aren't recorded, `pack` just uses build_psarc's defaults, which
+        # match every real file seen so far).
+        psarc_bytes = open(args.infile, "rb").read()
+        psarc = parse_psarc(psarc_bytes)
+        _print_debug(psarc)
+        os.makedirs(args.outfile, exist_ok=True)
+        entry_order = []
+        for e in psarc["entries"][1:]:
+            content = psarc["read_entry_data"](e)
+            with open(os.path.join(args.outfile, e.name), "wb") as f:
+                f.write(content)
+            entry_order.append(e.name)
+            print(f"wrote {len(content)} bytes to {os.path.join(args.outfile, e.name)}")
+        _write_manifest(args.outfile, entry_order)
+        print(f"wrote {MANIFEST_FILENAME}")
+
+    elif args.action == "pack":
+        # directory of entry files (+ _manifest.txt) -> .psarc
+        entries_out = []
+        for name in _read_manifest(args.infile):
+            with open(os.path.join(args.infile, name), "rb") as f:
+                entries_out.append((name, f.read()))
+        psarc_bytes = build_psarc(entries_out)
+        open(args.outfile, "wb").write(psarc_bytes)
+        print(f"wrote {len(psarc_bytes)} bytes to {args.outfile}")
+
+    elif args.action == "extract":
+        # .crypt -> directory, in one step (decrypt + unpack combined): entry files +
+        # _manifest.txt + a _manifest.txt.wrapper sidecar, so `repack` can go straight
+        # back without needing the original .crypt again.
+        raw = open(args.infile, "rb").read()
+        blowfish_init_key(SECRET_KEY)
+        plain = blowfish_decrypt(raw)
+        wrapper_header = plain[:WRAPPER_HEADER_SIZE]
+        psarc_bytes = plain[WRAPPER_HEADER_SIZE:WRAPPER_HEADER_SIZE + real_body_length(raw)]
+        psarc = parse_psarc(psarc_bytes)
+        _print_debug(psarc)
+        os.makedirs(args.outfile, exist_ok=True)
+        entry_order = []
+        for e in psarc["entries"][1:]:
+            content = psarc["read_entry_data"](e)
+            with open(os.path.join(args.outfile, e.name), "wb") as f:
+                f.write(content)
+            entry_order.append(e.name)
+            print(f"wrote {len(content)} bytes to {os.path.join(args.outfile, e.name)}")
+        _write_manifest(args.outfile, entry_order)
+        manifest_path = os.path.join(args.outfile, MANIFEST_FILENAME)
+        open(_wrapper_sidecar_path(manifest_path), "wb").write(wrapper_header)
+        print(f"wrote {MANIFEST_FILENAME} (+ wrapper header sidecar)")
+
+    elif args.action == "repack":
+        # directory -> .crypt, in one step (pack + encrypt combined).
+        manifest_path = os.path.join(args.infile, MANIFEST_FILENAME)
+        wrapper_path = _wrapper_sidecar_path(manifest_path)
+        if not os.path.isfile(wrapper_path):
+            raise SystemExit(f"{wrapper_path} not found - this directory came from "
+                              f"'unpack', not 'extract'. Use 'pack' then 'encrypt' "
+                              f"(with a .wrapper sidecar) instead.")
+        wrapper_header = open(wrapper_path, "rb").read()
+        entries_out = []
+        for name in _read_manifest(args.infile):
+            with open(os.path.join(args.infile, name), "rb") as f:
+                entries_out.append((name, f.read()))
+        new_crypt = build_crypt_file(wrapper_header, entries_out)
+        open(args.outfile, "wb").write(new_crypt)
+        print(f"wrote {len(new_crypt)} bytes to {args.outfile}")
+
+    elif args.action == "list":
+        raw = open(args.infile, "rb").read()
+        blowfish_init_key(SECRET_KEY)
+        plain = blowfish_decrypt(raw)
+        psarc = parse_psarc(plain[WRAPPER_HEADER_SIZE:WRAPPER_HEADER_SIZE + real_body_length(raw)])
+        _print_debug(psarc)
+        for e in psarc["entries"][1:]:
+            print(f"{e.name}\t{e.length} bytes")
+
