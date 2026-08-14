@@ -50,10 +50,33 @@ To make the patched IP stick without a watcher, the *served* `.crypt` file needs
 
 **Ghidra investigation attempted (2026-08-14) - not fully cracked, see `research/notes/2026-08-14-crypt-decrypt-investigation.md` for full detail.** Confirmed the decrypt/decompress path runs through Sony's licensed FIOS SDK middleware (explicit `'FIOS'` magic-number check found in the read path), with a `fios::dearchiver` component on top of it that's very likely shared with *Uncharted 3* (a `u3.beta.dev`/`u3.beta.prod` string sits in the exact same code region as the content-delivery strings) - meaning Uncharted 3's much larger modding community may already have prior art on this format, worth searching before more static analysis. Ruled out trivial single-byte XOR. Found an unvalidated lead: the ciphertext's first 4 bytes (`00 00 fe 6d`) decode as a big-endian `u32` to 65,133 - suspiciously close to the file's own 65,160-byte size. No working decrypt implementation yet.
 
-## Crypto/container format: SOLVED and verified byte-for-byte. Live repack: still rejected
+## Crypto/container format: SOLVED and verified byte-for-byte, including the HMAC gate
 
-Full details in `research/notes/2026-08-14-blowfish-psarc-solve.md`. Summary: it's not FIOS-proprietary crypto - it's the same Blowfish cipher/key Naughty Dog reused from their PS3 save-game format (`bucanero/save-decrypters`), wrapping a standard PSARC container. `tools/psarc_crypt.py` implements `decrypt`/`encrypt` (crypto layer) and `unpack`/`pack` (container layer), plus `extract`/`repack` combining both - every round-trip path reproduces the original `.crypt` file **byte-for-byte identical** (`cmp`-verified, not just matching SHA256 of the extracted payload).
+Full details in `research/notes/2026-08-14-blowfish-psarc-solve.md` and
+`research/notes/2026-08-14-repack-rejection-investigation.md`. Summary: it's not
+FIOS-proprietary crypto - it's the same Blowfish cipher/key Naughty Dog reused from
+their PS3 save-game format (`bucanero/save-decrypters`), wrapping a standard PSARC
+container, with a **plaintext HMAC-SHA1 header** (not encrypted, not opaque - an
+earlier framing in this note was wrong about that) gating acceptance. Both the key and
+the exact message construction were confirmed live via an RPCS3 debugger session on
+2026-08-14 (breakpoints at the functions a Ghidra decompilation pass had already
+identified as the rename-vs-delete decision point). `tools/psarc_crypt.py` implements
+`decrypt`/`encrypt` (crypto layer, HMAC included) and `unpack`/`pack` (container
+layer), plus `extract`/`repack` combining both - every round-trip path reproduces the
+original `.crypt` file **byte-for-byte identical**, and every read reports
+`HMAC OK`/`MISMATCH` directly.
 
-**Correction to an earlier overclaim in this note**: an initial repack (IP-patched, `50.18.104.153` -> `192.168.1.100`) was deployed and reported "solved" here based on the decrypt/extract math checking out locally. Live testing then showed the real client rejects it - see the "Live-tested finding" section in `2026-08-14-blowfish-psarc-solve.md` for the full story: a real bug was found and fixed (the raw ciphertext's first 4 bytes encode the expected body length, and a stale value truncates a differently-sized repack), but even after that fix the client still deletes the repacked file's temp download instead of renaming it into place - something is still rejecting repacked content that hasn't been identified yet. The unpatched original file is reliably accepted (renamed, decrypted, extracted) every time; only our repacks are affected.
+**Correction to an earlier overclaim in this note**: an initial repack was deployed
+and reported "solved" here based on the decrypt/extract math checking out locally,
+before live testing showed the real client rejects any repack whose 24-byte header
+isn't a real, correctly-keyed HMAC (which no repack had, since that region was
+mistakenly being Blowfish-encrypted along with the body instead of computed as
+plaintext). That's now fixed at the source in `tools/psarc_crypt.py`.
 
-**Current deployed state**: `tools/served_content/net1.bin.psarc.crypt` is back to the unpatched original (backed up losslessly at `.pre-repack-backup`) so live testing has a known-reliable baseline while the content-validation rejection is investigated. `tools/watch_and_patch_net1bin.py`'s live-patch workaround has NOT been retired - it's still the only proven way to get the redirected IP into a running session, until the repack-rejection issue is solved.
+**Current deployed state**: `tools/served_content/net1.bin.psarc.crypt` is a freshly
+repacked, IP-patched (`50.18.104.153` -> `192.168.1.100`) file built entirely from the
+corrected `encrypt_crypt_file()` - reports `HMAC OK` on its own re-verification, and
+differs from the known-good extraction in exactly the intended 13-byte IP field.
+**Live client acceptance (does it get renamed instead of deleted this time) is the
+next thing to confirm** - not yet re-tested as of this edit. If it's accepted,
+`tools/watch_and_patch_net1bin.py`'s live-patch workaround can finally be retired.

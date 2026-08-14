@@ -84,83 +84,69 @@ produce a fresh, valid archive from a `(name, content)` entry list, and `list`/`
 against a repacked-but-unmodified file reproduce the exact same SHA256 as the original,
 proving the round-trip is lossless before ever touching real content.
 
-## The 24-byte prefix - still unconfirmed, treated as opaque
+## SOLVED (2026-08-14, live RPCS3 debugger session): the 24-byte prefix is a plaintext HMAC header
 
-Before the `PSAR` magic there's a 24-byte block
-(`fa6e755c5ff7c67f960bd3086a6b4496c3dbea7550aaaa21` in the real file) whose purpose
-isn't understood. Checked and ruled out as a simple integrity mechanism:
+Everything below in this section supersedes the original "opaque wrapper" framing.
+Full mechanism-discovery trail (Ghidra decompilation of the rename-vs-delete check) is
+in `research/notes/2026-08-14-repack-rejection-investigation.md`; this section covers
+the final live confirmation that pinned down the exact key and message construction.
 
-- Not `MD5`/`SHA1`/`SHA256` of the PSARC body that follows it (no match against any of
-  the three, full or truncated).
-- Doesn't correspond to any obvious size field (body length, file length, or block
-  count) interpreted as big-endian `u32`s or `u64`s.
+**The 24-byte block before `PSAR` is not encrypted at all.** It's a genuine plaintext
+header: `[4-byte BE length][20-byte HMAC-SHA1 digest]`. Earlier attempts to identify it
+(MD5/SHA1/SHA256 against the *decrypted* wrapper bytes) were checking the wrong thing -
+those 24 bytes were never real ciphertext, so "decrypting" them via Blowfish (as the
+original `decrypt`/`extract` implementation did, treating the whole file as one
+continuous cipher stream) just produces meaningless garbage for that region. It worked
+by accident for reading: Blowfish ECB block boundaries align exactly at byte 24, so
+garbling the header via unneeded decryption never corrupted the real body that follows.
+But it meant every repack had garbage sitting where a real HMAC needed to be, and was
+rejected outright, every time, regardless of how correct the body itself was.
 
-`build_crypt_file()`/`wrap_and_encrypt()` carry the original 24 bytes through
-unmodified rather than attempting to regenerate something we don't understand.
+**Confirmed live via an RPCS3 debugger session** (breakpoints at the functions
+identified in the Ghidra trace):
 
-## Live-tested finding (2026-08-14): the raw ciphertext's first 4 bytes ARE meaningful
+- **Key**: static, not session-derived - `SHA1_HMAC_KEY` from the same
+  `bucanero/save-decrypters` PS3 save-game toolkit the Blowfish key already came from:
+  `"xM;6X%/p^L/:}-5QoA+K8:F*M!~sb(WK<E%6sW_un0a[7Gm6,()kHoXY+yI/s;Ba"` (64 bytes).
+  Read directly out of a register (`r6`) at the constructor call, byte-for-byte.
+- **Message**: `blowfish_decrypt(raw[24:])` - the *decrypted* PSARC body, **including**
+  its trailing Blowfish block-alignment padding (not trimmed to the real archive
+  length recorded in the 4-byte length field).
+- **Digest location**: raw file bytes `[4:24]`, read live out of process memory
+  (`param_1 + 0x53d4` inside the rename-vs-delete check) and confirmed to match the
+  file's own bytes at that offset exactly.
+- Verified independently in Python: `hmac.new(KEY, blowfish_decrypt(raw[24:]), hashlib.sha1).digest() == raw[4:24]` for the real, unmodified file.
 
-Confirmed against the real client, not guessed: the **undecrypted ciphertext's first 4
-bytes**, read as a big-endian `u32`, equal exactly `toc_size + sum(zlengths)` - the real
-PSARC body length, excluding the wrapper and excluding any trailing Blowfish
-block-alignment pad bytes. This is read by the client's downloader *before or
-independent of* decryption - its own filesystem log showed it stopping the download at
-exactly that many bytes past the wrapper every time, consistently, across multiple
-repack versions with different (deliberately changed) values in that field. A stale
-value (carried over unmodified from a differently-sized original archive after
-recompressing a modified entry) causes the client to truncate a larger repacked body
-mid-archive.
-
-`wrap_and_encrypt()` (in `tools/psarc_crypt.py`) now overwrites the ciphertext's first 4
-bytes with the real new body length after encryption, every time. This is safe: those 4
-bytes' *decrypted* plaintext content is part of the otherwise-unused wrapper (nothing
-reads it - confirmed by three live "connect ok" sessions against an *earlier* repack
-that had this field stale, so corrupting that specific plaintext doesn't matter, only
-the raw ciphertext bytes carry meaning here).
-
-**This fix alone was not sufficient** to get a repacked file live-accepted. Filesystem
-logs show the real client renames its temp download (`net1.bin.psarc.dl`) into place on
-success, or deletes it and fails on rejection. The original (untouched) file is always
-renamed - reliably, every attempt. Every repacked file tested so far (even after fixing
-the length field, even with content otherwise byte-identical to what a full round-trip
-verified as correct) was **deleted**, not renamed, meaning something is rejecting
-repacked content at a level *past* both the length-field and the checksums already ruled
-out on the 24-byte wrapper. Not yet identified. Candidates not yet checked: a checksum
-over something other than the whole body (e.g. per-block, or over the TOC only), or a
-check tied to the wrapper's *plaintext* content matching something derived from the
-body (as opposed to a hash we'd recognize).
+The originally-documented length-prefix fix (client stops downloading once it's
+received exactly the bytes recorded in `raw[0:4]`) is still correct and still needed -
+it's a separate, independent check from the HMAC.
 
 ## Result
 
-`tools/psarc_crypt.py` CLI, split at two boundaries - crypto (`.crypt` <-> `.psarc`) and
-container (`.psarc` <-> a directory of entry files):
+`tools/psarc_crypt.py` has been rewritten around the correct format understanding.
+`encrypt_crypt_file()`/`decrypt_crypt_file()` replace the old `wrap_and_encrypt()` - no
+more `.wrapper` sidecar hack, since a fully valid header (length + real HMAC) can now
+be regenerated from scratch on every repack:
 
-- `decrypt <in.crypt> <out.psarc>` / `encrypt <in.psarc> <out.crypt>` - Blowfish layer
-  only. `decrypt` trims to the real body length (see above) and saves the wrapper header
-  to a `<out.psarc>.wrapper` sidecar; `encrypt` reads that sidecar back.
-- `unpack <in.psarc> <dir>` / `pack <dir> <out.psarc>` - container layer only. `unpack`
-  writes each entry to its own file plus a `_manifest.txt` (entry order - literally the
-  same newline-separated name list the archive's own manifest entry already is).
-  Container settings (version/compression/block_size/flags) aren't recorded anywhere;
-  `pack` just uses `build_psarc()`'s hardcoded defaults, which have matched every real
-  file seen so far (confirmed exact via `--debug`, which prints the real values found).
-- `extract <in.crypt> <dir>` / `repack <dir> <out.crypt>` - both boundaries combined in
-  one step; `extract`'s directory also gets a `_manifest.txt.wrapper` sidecar so
-  `repack` doesn't need the original `.crypt` again.
-- `list <in.crypt> [--debug]` - print entries (and, with `--debug`, the real container
-  settings).
+- `decrypt <in.crypt> <out.psarc>` / `encrypt <in.psarc> <out.crypt>` - crypto layer.
+  Both report `HMAC OK`/`MISMATCH` so verification is visible on every read.
+- `unpack <in.psarc> <dir>` / `pack <dir> <out.psarc>` - container layer, via a
+  `_manifest.txt` (entry order - literally the same newline-separated name list the
+  archive's own manifest entry already is). Container settings
+  (version/compression/block_size/flags) aren't recorded; `pack` uses `build_psarc()`'s
+  hardcoded defaults, which have matched every real file seen so far (`--debug` prints
+  the real values found, to catch a future mismatch).
+- `extract <in.crypt> <dir>` / `repack <dir> <out.crypt>` - both layers combined.
+- `list <in.crypt> [--debug]` - print entries + HMAC status (+ container settings).
 
 All three round-trip paths (`decrypt`->`encrypt`, `unpack`->`pack`, `extract`->`repack`)
-reproduce the original `.crypt` file **byte-for-byte identical**, not just
-content-equivalent - `cmp` confirmed, not just SHA256 of the extracted payload.
+reproduce the original `.crypt` file **byte-for-byte identical** - `cmp` confirmed - and
+every read reports `HMAC OK`.
 
-`tools/served_content/net1.bin.psarc.crypt` has been replaced with the output of:
-
-```
-python3 psarc_crypt.py repack served_content/net1.bin.psarc.crypt.pre-repack-backup \
-    served_content/net1.bin.psarc.crypt --replace "50.18.104.153" "192.168.1.100"
-```
-
-verified via `cmp -l` against the known-good extraction to differ in **exactly** the
-13-byte IP field (11 of 13 bytes differ; 2 digits coincide between the two IP strings)
-and nowhere else across the full 283,870-byte file.
+`tools/served_content/net1.bin.psarc.crypt` has been replaced with a freshly repacked,
+IP-patched (`50.18.104.153` -> `192.168.1.100`) file built entirely from
+`encrypt_crypt_file()` (no leftover fields carried over from the original at all - the
+whole header is generated fresh). It reports `HMAC OK` on its own re-verification and
+differs from the known-good extraction in exactly the 13-byte IP field (11 of 13 bytes
+differ; 2 digits coincide between the two IP strings) and nowhere else. Live client
+acceptance (rename vs. delete) is the next thing to confirm.

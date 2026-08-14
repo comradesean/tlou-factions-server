@@ -1,16 +1,39 @@
 #!/usr/bin/env python3
 """Minimal PSARC reader/writer for Naughty Dog's PS3-era .psarc.crypt files.
 
-Format (confirmed empirically against net1.bin.psarc.crypt):
-  [24-byte wrapper header, meaning not yet fully understood] +
-  [standard PSARC archive, Blowfish-ECB encrypted as a whole]
+Format (confirmed empirically against net1.bin.psarc.crypt, and confirmed live
+against the real client via an RPCS3 debugger session on 2026-08-14):
+  [4-byte BE plaintext length of the padded body below] +
+  [20-byte plaintext HMAC-SHA1(HMAC_KEY, padded body below)] +
+  [standard PSARC archive, zero-padded to a multiple of 8 bytes, then
+   Blowfish-ECB encrypted]
+
+The 24-byte header is genuine PLAINTEXT - never Blowfish-encrypted. This was
+originally misread as an opaque "wrapper" that happened to survive being
+Blowfish-decrypted along with everything else without visibly breaking
+anything - which worked by accident (ECB block boundaries align exactly at
+byte 24, so garbling those bytes via unneeded decryption never corrupted the
+real body), but meant every repack had a garbage, never-valid HMAC in that
+region and was permanently rejected by the real client's rename-vs-delete
+check (see research/notes/2026-08-14-repack-rejection-investigation.md for
+the full Ghidra/live-debugger trace that found this: HMAC-SHA1 confirmed via
+matching SHA-1 IV/round constants in the decompiled hash functions, the key
+confirmed live via a debugger register dump, the digest's storage location
+confirmed by reading real memory during a live NetInit and matching it
+byte-for-byte against the file's own bytes[4:24]).
 
 Blowfish: same algorithm/key as bucanero/save-decrypters' naughtydog-decrypter
 (PS3 save-game tool) - SECRET_KEY = "(SH[@2>r62%5+QKpy|g6", standard Blowfish
 Feistel core with big-endian 32-bit word swaps per 8-byte block (ECB, no IV).
 
+HMAC_KEY: also reused from the same PS3 save-game toolkit, where it's called
+SHA1_HMAC_KEY - confirmed live via debugger (visible as a plaintext argument
+to the key-setup function during a real NetInit run).
+
 PSARC container (from 0x0L/rs-utils psarc.py, Rocksmith - same container
-format family as Naughty Dog's PS3 titles):
+format family as Naughty Dog's PS3 titles; independently cross-checked
+against github.com/rm-NoobInCoding/UnPSARC, a tool built specifically for
+Uncharted/TLOU, which confirmed this layout byte-for-byte):
   32-byte BE header: magic(4)='PSAR', version(4), compression(4)='zlib',
     toc_size(4), entry_size(4)=30, num_entries(4), block_size(4), flags(4)
   TOC: num_entries x 30-byte entries: md5(16), zindex(4), length(5), offset(5)
@@ -25,13 +48,15 @@ format family as Naughty Dog's PS3 titles):
     bytes, or the remainder for the last block of a file)
 """
 import hashlib
+import hmac
 import os
 import struct
 import sys
 import zlib
 
 SECRET_KEY = "(SH[@2>r62%5+QKpy|g6"
-WRAPPER_HEADER_SIZE = 24
+HMAC_KEY = b"xM;6X%/p^L/:}-5QoA+K8:F*M!~sb(WK<E%6sW_un0a[7Gm6,()kHoXY+yI/s;Ba"
+HEADER_SIZE = 24  # 4-byte length + 20-byte HMAC-SHA1, both plaintext
 
 # ---- Blowfish (ported faithfully from bucanero/save-decrypters common/blowfish.c) ----
 
@@ -283,52 +308,40 @@ def build_psarc(entries, version=0x00010004, compression=b"zlib", block_size=655
     return header + bytes(toc_bytes) + zlen_bytes + b"".join(data_chunks)
 
 
-def wrap_and_encrypt(wrapper_header, psarc_bytes):
-    """Prepend wrapper_header to already-built raw PSARC container bytes and
-    Blowfish-encrypt the whole thing. Confirmed live (2026-08-14): the raw
-    ciphertext's first 4 bytes are read by the client BEFORE/independent of
-    decryption as a big-endian u32 "expected PSARC body length" (wrapper_header
-    excluded) - the client's downloader stops reading once it has received exactly
-    that many bytes past the wrapper, and a stale value (carried over unmodified
-    from a differently-sized original archive) causes it to truncate a larger
-    repacked body mid-archive, corrupting it. Fixed by overwriting the ciphertext's
-    first 4 bytes with the real body length after encryption. This is safe: those 4
-    bytes' *decrypted* plaintext content is part of the otherwise-unused/unvalidated
-    wrapper (confirmed harmless when corrupted - nothing reads it), only the raw
-    ciphertext bytes carry meaning here.
-
-    NOTE: this alone hasn't been enough to make a repacked file live-accepted by
-    the real client (see research/notes/net1bin-server-list.md) - something else
-    is still rejecting repacked content past this length fix.
+def encrypt_crypt_file(psarc_bytes):
+    """Raw PSARC container bytes -> a complete .crypt file: pad to a multiple of 8,
+    compute the real header (length + HMAC-SHA1, both plaintext, see module
+    docstring), Blowfish-encrypt the padded body, and concatenate.
     """
-    plain = wrapper_header + psarc_bytes
-    pad = (-len(plain)) % 8
-    if pad:
-        plain += b"\x00" * pad
+    pad = (-len(psarc_bytes)) % 8
+    padded_body = psarc_bytes + b"\x00" * pad
+    digest = hmac.new(HMAC_KEY, padded_body, hashlib.sha1).digest()
+    length_field = struct.pack(">I", len(psarc_bytes))
     blowfish_init_key(SECRET_KEY)
-    cipher = bytearray(blowfish_encrypt(plain))
-    cipher[0:4] = struct.pack(">I", len(psarc_bytes))
-    return bytes(cipher)
+    ciphertext = blowfish_encrypt(padded_body)
+    return length_field + digest + ciphertext
 
 
-def build_crypt_file(wrapper_header, entries, **psarc_kwargs):
-    """entries -> build_psarc -> wrap_and_encrypt, in one call."""
+def decrypt_crypt_file(raw):
+    """A complete .crypt file's raw bytes -> (psarc_bytes, digest_ok). digest_ok is
+    whether the file's own stored HMAC matches what we compute over its body - True
+    for every real file; verifies our understanding of the format on every read.
+    """
+    length = struct.unpack(">I", raw[:4])[0]
+    stored_digest = raw[4:24]
+    blowfish_init_key(SECRET_KEY)
+    padded_body = blowfish_decrypt(raw[24:])
+    computed_digest = hmac.new(HMAC_KEY, padded_body, hashlib.sha1).digest()
+    return padded_body[:length], hmac.compare_digest(stored_digest, computed_digest)
+
+
+def build_crypt_file(entries, **psarc_kwargs):
+    """entries -> build_psarc -> encrypt_crypt_file, in one call."""
     body = build_psarc(entries, **psarc_kwargs)
-    return wrap_and_encrypt(wrapper_header, body)
-
-
-def real_body_length(raw_ciphertext):
-    """The raw (undecrypted) ciphertext's first 4 bytes, big-endian - confirmed live
-    (2026-08-14) to be the real PSARC body length the client itself trusts, excluding
-    any trailing Blowfish block-alignment padding. See wrap_and_encrypt()."""
-    return struct.unpack(">I", raw_ciphertext[:4])[0]
+    return encrypt_crypt_file(body)
 
 
 MANIFEST_FILENAME = "_manifest.txt"
-
-
-def _wrapper_sidecar_path(path):
-    return path + ".wrapper"
 
 
 def _write_manifest(outdir, entry_order):
@@ -363,25 +376,18 @@ if __name__ == "__main__":
                   f"block_size={psarc['block_size']} flags={psarc['flags']}")
 
     if args.action == "decrypt":
-        # .crypt -> .psarc: Blowfish decrypt, trimmed to the real archive length (see
-        # real_body_length - drops inert trailing block-alignment pad bytes), wrapper
-        # header stripped off and saved to a <outfile>.wrapper sidecar for `encrypt`.
+        # .crypt -> .psarc: real header parsed properly now (length + HMAC, both
+        # plaintext - see module docstring), Blowfish-decrypt just the body.
         raw = open(args.infile, "rb").read()
-        blowfish_init_key(SECRET_KEY)
-        plain = blowfish_decrypt(raw)
-        wrapper_header = plain[:WRAPPER_HEADER_SIZE]
-        psarc_bytes = plain[WRAPPER_HEADER_SIZE:WRAPPER_HEADER_SIZE + real_body_length(raw)]
+        psarc_bytes, digest_ok = decrypt_crypt_file(raw)
         open(args.outfile, "wb").write(psarc_bytes)
-        open(_wrapper_sidecar_path(args.outfile), "wb").write(wrapper_header)
         print(f"wrote {len(psarc_bytes)} bytes to {args.outfile} "
-              f"(+ wrapper header to {_wrapper_sidecar_path(args.outfile)})")
+              f"(HMAC {'OK' if digest_ok else 'MISMATCH'})")
 
     elif args.action == "encrypt":
-        # .psarc -> .crypt: read the wrapper header back from its sidecar (from a
-        # prior `decrypt`), wrap + Blowfish-encrypt.
+        # .psarc -> .crypt: compute a real length+HMAC header and Blowfish-encrypt.
         psarc_bytes = open(args.infile, "rb").read()
-        wrapper_header = open(_wrapper_sidecar_path(args.infile), "rb").read()
-        new_crypt = wrap_and_encrypt(wrapper_header, psarc_bytes)
+        new_crypt = encrypt_crypt_file(psarc_bytes)
         open(args.outfile, "wb").write(new_crypt)
         print(f"wrote {len(new_crypt)} bytes to {args.outfile}")
 
@@ -414,16 +420,12 @@ if __name__ == "__main__":
         print(f"wrote {len(psarc_bytes)} bytes to {args.outfile}")
 
     elif args.action == "extract":
-        # .crypt -> directory, in one step (decrypt + unpack combined): entry files +
-        # _manifest.txt + a _manifest.txt.wrapper sidecar, so `repack` can go straight
-        # back without needing the original .crypt again.
+        # .crypt -> directory, in one step (decrypt + unpack combined).
         raw = open(args.infile, "rb").read()
-        blowfish_init_key(SECRET_KEY)
-        plain = blowfish_decrypt(raw)
-        wrapper_header = plain[:WRAPPER_HEADER_SIZE]
-        psarc_bytes = plain[WRAPPER_HEADER_SIZE:WRAPPER_HEADER_SIZE + real_body_length(raw)]
+        psarc_bytes, digest_ok = decrypt_crypt_file(raw)
         psarc = parse_psarc(psarc_bytes)
         _print_debug(psarc)
+        print(f"HMAC {'OK' if digest_ok else 'MISMATCH'}")
         os.makedirs(args.outfile, exist_ok=True)
         entry_order = []
         for e in psarc["entries"][1:]:
@@ -433,33 +435,26 @@ if __name__ == "__main__":
             entry_order.append(e.name)
             print(f"wrote {len(content)} bytes to {os.path.join(args.outfile, e.name)}")
         _write_manifest(args.outfile, entry_order)
-        manifest_path = os.path.join(args.outfile, MANIFEST_FILENAME)
-        open(_wrapper_sidecar_path(manifest_path), "wb").write(wrapper_header)
-        print(f"wrote {MANIFEST_FILENAME} (+ wrapper header sidecar)")
+        print(f"wrote {MANIFEST_FILENAME}")
 
     elif args.action == "repack":
-        # directory -> .crypt, in one step (pack + encrypt combined).
-        manifest_path = os.path.join(args.infile, MANIFEST_FILENAME)
-        wrapper_path = _wrapper_sidecar_path(manifest_path)
-        if not os.path.isfile(wrapper_path):
-            raise SystemExit(f"{wrapper_path} not found - this directory came from "
-                              f"'unpack', not 'extract'. Use 'pack' then 'encrypt' "
-                              f"(with a .wrapper sidecar) instead.")
-        wrapper_header = open(wrapper_path, "rb").read()
+        # directory -> .crypt, in one step (pack + encrypt combined). No wrapper
+        # sidecar needed anymore - the header is fully regenerated from scratch,
+        # correctly, every time.
         entries_out = []
         for name in _read_manifest(args.infile):
             with open(os.path.join(args.infile, name), "rb") as f:
                 entries_out.append((name, f.read()))
-        new_crypt = build_crypt_file(wrapper_header, entries_out)
+        new_crypt = build_crypt_file(entries_out)
         open(args.outfile, "wb").write(new_crypt)
         print(f"wrote {len(new_crypt)} bytes to {args.outfile}")
 
     elif args.action == "list":
         raw = open(args.infile, "rb").read()
-        blowfish_init_key(SECRET_KEY)
-        plain = blowfish_decrypt(raw)
-        psarc = parse_psarc(plain[WRAPPER_HEADER_SIZE:WRAPPER_HEADER_SIZE + real_body_length(raw)])
+        psarc_bytes, digest_ok = decrypt_crypt_file(raw)
+        psarc = parse_psarc(psarc_bytes)
         _print_debug(psarc)
+        print(f"HMAC {'OK' if digest_ok else 'MISMATCH'}")
         for e in psarc["entries"][1:]:
             print(f"{e.name}\t{e.length} bytes")
 
