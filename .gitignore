@@ -1,6 +1,7 @@
 # Never commit the analysis target itself (copyrighted game data)
 *.elf
 EBOOT.*
+tools/served_content/
 
 # Vendored/cloned external tooling — referenced by URL + commit hash in docs instead
 tools/external/
