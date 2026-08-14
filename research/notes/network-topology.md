@@ -13,7 +13,9 @@ Confirmed via strings in `EBOOT.elf` (verified independently against `research/s
 
 This means "build a custom server for Factions" is not the traditional shape of that problem (an authoritative server receiving client input and broadcasting world state). The realistic options are:
 
-1. **A headless client that wins host election** and runs the real game simulation itself (essentially running the actual client logic without the graphics/audio it doesn't need) - would inherit correctness from the real implementation, but means reverse-engineering / hosting the actual simulation code, not just a protocol.
-2. **An external reimplementation of the host-side simulation logic** - a from-scratch server that speaks the `NetEvent*` protocol from the *host* role, driven entirely by our own understanding of the game rules - harder, but doesn't depend on running the real client's code.
+1. A headless client that wins host election and runs the real game simulation itself.
+2. An external reimplementation of the host-side simulation logic.
 
-Not a decision to make now - flagging it here because it changes what "done" looks like for this whole project, and should be settled explicitly before deep server-implementation design work starts (it doesn't change anything about the current groundwork: opcode/protocol documentation is needed either way).
+**Decided (user, based on prior PS3-era server-revival experience): neither.** The project is scoped as **(3) the server-side auth/matchmaking/signaling backbone** - reimplementing what `sceNpMatching2` (rooms) and `sceNpSignaling` (NAT traversal/rendezvous) provide, so real, unmodified PS3 clients can find each other and do their own P2P host-migration exactly as originally designed. Not recreating the client or the host-side gameplay simulation - recreating the *original online experience* faithfully by standing up the backend that brings clients together. This means the `NetEvent*` opcode work (protos/) still matters for understanding/validating what flows over the resulting P2P links, but the actual server build target is the auth/matchmaking/signaling layer, not a game-logic host.
+
+Open implementation question for when backend design starts: build on top of / extend RPCN (which already reimplements the generic PSN layer many PS3 games share), or build an independent backend implementing just what Factions needs directly. Not yet decided.
