@@ -1,0 +1,17 @@
+# Never commit the analysis target itself (copyrighted game data)
+*.elf
+EBOOT.*
+
+# Vendored/cloned external tooling — referenced by URL + commit hash in docs instead
+tools/external/
+
+# Ghidra project (binary, not diffable) and large raw dumps — keep distilled findings, not raw output
+research/ghidra/*.gpr
+research/ghidra/*.rep/
+research/ghidra/*.lock
+research/ghidra/*.lock~
+research/disasm/*.asm
+
+# OS/editor cruft
+.DS_Store
+*.swp
