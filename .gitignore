@@ -21,6 +21,7 @@ captures/*.pcapng
 
 # Local RPCN server runtime output (live log, not a research artifact)
 backend/rpcn-run.log
+captures/http_catch.log
 
 # OS/editor cruft
 .DS_Store
