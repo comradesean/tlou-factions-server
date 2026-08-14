@@ -5,8 +5,12 @@ actually requests, and serving real files back when we have them.
 Parses the request line for the path, strips the leading '/', and looks for
 a matching file under SERVED_DIR (default tools/served_content/). If found,
 serves it with a real Content-Length and application/octet-stream. If not
-found, replies with FALLBACK_STATUS (default 404 Not Found, empty body) so
-the client's request cycle completes rather than hanging.
+found, replies with FALLBACK_STATUS (default 200 OK, empty body) so the
+client's request cycle completes rather than hanging. NOTE: a 404 fallback
+was tried and made the game fail *before* even reaching a menu (see
+research/notes/net1bin-server-list.md / session 3) - an empty 200 is what
+the game actually tolerates gracefully for content-delivery checks it
+doesn't strictly need. Don't default this back to 404 without re-testing.
 
 Not a real HTTP server - no range requests, no query-string handling
 (matches on path only), no persistent connections.
@@ -18,7 +22,7 @@ import os
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 80
 LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else "/mnt/f/ClaudeHole/tlou_factions/captures/http_catch.log"
-FALLBACK_STATUS = sys.argv[3] if len(sys.argv) > 3 else "404 Not Found"
+FALLBACK_STATUS = sys.argv[3] if len(sys.argv) > 3 else "200 OK"
 SERVED_DIR = sys.argv[4] if len(sys.argv) > 4 else "/mnt/f/ClaudeHole/tlou_factions/tools/served_content"
 
 
