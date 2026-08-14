@@ -2,6 +2,7 @@
 *.elf
 EBOOT.*
 tools/served_content/
+research/net1bin/
 
 # Vendored/cloned external tooling — referenced by URL + commit hash in docs instead
 tools/external/
