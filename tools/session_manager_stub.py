@@ -29,9 +29,23 @@ LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else "/mnt/f/ClaudeHole/tlou_faction
 CLIENT_HELLO_OPCODE = 0x12d
 SERVER_HELLO_OPCODE = 0x12e
 ROOM_CREATE_OPCODE = 0x12f
+MEMBER_OPCODE = 0x131
 ROOM_JOINED_OPCODE = 0x132
 PING_OPCODE = 0x145
 CLIENT_HELLO2_OPCODE = 0x146
+
+# Live-observed room-slot heap address (PS3 retail builds have no ASLR).
+# Seen identically across 3 separate RPCS3 debugger breakpoints this session
+# (once at FUN_00ad5ab0's r4, twice at the 0x00ad7b14 id-gate's r27) across
+# multiple independent "back to menu, host again" attempts within the same
+# RPCS3 process - not a guess, a repeated live observation. See
+# docs/protocol/0x131_member.md "The room_ptr hazard" - if this is wrong the
+# client dereferences it through an unchecked vtable call and will very
+# likely crash the emulator outright (acceptable risk here - just restart
+# RPCS3 and re-confirm via a fresh breakpoint if this value ever goes stale,
+# e.g. after a full RPCS3 restart rather than just leaving/rejoining the
+# multiplayer menu).
+ROOM_PTR = 0x01383bd8
 
 
 def build_room_joined(room_create_msg):
@@ -130,6 +144,86 @@ def build_room_joined(room_create_msg):
     return bytes(body)
 
 
+MEMBER_ID = 1
+
+
+def build_member(room_create_msg):
+    """Build a NetMatchmakingMember (opcode 0x131) room-roster broadcast.
+
+    Field layout from docs/protocol/0x131_member.md / protos/0x131_member.ksy
+    (decompiled this session from FUN_00ad7604's `iVar8 == 0x131` case plus
+    _opd_FUN_00ad6e34's byte-swap helper - see research/ghidra/member_decomp.txt
+    and dispatch_raw2.txt for the raw evidence).
+
+    This is what actually tells the client "you are both a member of this
+    room AND its owner" - RoomJoined alone registers a member but always
+    calls _opd_FUN_00ad33d8 with local/owner flag params hardcoded to 0,0 in
+    the compiled dispatch code, so a RoomJoined-only flow leaves the client
+    not knowing which member is itself or who owns the room. Member's header
+    carries two reference ids (owner_ref_id, local_ref_id) that get
+    XOR-compared against each roster entry's own member_id to set those
+    flags per-entry - sending a single entry whose id matches both refs
+    marks that one entry (the solo host) as both local and owner.
+
+    Header (160 bytes / 0xa0), high confidence except where noted:
+      0   4   opcode = 0x131
+      4   4   unknown, swapped but unread - zero
+      8   4   room_ptr - THE HAZARD FIELD. Dereferenced through an unchecked
+              vtable call client-side with no null check. Must be the live
+              address of the client's own room-slot object - see ROOM_PTR
+              above for how this value was obtained.
+      12  2   owner_ref_id
+      14  2   local_ref_id
+      16  8   overwrites room_obj+0x10 - the SAME id field RoomJoined's
+              create_id gate (0x00ad7b14) checks against. Zero here to stay
+              consistent with RoomJoined already having sent zero for the
+              matching field.
+      24  2   capacity - CONFIRMED via a live crash (2026-08-14): _opd_FUN_00ad33d8
+              (member registration, called from this message's own handler)
+              contains `if (room_obj+0x1f8 == 0) { trapWord(0x1f,...); }` -
+              an explicit compiled-in assert that this field is never zero.
+              Sending zero here hit that trap and crashed RPCS3 outright
+              (PPU Trap at 0x00ad38b8, live-confirmed). Now sourced from
+              RoomCreate's own wire offset 0x1e (2 bytes, captured live as
+              `00 0a` = 10) - the room's own declared max-player count is
+              the obvious source of truth for a "capacity" field.
+      26  2   roster_count
+      28  2   unknown, swapped but unread - zero
+      30  130 unread by the traced code - zero
+
+    Per-entry (104 bytes / 0x68) x roster_count:
+      0   36  18x u16 "attributes" - not independently mapped - zero
+      36  2   member_id - XOR-compared against owner_ref_id/local_ref_id
+      38  1   unread - zero
+      39  1   unread, flags-shaped - zero
+      40  64  unread by the traced loop - by parallel with RoomJoined's own
+              trailing region, likely a name/NpId buffer - filled with the
+              room-creator's npid (same source as RoomJoined's own npid
+              field) on the same "probably safe to echo" theory.
+    """
+    name_start = 0x28
+    name_end = room_create_msg.find(b"\x00", name_start)
+    name = room_create_msg[name_start:name_end] if name_end != -1 else b""
+    npid = name.split(b".", 1)[0][:16]
+
+    max_players = struct.unpack(">H", room_create_msg[0x1e:0x20])[0] or 10
+
+    header = bytearray(160)
+    struct.pack_into(">I", header, 0, MEMBER_OPCODE)
+    struct.pack_into(">I", header, 8, ROOM_PTR)
+    struct.pack_into(">H", header, 12, MEMBER_ID)  # owner_ref_id
+    struct.pack_into(">H", header, 14, MEMBER_ID)  # local_ref_id
+    struct.pack_into(">H", header, 24, max_players)  # capacity - must be nonzero, see docstring
+    struct.pack_into(">H", header, 26, 1)  # roster_count
+
+    entry = bytearray(104)
+    struct.pack_into(">H", entry, 36, MEMBER_ID)
+    npid_field = npid[:64]
+    entry[40:40 + len(npid_field)] = npid_field
+
+    return bytes(header) + bytes(entry)
+
+
 def hexdump(data):
     lines = []
     for i in range(0, len(data), 16):
@@ -213,7 +307,20 @@ def handle(conn, addr, log_lock, log):
                 reply = build_room_joined(chunk)
                 conn.sendall(reply)
                 emit(f"   parsed opcode={opcode:#x} (RoomCreate), "
-                     f"sent guessed RoomJoined reply (120 bytes)\n{hexdump(reply)}")
+                     f"sent RoomJoined reply (120 bytes)\n{hexdump(reply)}")
+                # ROOM_PTR re-confirmed live via a fresh 0x00ad7b14 breakpoint
+                # (r27 == 0x1383bd8, matching the earlier value exactly) -
+                # the pointer itself checks out. Raw-disasm trace of the
+                # 0x131 handler (research/ghidra/dispatch_raw2.txt) shows the
+                # vtable+0x18 call it makes through this pointer is a no-op,
+                # and our room_obj+0x10=0 choice takes the "not yet assigned"
+                # sentinel branch, not the second (riskier) vtable call - no
+                # obvious crash cause found in the reachable path for our
+                # current field values. Re-enabled to test empirically.
+                member = build_member(chunk)
+                conn.sendall(member)
+                emit(f"   sent Member broadcast (264 bytes, room_ptr={ROOM_PTR:#x}, "
+                     f"marking member_id={MEMBER_ID} as both local+owner)\n{hexdump(member)}")
             elif opcode == PING_OPCODE:
                 emit(f"   parsed opcode={opcode:#x} (Ping keepalive) - "
                      f"no reply sent, appears fire-and-forget (client-side timer driven)")
