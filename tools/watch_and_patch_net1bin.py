@@ -39,7 +39,12 @@ def try_patch():
 
 
 def main():
-    print(f"Watching {PATH} for {OLD} -> {NEW}, polling every 0.5s", flush=True)
+    # NOTE: measured race window between net1.bin being renamed into place and
+    # the game finishing its read is ~25ms (see research/notes/ - session 3).
+    # Even a tight poll loop is not guaranteed to win this reliably; this is a
+    # best-effort mitigation, not a real fix. The real fix is making the
+    # *served* net1.bin.psarc.crypt already decrypt to patched content.
+    print(f"Watching {PATH} for {OLD} -> {NEW}, polling every 5ms (best-effort - see race window note)", flush=True)
     last_mtime = None
     while True:
         try:
@@ -50,7 +55,7 @@ def main():
             last_mtime = mtime
             if mtime is not None:
                 try_patch()
-        time.sleep(0.5)
+        time.sleep(0.005)
 
 if __name__ == "__main__":
     main()
