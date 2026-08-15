@@ -401,26 +401,26 @@ def handle(conn, addr, log_lock, log):
                 reply = build_room_joined(npid, name, room_id)
                 member = build_member([(MEMBER_ID, npid)], room_id, max_players,
                                        owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID)
-                # ORDER FIX (2026-08-15, live debugger root-caused): RoomJoined's
-                # OWN handler (0x132 case, sessmgr_vtable_dump.txt) independently
-                # calls the SAME member-registration function Member's handler
-                # uses (_opd_FUN_00ad33d8) via its own id-gate match against the
-                # client's pre-existing room slot - completely separately from
-                # Member. That registration function unconditionally checks
-                # room_obj+0x1f8 (capacity) and traps if zero - but capacity is
-                # only ever WRITTEN during Member's own dispatch processing
-                # (dispatch_raw2.txt ~0xad77c4-0xad7810). Sending RoomJoined
-                # first meant its internal registration call always ran before
-                # capacity was ever set, hitting the same trap regardless of
-                # Member's contents - live-confirmed via a breakpoint at the
-                # capacity-write site (0x00ad77a8) that was NEVER REACHED before
-                # the crash. Member now goes out first so capacity is already
-                # set by the time RoomJoined's own registration call runs.
-                conn.sendall(member + reply)
-                emit(f"   parsed opcode={opcode:#x} (RoomCreate), sent Member+RoomJoined "
-                     f"as one write, Member first ({len(member)}+{len(reply)} bytes, "
+                # REVERTED to RoomJoined-first (2026-08-15): the Member-first
+                # order was introduced to fix a capacity trap in the
+                # find-match 2-real-player pairing path (see that branch's
+                # comment for the full mechanism - RoomJoined's own internal
+                # registration call needs capacity already set). Applying the
+                # SAME reorder here regressed solo-host Custom Game, which had
+                # worked crash-free for hours with RoomJoined sent first -
+                # live-confirmed 2026-08-15 (started crashing with the exact
+                # same SCE_NP_SIGNALING_ERROR_OWN_NP_ID/trap sequence only
+                # after this reorder landed). Unlike find-match, solo-host's
+                # RoomJoined id-gate MUST match the client's pending room slot
+                # (the original "Lobby Server Error" fix, live-debugger-
+                # confirmed at 0x00ad7b14) - it can't use find-match's
+                # non-matching id_gate workaround either, so reverting the
+                # order is the safe fix here specifically.
+                conn.sendall(reply + member)
+                emit(f"   parsed opcode={opcode:#x} (RoomCreate), sent RoomJoined+Member "
+                     f"as one write, RoomJoined first ({len(reply)}+{len(member)} bytes, "
                      f"room_ptr={ROOM_PTR:#x}, marking member_id={MEMBER_ID} as both "
-                     f"local+owner)\n{hexdump(member + reply)}")
+                     f"local+owner)\n{hexdump(reply + member)}")
             elif opcode == FIND_MATCH_OPCODE and not matched:
                 matched = True
                 with waiting_lock:
