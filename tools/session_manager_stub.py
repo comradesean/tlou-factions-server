@@ -425,11 +425,23 @@ def handle(conn, addr, log_lock, log):
                 else:
                     room_id = os.urandom(8)
                     max_players = 10
-                    members = [(MEMBER_ID, peer["npid"]), (JOINER_MEMBER_ID, own_npid)]
+                    host_entry = (MEMBER_ID, peer["npid"])
+                    joiner_entry = (JOINER_MEMBER_ID, own_npid)
                     room_name = peer["npid"] + b".matched"
 
+                    # Roster order is per-recipient, own entry FIRST - live-
+                    # confirmed 2026-08-15: with a shared host-first order for
+                    # both recipients, the host (self at index 0) reached the
+                    # lobby fine but the joiner (self at index 1, after the
+                    # real remote entry) hit SCE_NP_SIGNALING_ERROR_OWN_NP_ID -
+                    # a self-signaling attempt - despite both recipients using
+                    # the exact same self-npid-skip logic in build_member.
+                    # Since the field-content fix was identical for both but
+                    # only position differed, the client evidently treats
+                    # roster index 0 as "me" positionally, not by content -
+                    # each recipient now gets their own entry first.
                     peer_room_joined = build_room_joined(peer["npid"], room_name, room_id)
-                    peer_member = build_member(members, room_id, max_players,
+                    peer_member = build_member([host_entry, joiner_entry], room_id, max_players,
                                                 owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID)
                     # Member sent BEFORE RoomJoined - see the matching comment
                     # in the RoomCreate branch above (capacity must be written
@@ -442,7 +454,7 @@ def handle(conn, addr, log_lock, log):
                                   f"(member_id={MEMBER_ID}) room_id={room_id.hex()}")
 
                     self_room_joined = build_room_joined(own_npid, room_name, room_id)
-                    self_member = build_member(members, room_id, max_players,
+                    self_member = build_member([joiner_entry, host_entry], room_id, max_players,
                                                 owner_ref_id=MEMBER_ID, local_ref_id=JOINER_MEMBER_ID)
                     conn.sendall(self_member + self_room_joined)
                     emit(f"   parsed opcode={opcode:#x} (find-match search broadcast) - "
