@@ -111,7 +111,7 @@ waiting_lock = threading.Lock()
 waiting_player = None
 
 
-def build_room_joined(npid, name, room_id, id_gate=0):
+def build_room_joined(npid, name, room_id, id_gate=0, map_id=b"\x00\x00\x00\x00"):
     """Build a guessed NetMatchmakingRoomJoined (opcode 0x132) reply to a
     captured NetMatchmakingRoomCreate (opcode 0x12f).
 
@@ -146,7 +146,20 @@ def build_room_joined(npid, name, room_id, id_gate=0):
     UNCONFIRMED / best-effort:
     - Offset 4:8 (4 bytes): referenced by other dispatch cases (e.g. 0x13b) as
       a generic u16 "room index"-shaped field but not read anywhere in this
-      specific 0x132 case in the traced decompile - left zero.
+      specific 0x132 case in the traced decompile - previously left zero.
+      NEW (2026-08-15): diffing 5 real RoomCreate captures across repeated
+      selections of two different maps found RoomCreate's own wire offset
+      0xc (4 bytes) is IDENTICAL across repeats of the same map (Checkpoint:
+      0x9 both times; Lakeside: 0x13 all three times) and different between
+      maps - not consistent with a simple incrementing counter, which is
+      what this field was previously assumed to be (a counter wouldn't
+      repeat the exact same value across separate RoomCreate messages).
+      Live symptom this correlates with: Checkpoint loaded as an empty
+      skybox with no level geometry, Lakeside loaded much further before
+      being kicked back to lobby - consistent with this being a map/level
+      identifier the client needs echoed back to resolve which content to
+      actually load from the shared level pak. Testing echoing it into this
+      previously-always-zero slot.
     - Offset 16:32 (first 16 bytes of the "18x u16 attribute" block): traced
       this pass to the likely root cause of the post-RoomJoined RPCS3 crash
       ("SIG: ... Unexpected error in reply to RequestSignalingInfos:
@@ -195,6 +208,7 @@ def build_room_joined(npid, name, room_id, id_gate=0):
     """
     body = bytearray(120)
     struct.pack_into(">I", body, 0, ROOM_JOINED_OPCODE)
+    body[4:8] = map_id[:4]
     # offset 8:16 (id_gate) - zero by default, live-confirmed against the
     # client's own room-slot memory rather than echoed from RoomCreate (see
     # docstring). MUST stay zero for the solo-host RoomCreate path (matches
@@ -474,8 +488,12 @@ def handle(conn, addr, log_lock, log):
                 # a real, nonzero room identity is expected once past the
                 # RoomJoined id-gate - see build_member's docstring.
                 room_id = chunk[4:12]
+                # RoomCreate's own wire offset 0xc:0x10 (4 bytes) - live-
+                # evidenced 2026-08-15 as a likely map/level identifier, see
+                # build_room_joined's docstring. Echo it straight back.
+                map_id = chunk[0xc:0x10]
 
-                reply = build_room_joined(npid, name, room_id)
+                reply = build_room_joined(npid, name, room_id, map_id=map_id)
                 member = build_member([(MEMBER_ID, npid)], room_id, max_players,
                                        owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID)
                 # REVERTED to RoomJoined-first (2026-08-15): the Member-first
@@ -494,10 +512,11 @@ def handle(conn, addr, log_lock, log):
                 # non-matching id_gate workaround either, so reverting the
                 # order is the safe fix here specifically.
                 conn.sendall(reply + member)
-                emit(f"   parsed opcode={opcode:#x} (RoomCreate), sent RoomJoined+Member "
-                     f"as one write, RoomJoined first ({len(reply)}+{len(member)} bytes, "
-                     f"room_ptr={ROOM_PTR:#x}, marking member_id={MEMBER_ID} as both "
-                     f"local+owner)\n{hexdump(reply + member)}")
+                emit(f"   parsed opcode={opcode:#x} (RoomCreate, map_id={map_id.hex()}), sent "
+                     f"RoomJoined+Member as one write, RoomJoined first "
+                     f"({len(reply)}+{len(member)} bytes, room_ptr={ROOM_PTR:#x}, "
+                     f"marking member_id={MEMBER_ID} as both local+owner)\n"
+                     f"{hexdump(reply + member)}")
                 start_member_refresher(conn, emit, [(MEMBER_ID, npid)], room_id, max_players,
                                         MEMBER_ID, MEMBER_ID, stop_event)
             elif opcode == FIND_MATCH_OPCODE and not matched:
