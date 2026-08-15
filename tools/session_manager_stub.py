@@ -145,9 +145,11 @@ def build_room_joined(room_create_msg):
 
 
 MEMBER_ID = 1
+SYNTHETIC_MEMBER_ID = 2
+SYNTHETIC_MEMBER_NPID = b"bot"
 
 
-def build_member(room_create_msg):
+def build_member(room_create_msg, roster_count=1):
     """Build a NetMatchmakingMember (opcode 0x131) room-roster broadcast.
 
     Field layout from docs/protocol/0x131_member.md / protos/0x131_member.ksy
@@ -175,9 +177,18 @@ def build_member(room_create_msg):
       12  2   owner_ref_id
       14  2   local_ref_id
       16  8   overwrites room_obj+0x10 - the SAME id field RoomJoined's
-              create_id gate (0x00ad7b14) checks against. Zero here to stay
-              consistent with RoomJoined already having sent zero for the
-              matching field.
+              create_id gate (0x00ad7b14) checks against, but at a DIFFERENT
+              point in time. RoomJoined's own wire offset 8 (the gate-compare
+              value) must be zero to match the client's pre-existing local
+              slot state (live-confirmed via the debugger). This field
+              overwrites that same room_obj+0x10 AFTER the gate already
+              passed - live-confirmed (2026-08-14) that leaving it zero here
+              too causes a later named assertion failure once the client
+              proceeds toward loading the match:
+              `*** ASSERTION: m_roomId != 0 *** game/net/net-event/
+              net-event-player.cpp:560`. Fixed by sending RoomCreate's own
+              8-byte transaction id here instead - a real, nonzero room
+              identity is expected once past the initial gate.
       24  2   capacity - CONFIRMED via a live crash (2026-08-14): _opd_FUN_00ad33d8
               (member registration, called from this message's own handler)
               contains `if (room_obj+0x1f8 == 0) { trapWord(0x1f,...); }` -
@@ -207,21 +218,42 @@ def build_member(room_create_msg):
     npid = name.split(b".", 1)[0][:16]
 
     max_players = struct.unpack(">H", room_create_msg[0x1e:0x20])[0] or 10
+    # RoomCreate's own 8-byte transaction id (wire offset 4:12) - see
+    # "The room_id overwrite - resolved" in the docstring below for why this
+    # goes here and not zero.
+    room_id = room_create_msg[4:12]
 
     header = bytearray(160)
     struct.pack_into(">I", header, 0, MEMBER_OPCODE)
     struct.pack_into(">I", header, 8, ROOM_PTR)
     struct.pack_into(">H", header, 12, MEMBER_ID)  # owner_ref_id
     struct.pack_into(">H", header, 14, MEMBER_ID)  # local_ref_id
+    header[16:24] = room_id
     struct.pack_into(">H", header, 24, max_players)  # capacity - must be nonzero, see docstring
-    struct.pack_into(">H", header, 26, 1)  # roster_count
+    struct.pack_into(">H", header, 26, roster_count)
 
     entry = bytearray(104)
     struct.pack_into(">H", entry, 36, MEMBER_ID)
     npid_field = npid[:64]
     entry[40:40 + len(npid_field)] = npid_field
+    entries = bytearray(entry)
 
-    return bytes(header) + bytes(entry)
+    # EXPERIMENTAL (2026-08-14): community research on retail Factions private
+    # matches consistently frames the minimum as 2 players, never 1, and the
+    # client sends zero network traffic when the "Starting Game" spinner
+    # hangs - consistent with a local precondition check (roster size) never
+    # being satisfied rather than a missing server reply. Testing that theory
+    # by padding the roster with a second, non-local, non-owner synthetic
+    # entry. If this is wrong the client likely either ignores the extra slot
+    # or tries to treat it as a real signaling peer and errors/crashes -
+    # revert roster_count to 1 (drop the call site's roster_count=2) if so.
+    if roster_count > 1:
+        synth = bytearray(104)
+        struct.pack_into(">H", synth, 36, SYNTHETIC_MEMBER_ID)
+        synth[40:40 + len(SYNTHETIC_MEMBER_NPID)] = SYNTHETIC_MEMBER_NPID
+        entries += synth
+
+    return bytes(header) + bytes(entries)
 
 
 def hexdump(data):
@@ -317,10 +349,11 @@ def handle(conn, addr, log_lock, log):
                 # sentinel branch, not the second (riskier) vtable call - no
                 # obvious crash cause found in the reachable path for our
                 # current field values. Re-enabled to test empirically.
-                member = build_member(chunk)
+                member = build_member(chunk, roster_count=2)
                 conn.sendall(member)
-                emit(f"   sent Member broadcast (264 bytes, room_ptr={ROOM_PTR:#x}, "
-                     f"marking member_id={MEMBER_ID} as both local+owner)\n{hexdump(member)}")
+                emit(f"   sent Member broadcast ({len(member)} bytes, room_ptr={ROOM_PTR:#x}, "
+                     f"marking member_id={MEMBER_ID} as both local+owner, "
+                     f"+1 synthetic member_id={SYNTHETIC_MEMBER_ID})\n{hexdump(member)}")
             elif opcode == PING_OPCODE:
                 emit(f"   parsed opcode={opcode:#x} (Ping keepalive) - "
                      f"no reply sent, appears fire-and-forget (client-side timer driven)")
