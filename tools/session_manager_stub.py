@@ -86,22 +86,20 @@ UPDATED_ATTR_FLAGS_OPCODE = 0x141
 PING_OPCODE = 0x145
 CLIENT_HELLO2_OPCODE = 0x146
 # NetMatchmakingKickedout (declared, 16 bytes) - confirmed WRONG both name
-# and size, same "declared table lies" pattern as 0x133. Live-captured
-# 2026-08-15 for the first time this whole project: fires the instant the
-# in-game "invite to party" action is used (client shows a "Creating Party"
-# spinner), 80 bytes, embedding the host's own already-open room_id at wire
-# offset 8:16 (exact match to the room RoomCreate already established) and 4
-# IEEE-754 floats in the tail (1.0, ~0.729, ~0.710, ~0.650 - shape unknown,
-# possibly matchmaking/skill weighting). NOT one of the client's own
-# receive-dispatch (FUN_00ad7604) cases (re-decompiled in full 2026-08-15,
-# confirmed absent) - same outbound-only shape as 0x133, so no numbered
-# reply is expected by name. Left unanswered live, the client times out the
-# spinner and hard-disconnects entirely ("You have been disconnected from
-# the game servers") - a harder failure than find-match's soft "cannot
-# connect" error, suggesting the client wants SOME response, just not a
-# same-opcode one. Working theory: it wants the same RoomJoined+Member
-# confirmation pair Custom Game hosting already gets, re-sent for the
-# party context - untested until now.
+# and size, same "declared table lies" pattern as 0x133. Named "CreateParty"
+# after first appearing right as the in-game "invite to party" action was
+# used - but CORRECTED 2026-08-15 (later same day): a live-breakpoint trace
+# of its actual sender (_opd_FUN_00ad6148, called from 0x003B17CC/
+# 0x003B17E0) proved it fires on a periodic/UI-transition tick completely
+# independent of party or room state - hits repeatedly from the main menu,
+# through EULA acceptance, and every menu "continue" click, with the
+# caller's own register context containing a literal Google Analytics
+# beacon URL string ("GET /__utm.gif?..."). This is periodic telemetry, not
+# party creation - the original invite correlation was timing coincidence.
+# See research/notes/2026-08-15-createparty-trace.md for the full trace and
+# correction. Real name/purpose still unknown; kept as a fire-and-forget
+# log-only opcode (matches live evidence: not one of the client's own
+# receive-dispatch cases, no reply behavior ever demonstrated to matter).
 CREATE_PARTY_OPCODE = 0x13a
 
 # Live-observed room-slot heap address (PS3 retail builds have no ASLR).
@@ -622,25 +620,13 @@ def handle(conn, addr, log_lock, log):
                      f"room_id={room_id_tail.hex()}) - no reply (confirmed "
                      f"fire-and-forget)")
             elif opcode == CREATE_PARTY_OPCODE and len(chunk) >= 16:
-                # REVERTED to log-only 2026-08-15: the RoomJoined+Member reply
-                # experiment had no effect (client still hard-disconnected).
-                # Live breakpoint on the sender (_opd_FUN_00ad6148, vtable
-                # slot +0x50) and its caller (_opd_FUN_00ad1fc0 @ 0xad2034)
-                # found the real cause is unrelated to any reply from us:
-                # _opd_FUN_00ad1fc0's own "this" pointer is passed straight
-                # through as the room argument, and a SECOND call from the
-                # exact same call site (a shared loop/ticker, not a retry of
-                # the first) fires with a garbage "this" that fails the
-                # internal 4-slot room search - _opd_FUN_00ad1fc0 treats that
-                # failure as fatal (trapWord(0x1f,...), an assertion trap
-                # "Stub PPU Traps" downgrades to the observed disconnect
-                # instead of a hard crash). This looks like stale/corrupted
-                # client-side room-slot state, not a missing server reply -
-                # see research/notes/2026-08-15-createparty-trace.md.
+                # Log-only - CORRECTED 2026-08-15, see the constant's
+                # docstring: this is periodic telemetry, unrelated to party
+                # invites or room state. Not the bug we were chasing.
                 room_id_tail = chunk[8:16]
-                emit(f"   parsed opcode={opcode:#x} (CreateParty, room_id={room_id_tail.hex()}) "
-                     f"- no reply (confirmed fire-and-forget sender, see "
-                     f"research/notes/2026-08-15-createparty-trace.md)")
+                emit(f"   parsed opcode={opcode:#x} (periodic telemetry, not "
+                     f"party-related - see CREATE_PARTY_OPCODE docstring), "
+                     f"unrelated field={room_id_tail.hex()} - no reply")
             elif opcode == ROOM_SEARCH_INFO_OPCODE and len(chunk) >= 16:
                 # Echo the room_id straight back at the same wire offset (8),
                 # matching the general "echo the client's own correlation

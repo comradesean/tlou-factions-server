@@ -1,5 +1,27 @@
 # CreateParty (0x13a) live trace: fire-and-forget sender, disconnect is a client-side assert on a second, unrelated call
 
+**CORRECTION 2026-08-15 (later same day)**: everything below this point is an
+accurate trace of `0x13a`/`_opd_FUN_00ad6148` - but it is NOT the party-invite
+trigger. A follow-up live-breakpoint session on the two direct callers
+(`0x003B17CC`/`0x003B17E0`) proved this call fires on a periodic/UI-transition
+tick completely independent of party or room state: it hit repeatedly from the
+main menu, through EULA acceptance, the faction-select cinematic, and every
+"continue" click - long before hosting a room or touching the party UI, with
+both argument pointers (`0x1383bd8`, `0x1387f58`) constant across all of it.
+The caller's own register context at the time contains the literal string
+`"GET /__utm.gif?utmwv=5.2.5&utmac"` (a Google Analytics beacon URL) - this
+whole code path is periodic telemetry/analytics reporting, not party
+creation. The correlation with the party invite in the original test was
+timing coincidence, not causation. The real party-invite trigger (what causes
+the "Creating Party" spinner and subsequent disconnect) is still unknown -
+nothing distinctive appears on the session-manager wire (port 7314) between
+the invite action and the eventual `0x133` abandon + connection reset, so it
+may not be a session-manager feature at all - possibly a Sony system-level NP
+feature (friends/invite messaging) instead. The trace below remains useful
+background on the SessionManager vtable/OPD structure but should not be read
+as party-invite-specific.
+
+
 Live RPCS3 breakpoint at `0x00AD6148` (the `0x13a` sender), triggered by using the
 in-game "invite to party" action with a real solo-hosted Private Match room open.
 Two separate test runs, each producing two hits from the same breakpoint ~4s apart.
