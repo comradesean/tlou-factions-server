@@ -6,7 +6,13 @@ This is a legitimate reverse-engineering / game-preservation effort: the analysi
 
 ## Status
 
-Groundwork phase — see `docs/protocol/README.md` for the current opcode/packet documentation index and `research/prior-art.md` for what's already known from outside sources. No live capture has happened yet, but numeric IDs for 115 `NetEventType` gameplay opcodes are already confirmed via static analysis — see `protos/common/opcodes.ksy`.
+Protocol RE is well advanced and live infrastructure is up and running — see `docs/protocol/README.md` for the current opcode/packet documentation index and `research/prior-art.md` for what's already known from outside sources.
+
+- All 115 `NetEventType` gameplay opcodes have confirmed numeric IDs and a fully mapped dispatch mechanism (`protos/common/opcodes.ksy`); 16 have fully confirmed wire schemas, most of the rest have a known object size and/or constructor ready for the next pass.
+- The ticket-server control channel's encrypt-then-MAC cipher is fully solved (`tools/ticket_cipher.py` decrypts a real captured message and recovers a genuine Sony NP ticket).
+- All 28 `NetMatchmaking*` session-manager opcodes (auth handshake, room create/join/search) have confirmed numeric IDs and wire sizes.
+- A self-hosted RPCN fork (`backend/`) plus custom stub servers (`tools/`) now get a real RPCS3 client all the way through auth → lobby → hosting/joining a room → loading into an actual map — this is live-tested, not just statically analyzed.
+- Current live blocker: the client gets booted back to lobby a few seconds after loading into a map. Undiagnosed as of 2026-08-15 — see `research/notes/` for the latest dated entries.
 
 ## Layout
 
@@ -14,7 +20,7 @@ Groundwork phase — see `docs/protocol/README.md` for the current opcode/packet
 - `docs/` — methodology, tooling setup, and per-packet semantic documentation (`docs/protocol/`) explaining *why* a field exists, not just its type.
 - `research/` — raw and filtered static-analysis output (strings, disassembly, Ghidra project, working notes) and `prior-art.md`.
 - `tools/` — helper scripts and external tooling references used for analysis.
-- `captures/` — placeholder for future live packet captures. Empty until a capture session happens.
+- `captures/` — live packet captures and stub-server runtime logs from live testing (see `captures/README.md`).
 
 The `EBOOT.elf` itself is never committed to this repo (copyrighted game data) — see `docs/tooling.md` for its fingerprint (SHA256/size) so any session can verify it's working from the same build.
 
