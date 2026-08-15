@@ -233,8 +233,16 @@ def build_member(members, room_id, max_players, owner_ref_id, local_ref_id):
               (`research/notes/2026-08-14-signaling-crash-npid-trace.md`) -
               `sceNpSignalingGetConnectionFromNpId`/`ActivateConnection`
               needs a real per-member NpId that isn't the offset-40 trailing
-              buffer this code always filled. Now filled with this entry's
-              own npid, mirroring RoomJoined's offset 16:32 fix exactly.
+              buffer this code always filled. Filled with this entry's own
+              npid, mirroring RoomJoined's offset 16:32 fix - EXCEPT for
+              whichever entry is the recipient's own (member_id ==
+              local_ref_id): live-confirmed 2026-08-15 that populating a
+              recipient's own entry here makes the client call
+              sceNpSignalingGetConnectionFromNpId on itself, which Sony's API
+              rejects outright (`SCE_NP_SIGNALING_ERROR_OWN_NP_ID`,
+              0x8002a816) and which cascades into the same room-size/capacity
+              trap. Left zero for the recipient's own entry, filled for every
+              other (remote) entry.
       16  20  remainder of the 18x u16 "attributes" block - not independently
               mapped - zero
       36  2   member_id - XOR-compared against owner_ref_id/local_ref_id
@@ -263,8 +271,18 @@ def build_member(members, room_id, max_players, owner_ref_id, local_ref_id):
     entries = bytearray()
     for member_id, npid in members:
         entry = bytearray(104)
-        npid_16 = npid[:16]
-        entry[0:len(npid_16)] = npid_16
+        # Only tell the recipient to open NP signaling toward OTHER members -
+        # live-confirmed 2026-08-15 via RPCS3's own log:
+        # "'sceNpSignalingGetConnectionFromNpId' failed with 0x8002a816 :
+        # SCE_NP_SIGNALING_ERROR_OWN_NP_ID" - Sony's API explicitly rejects
+        # opening signaling to yourself. The previous fix populated this
+        # attribute-block npid for every entry uniformly, including each
+        # recipient's own local entry, which made the client try to signal
+        # itself and crash. member_id == local_ref_id identifies "this
+        # recipient's own entry" - skip it there.
+        if member_id != local_ref_id:
+            npid_16 = npid[:16]
+            entry[0:len(npid_16)] = npid_16
         struct.pack_into(">H", entry, 36, member_id)
         npid_field = npid[:64]
         entry[40:40 + len(npid_field)] = npid_field
