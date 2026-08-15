@@ -43,6 +43,21 @@ ROOM_JOINED_OPCODE = 0x132
 # advertisement, not a one-off "I left a room" event. Treating it as the
 # find-match heartbeat/broadcast until proven otherwise.
 FIND_MATCH_OPCODE = 0x135
+# NetMatchmakingRoomSearchInfo (declared 56 bytes, actual 16) - client sends
+# this unprompted after Member/RoomJoined. Live capture 2026-08-15 of a real
+# 2-player pairing: payload's tail 8 bytes exactly match the room_id we
+# assigned via Member, and a new never-before-seen opcode 0x133
+# (NetMatchmakingMemberJoined, also 16 bytes, same 8-byte room_id tail) now
+# precedes it too - neither ever appeared in any solo-host capture, only
+# once a real second member exists. 0x138 (NetMatchmakingRoomSearchResult)
+# IS one of the 11 opcodes the client's own receive-dispatch already
+# handles (sessmgr_vtable_dump.txt) - its handler searches a 4-slot local
+# array by an 8-byte key at wire offset 8, matching this room_id shape.
+# Working theory: client is asking us to close out its search-tracking
+# entry for this room now that it's found a real match - has stayed on
+# "Searching for Optimal Game" every time this was left unhandled.
+ROOM_SEARCH_INFO_OPCODE = 0x137
+ROOM_SEARCH_RESULT_OPCODE = 0x138
 PING_OPCODE = 0x145
 CLIENT_HELLO2_OPCODE = 0x146
 
@@ -481,6 +496,15 @@ def handle(conn, addr, log_lock, log):
                          f"MATCHED with {peer['npid']!r} - sent Member+RoomJoined as one write, "
                          f"Member first, as joiner (member_id={JOINER_MEMBER_ID}) "
                          f"room_id={room_id.hex()}")
+            elif opcode == ROOM_SEARCH_INFO_OPCODE and len(chunk) >= 16:
+                # Echo the room_id straight back at the same wire offset (8),
+                # matching the general "echo the client's own correlation
+                # value" pattern used throughout this protocol.
+                room_id_tail = chunk[8:16]
+                reply = struct.pack(">I", ROOM_SEARCH_RESULT_OPCODE) + b"\x00\x00\x00\x00" + room_id_tail
+                conn.sendall(reply)
+                emit(f"   parsed opcode={opcode:#x} (RoomSearchInfo) - sent RoomSearchResult "
+                     f"(16 bytes) echoing room_id={room_id_tail.hex()}\n{hexdump(reply)}")
             elif opcode == PING_OPCODE:
                 emit(f"   parsed opcode={opcode:#x} (Ping keepalive) - "
                      f"no reply sent, appears fire-and-forget (client-side timer driven)")
