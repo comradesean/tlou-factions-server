@@ -19,6 +19,18 @@ bytes (`[4-byte opcode][payload]`), not wrapped in ticket-server's encrypt-then-
 frame - this resolves open item #3 below. The actual "connecting..." hang turned out
 to be a previously-undocumented fourth port, 7313 - see the new note.
 
+**2026-08-15 correction, see `research/notes/2026-08-15-room-teardown-and-flag-chain.md`
+and `protos/0x133_room_leaving.ksy` for full detail:** unlike ClientHello2/Ping
+(wrong *numeric* opcode), `0x133`'s numeric value is fine (live-captured directly on
+the wire) but its declared *name*, `NetMatchmakingMemberJoined`, is now confirmed
+wrong via full decompile of the function that sends it (`_opd_FUN_00ad65e8`) - it
+fires when the client abandons a room it's tracking, immediately zeroes its own
+room-id copy, and walks every member slot through the exact same removal path the
+confirmed `0x134`/`RoomLeave` case uses. It belongs conceptually next to
+`RoomLeave`/`RoomLeft`, not `MemberJoined`. Also confirmed not one of the 11
+client-receivable opcodes below - fire-and-forget, no reply expected or useful (a
+same-opcode echo reply was tried live and had zero effect).
+
 **2026-08-14 second correction, see `research/notes/2026-08-14-room-create-joined.md`:**
 with the port-7313 hang fixed, live testing progressed further and hit a new error,
 "Lobby Server Error" - this comes from the client's own client-side timeout after
@@ -236,7 +248,7 @@ used below; the two matched exactly wherever compared).
 | 3 | 0x130 | 304 | `NetMatchmakingRoomJoin` | 88 |
 | 4 | 0x131 | 305 | `NetMatchmakingMember` | 104 |
 | 5 | 0x132 | 306 | `NetMatchmakingRoomJoined` | 160 |
-| 6 | 0x133 | 307 | `NetMatchmakingMemberJoined` | 120 |
+| 6 | 0x133 | 307 | ~~`NetMatchmakingMemberJoined`~~ **CONFIRMED WRONG NAME**, see below | 120 (declared) / 16 (actual, live-confirmed) |
 | 7 | 0x134 | 308 | `NetMatchmakingRoomLeave` | 16 |
 | 8 | 0x135 | 309 | `NetMatchmakingRoomLeft` | 24 |
 | 9 | 0x136 | 310 | `NetMatchmakingRoomSearch` | 36 |

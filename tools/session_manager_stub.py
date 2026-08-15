@@ -43,30 +43,30 @@ ROOM_JOINED_OPCODE = 0x132
 # advertisement, not a one-off "I left a room" event. Treating it as the
 # find-match heartbeat/broadcast until proven otherwise.
 FIND_MATCH_OPCODE = 0x135
+# RESOLVED 2026-08-15 (see research/notes/2026-08-15-room-teardown-and-flag-
+# chain.md and protos/0x133_room_leaving.ksy for the full decompiled trace):
+# despite the declared table calling this NetMatchmakingMemberJoined, it is
+# NOT a join event - full decompile of the sending function
+# (_opd_FUN_00ad65e8) proves it fires when the client gives up on and
+# abandons a room it's tracking: it zeroes its own local room-id copy right
+# after sending this, then walks every member slot through the exact same
+# per-member removal path the confirmed 0x134 (RoomLeave) case uses.
+# Fire-and-forget - not one of the 11 opcodes the client's own receive-
+# dispatch has a case for, and a same-opcode echo reply tried live had zero
+# effect either way (expected, now that the real semantics are known) - left
+# unhandled/log-only rather than echoed.
+ROOM_LEAVING_OPCODE = 0x133
 # NetMatchmakingRoomSearchInfo (declared 56 bytes, actual 16) - client sends
 # this unprompted after Member/RoomJoined. Live capture 2026-08-15 of a real
 # 2-player pairing: payload's tail 8 bytes exactly match the room_id we
-# assigned via Member, and a new never-before-seen opcode 0x133
-# (NetMatchmakingMemberJoined, also 16 bytes, same 8-byte room_id tail) now
-# precedes it too - neither ever appeared in any solo-host capture, only
-# once a real second member exists. 0x138 (NetMatchmakingRoomSearchResult)
-# IS one of the 11 opcodes the client's own receive-dispatch already
-# handles (sessmgr_vtable_dump.txt) - its handler searches a 4-slot local
-# array by an 8-byte key at wire offset 8, matching this room_id shape.
-# Working theory: client is asking us to close out its search-tracking
-# entry for this room now that it's found a real match - has stayed on
-# "Searching for Optimal Game" every time this was left unhandled.
-# NetMatchmakingMemberJoined (declared 120 bytes, actual 16) - one of the 9
-# opcodes in the 0x131-0x144 range never decompiled (docs/protocol/
-# session_manager_and_matchmaking.md ~line 279). Client sends this ~55-70s
-# after a real pairing, same 16-byte shape and same room_id-echo tail as
-# 0x137. Fresh audit 2026-08-15 of the 3 most recent real pairings: in 2 of
-# 3 (including the newest on record), this is the LAST matchmaking traffic
-# before the client goes silent except Ping, forever - it never even
-# reaches 0x137 in those cases. Never acked before. Testing a same-opcode
-# echo reply (mirroring the 0x137/0x138 room_id-echo pattern) since this
-# looks like the earlier, more fundamental gate than anything downstream.
-MEMBER_JOINED_OPCODE = 0x133
+# assigned via Member. 0x138 (NetMatchmakingRoomSearchResult) IS one of the
+# 11 opcodes the client's own receive-dispatch already handles
+# (sessmgr_vtable_dump.txt) - its handler searches a 4-slot local array by an
+# 8-byte key at wire offset 8, matching this room_id shape. A room_id-echo
+# reply was tried live and had zero effect on the "Searching for Optimal
+# Game"/"Starting Game" hang - ROOM_LEAVING_OPCODE above (the client
+# abandoning the room on its own, for a still-unknown reason) is the more
+# likely actual cause of that hang, not a missing reply to this opcode.
 ROOM_SEARCH_INFO_OPCODE = 0x137
 ROOM_SEARCH_RESULT_OPCODE = 0x138
 PING_OPCODE = 0x145
@@ -507,12 +507,14 @@ def handle(conn, addr, log_lock, log):
                          f"MATCHED with {peer['npid']!r} - sent Member+RoomJoined as one write, "
                          f"Member first, as joiner (member_id={JOINER_MEMBER_ID}) "
                          f"room_id={room_id.hex()}")
-            elif opcode == MEMBER_JOINED_OPCODE and len(chunk) >= 16:
+            elif opcode == ROOM_LEAVING_OPCODE and len(chunk) >= 16:
+                # No reply - confirmed fire-and-forget, see the constant's
+                # docstring. This firing means the client just gave up on
+                # and abandoned this room on its own initiative.
                 room_id_tail = chunk[8:16]
-                reply = struct.pack(">I", MEMBER_JOINED_OPCODE) + b"\x00\x00\x00\x00" + room_id_tail
-                conn.sendall(reply)
-                emit(f"   parsed opcode={opcode:#x} (MemberJoined) - sent same-opcode echo "
-                     f"(16 bytes) echoing room_id={room_id_tail.hex()}\n{hexdump(reply)}")
+                emit(f"   parsed opcode={opcode:#x} (client abandoning room, "
+                     f"room_id={room_id_tail.hex()}) - no reply (confirmed "
+                     f"fire-and-forget)")
             elif opcode == ROOM_SEARCH_INFO_OPCODE and len(chunk) >= 16:
                 # Echo the room_id straight back at the same wire offset (8),
                 # matching the general "echo the client's own correlation
