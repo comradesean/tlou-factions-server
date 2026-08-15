@@ -28,6 +28,7 @@ import socket
 import sys
 import datetime
 import os
+import threading
 import urllib.request
 import urllib.error
 
@@ -102,6 +103,50 @@ def build_response(request_line, text):
     return header, path, 0, upstream_note
 
 
+def handle(conn, addr, log, log_lock):
+    ts = datetime.datetime.now().isoformat()
+    try:
+        conn.settimeout(5)
+        data = b""
+        try:
+            while True:
+                chunk = conn.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+                if b"\r\n\r\n" in data:
+                    break
+        except socket.timeout:
+            pass
+
+        text = data.decode("latin1", errors="replace")
+        request_line = text.split("\r\n", 1)[0] if text else ""
+
+        entry = f"==== {ts} from {addr[0]}:{addr[1]} ====\n{text}\n"
+        # build_response() can block for up to UPSTREAM_TIMEOUT seconds on a
+        # live upstream fetch (e.g. patch.psarc.crypt's bucket is permanently
+        # dead and re-attempts on every single request, never caching) - this
+        # runs per-connection in its own thread specifically so a slow fetch
+        # for one request can't starve other concurrent requests (this was a
+        # real bug: a second, concurrent net1.bin.psarc.crypt connection
+        # arriving while a patch.psarc.crypt fetch was still in flight got no
+        # response at all until the client's own 10s connect timeout gave up
+        # and closed it - not a network/firewall/DNS issue, confirmed via a
+        # live RPCS3 log trace of the hung connect() call).
+        response, matched_path, served_len, upstream_note = build_response(request_line, text)
+        entry += f"---- responded: {'served ' + str(served_len) + ' bytes for ' + matched_path if served_len else FALLBACK_STATUS}{upstream_note} ----\n"
+        with log_lock:
+            print(entry, flush=True)
+            log.write(entry + "\n")
+
+        try:
+            conn.sendall(response)
+        except OSError:
+            pass
+    finally:
+        conn.close()
+
+
 def main():
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -109,39 +154,11 @@ def main():
     srv.listen(5)
     print(f"Listening on 0.0.0.0:{PORT}, logging to {LOG_PATH}, serving from {SERVED_DIR}", flush=True)
 
+    log_lock = threading.Lock()
     with open(LOG_PATH, "a", buffering=1) as log:
         while True:
             conn, addr = srv.accept()
-            ts = datetime.datetime.now().isoformat()
-            try:
-                conn.settimeout(5)
-                data = b""
-                try:
-                    while True:
-                        chunk = conn.recv(65536)
-                        if not chunk:
-                            break
-                        data += chunk
-                        if b"\r\n\r\n" in data:
-                            break
-                except socket.timeout:
-                    pass
-
-                text = data.decode("latin1", errors="replace")
-                request_line = text.split("\r\n", 1)[0] if text else ""
-
-                entry = f"==== {ts} from {addr[0]}:{addr[1]} ====\n{text}\n"
-                response, matched_path, served_len, upstream_note = build_response(request_line, text)
-                entry += f"---- responded: {'served ' + str(served_len) + ' bytes for ' + matched_path if served_len else FALLBACK_STATUS}{upstream_note} ----\n"
-                print(entry, flush=True)
-                log.write(entry + "\n")
-
-                try:
-                    conn.sendall(response)
-                except OSError:
-                    pass
-            finally:
-                conn.close()
+            threading.Thread(target=handle, args=(conn, addr, log, log_lock), daemon=True).start()
 
 if __name__ == "__main__":
     main()
