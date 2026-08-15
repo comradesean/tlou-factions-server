@@ -328,6 +328,42 @@ def build_member(members, room_id, max_players, owner_ref_id, local_ref_id):
     return bytes(header) + bytes(entries)
 
 
+MEMBER_REFRESH_INTERVAL_SECONDS = 10
+
+
+def start_member_refresher(conn, emit, members, room_id, max_players,
+                            owner_ref_id, local_ref_id, stop_event,
+                            interval=MEMBER_REFRESH_INTERVAL_SECONDS):
+    """EXPERIMENTAL (2026-08-15): live-confirmed via RPCS3 debugger memory
+    read that ROOM_PTR+0x10 (room id) goes to zero shortly after Member is
+    first processed - client-internal behavior (room "finalization"), not
+    something we control - while ROOM_PTR+0xb8 (a "finalized" flag) stays
+    set to 1. Code elsewhere that assumes a still-valid room id once that
+    flag is set (_opd_FUN_0040b210, live-crash-confirmed) then traps. No
+    evidence found (this session, extensive search) that any message exists
+    to give the client a fresh/permanent id afterward - see
+    research/notes/2026-08-15-room-teardown-and-flag-chain.md. Testing the
+    pragmatic alternative: keep re-sending Member alone (not RoomJoined -
+    that has its own internal registration/self-signal side effects we
+    don't want to repeat) periodically, well under the ~55-70s window
+    observed before the client gives up and abandons the room, so
+    ROOM_PTR+0x10 never stays zero long enough for anything reading it to
+    lose.
+    """
+    def run():
+        while not stop_event.wait(interval):
+            try:
+                member = build_member(members, room_id, max_players, owner_ref_id, local_ref_id)
+                conn.sendall(member)
+                emit(f"   [refresh] re-sent Member ({len(member)} bytes) to keep "
+                     f"room_id={room_id.hex()} fresh")
+            except OSError as e:
+                emit(f"   [refresh] stopping, send failed: {e}")
+                return
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+
+
 def hexdump(data):
     lines = []
     for i in range(0, len(data), 16):
@@ -377,6 +413,7 @@ def handle(conn, addr, log_lock, log):
         emit(f"   np_id (36 bytes, likely SceNpId incl. online ID): {np_id!r}")
         own_npid = np_id.split(b"\x00", 1)[0]
         matched = False
+        stop_event = threading.Event()
 
         # netmatchmaking_server_hello.ksy: fixed 16 bytes.
         # First guess: big-endian, matching this project's established convention -
@@ -447,6 +484,8 @@ def handle(conn, addr, log_lock, log):
                      f"as one write, RoomJoined first ({len(reply)}+{len(member)} bytes, "
                      f"room_ptr={ROOM_PTR:#x}, marking member_id={MEMBER_ID} as both "
                      f"local+owner)\n{hexdump(reply + member)}")
+                start_member_refresher(conn, emit, [(MEMBER_ID, npid)], room_id, max_players,
+                                        MEMBER_ID, MEMBER_ID, stop_event)
             elif opcode == FIND_MATCH_OPCODE and not matched:
                 matched = True
                 with waiting_lock:
@@ -455,7 +494,8 @@ def handle(conn, addr, log_lock, log):
                         waiting_player = None
                     else:
                         peer = None
-                        waiting_player = {"npid": own_npid, "conn": conn, "emit": emit}
+                        waiting_player = {"npid": own_npid, "conn": conn, "emit": emit,
+                                           "stop_event": stop_event}
                 if peer is None:
                     emit(f"   parsed opcode={opcode:#x} (find-match search broadcast) - "
                          f"no other player waiting, registered npid={own_npid!r} and waiting")
@@ -497,6 +537,9 @@ def handle(conn, addr, log_lock, log):
                     peer["emit"](f"   MATCHED with {own_npid!r} (find-match pairing) - sent "
                                   f"Member+RoomJoined as one write, Member first, as host "
                                   f"(member_id={MEMBER_ID}) room_id={room_id.hex()}")
+                    start_member_refresher(peer["conn"], peer["emit"], [host_entry, joiner_entry],
+                                            room_id, max_players, MEMBER_ID, MEMBER_ID,
+                                            peer["stop_event"])
 
                     self_room_joined = build_room_joined(own_npid, room_name, room_id,
                                                           id_gate=NO_MATCH_ID_GATE)
@@ -507,6 +550,8 @@ def handle(conn, addr, log_lock, log):
                          f"MATCHED with {peer['npid']!r} - sent Member+RoomJoined as one write, "
                          f"Member first, as joiner (member_id={JOINER_MEMBER_ID}) "
                          f"room_id={room_id.hex()}")
+                    start_member_refresher(conn, emit, [joiner_entry, host_entry], room_id,
+                                            max_players, MEMBER_ID, JOINER_MEMBER_ID, stop_event)
             elif opcode == ROOM_LEAVING_OPCODE and len(chunk) >= 16:
                 # No reply - confirmed fire-and-forget, see the constant's
                 # docstring. This firing means the client just gave up on
@@ -535,6 +580,7 @@ def handle(conn, addr, log_lock, log):
     except (ConnectionError, socket.timeout, OSError) as e:
         emit(f"  (error/early close: {e})")
     finally:
+        stop_event.set()
         with waiting_lock:
             if waiting_player is not None and waiting_player["conn"] is conn:
                 waiting_player = None
