@@ -550,15 +550,25 @@ def handle(conn, addr, log_lock, log):
                     # only position differed, the client evidently treats
                     # roster index 0 as "me" positionally, not by content -
                     # each recipient now gets their own entry first.
-                    # Non-matching id_gate (all-ones sentinel, vs the default
-                    # 0 the client's pending slot would actually have) - see
-                    # build_room_joined's docstring: makes RoomJoined's own
-                    # id-gate search fail to find a slot, skipping its
-                    # internal self-signaling registration call. Member
-                    # already fully registers this member on its own.
-                    NO_MATCH_ID_GATE = 0xFFFFFFFFFFFFFFFF
+                    # REVERTING the non-matching id_gate workaround (2026-08-15):
+                    # it dodged the self-signaling crash by skipping
+                    # RoomJoined's internal registration call entirely, but
+                    # solo-host - which DOES let that call run (id_gate=0,
+                    # matching) - has since progressed much further (loads
+                    # into an actual match) than find-match ever has (never
+                    # gets past "Searching for Optimal Game"). That call may
+                    # do more than just the thing that was crashing us.
+                    # Testing id_gate=0 again now that two things have
+                    # changed since we first added this workaround: (a) the
+                    # self-npid-skip fix in build_member's per-entry
+                    # attribute block (untested against this specific path
+                    # at the time), and (b) "Stub PPU Traps" in RPCS3 turns
+                    # fatal traps into graceful stubs, making this a much
+                    # lower-risk experiment than when the workaround was
+                    # first added.
+                    ID_GATE = 0
                     peer_room_joined = build_room_joined(peer["npid"], room_name, room_id,
-                                                          id_gate=NO_MATCH_ID_GATE)
+                                                          id_gate=ID_GATE)
                     peer_member = build_member([host_entry, joiner_entry], room_id, max_players,
                                                 owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID)
                     # Member sent BEFORE RoomJoined - see the matching comment
@@ -575,7 +585,7 @@ def handle(conn, addr, log_lock, log):
                                             peer["stop_event"])
 
                     self_room_joined = build_room_joined(own_npid, room_name, room_id,
-                                                          id_gate=NO_MATCH_ID_GATE)
+                                                          id_gate=ID_GATE)
                     self_member = build_member([joiner_entry, host_entry], room_id, max_players,
                                                 owner_ref_id=MEMBER_ID, local_ref_id=JOINER_MEMBER_ID)
                     conn.sendall(self_member + self_room_joined)
