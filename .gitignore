@@ -22,14 +22,10 @@ research/disasm/*.asm
 captures/*.pcap
 captures/*.pcapng
 
-# Local RPCN server runtime output (live log, not a research artifact)
+# Local server/watcher runtime output (live logs, not research artifacts)
 backend/rpcn-run.log
-tools/catch_http-run.log
-tools/location_server_stub-run.log
-tools/voice_server_stub-run.log
-tools/session_manager_stub-run.log
-captures/http_catch.log
-captures/tcp_catch.log
+tools/*-run.log
+captures/*.log
 
 # OS/editor cruft
 .DS_Store
