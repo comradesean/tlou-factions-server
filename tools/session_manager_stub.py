@@ -388,23 +388,23 @@ def handle(conn, addr, log_lock, log):
                 room_id = chunk[4:12]
 
                 reply = build_room_joined(npid, name, room_id)
-                conn.sendall(reply)
-                emit(f"   parsed opcode={opcode:#x} (RoomCreate), "
-                     f"sent RoomJoined reply (120 bytes)\n{hexdump(reply)}")
-                # ROOM_PTR re-confirmed live via a fresh 0x00ad7b14 breakpoint
-                # (r27 == 0x1383bd8, matching the earlier value exactly) -
-                # the pointer itself checks out. Raw-disasm trace of the
-                # 0x131 handler (research/ghidra/dispatch_raw2.txt) shows the
-                # vtable+0x18 call it makes through this pointer is a no-op,
-                # and our room_obj+0x10=0 choice takes the "not yet assigned"
-                # sentinel branch, not the second (riskier) vtable call - no
-                # obvious crash cause found in the reachable path for our
-                # current field values. Re-enabled to test empirically.
                 member = build_member([(MEMBER_ID, npid)], room_id, max_players,
                                        owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID)
-                conn.sendall(member)
-                emit(f"   sent Member broadcast ({len(member)} bytes, room_ptr={ROOM_PTR:#x}, "
-                     f"marking member_id={MEMBER_ID} as both local+owner)\n{hexdump(member)}")
+                # Sent as ONE write, not two back-to-back sendall() calls -
+                # live-confirmed 2026-08-15 (2-real-player find-match crash)
+                # that Member's capacity field (room_obj+0x1f8, written by the
+                # dispatch code right before per-entry registration - see
+                # research/ghidra/dispatch_raw2.txt around 0xad77c4-0xad7810)
+                # was reading back as zero at the moment of the fatal trap,
+                # despite being sent correctly on the wire - strongly
+                # suggesting a split/coalesced recv() boundary issue on a
+                # larger combined RoomJoined+Member payload, not a field-value
+                # bug. Concatenating into a single write removes that risk
+                # regardless of the exact internal mechanism.
+                conn.sendall(reply + member)
+                emit(f"   parsed opcode={opcode:#x} (RoomCreate), sent RoomJoined+Member "
+                     f"as one write ({len(reply)}+{len(member)} bytes, room_ptr={ROOM_PTR:#x}, "
+                     f"marking member_id={MEMBER_ID} as both local+owner)\n{hexdump(reply + member)}")
             elif opcode == FIND_MATCH_OPCODE and not matched:
                 matched = True
                 with waiting_lock:
@@ -426,20 +426,21 @@ def handle(conn, addr, log_lock, log):
                     peer_room_joined = build_room_joined(peer["npid"], room_name, room_id)
                     peer_member = build_member(members, room_id, max_players,
                                                 owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID)
-                    peer["conn"].sendall(peer_room_joined)
-                    peer["conn"].sendall(peer_member)
+                    # Single write - see the matching comment in the
+                    # RoomCreate branch above for why (split-recv risk on the
+                    # combined RoomJoined+Member payload).
+                    peer["conn"].sendall(peer_room_joined + peer_member)
                     peer["emit"](f"   MATCHED with {own_npid!r} (find-match pairing) - sent "
-                                  f"RoomJoined+Member as host (member_id={MEMBER_ID}) "
+                                  f"RoomJoined+Member as one write as host (member_id={MEMBER_ID}) "
                                   f"room_id={room_id.hex()}")
 
                     self_room_joined = build_room_joined(own_npid, room_name, room_id)
                     self_member = build_member(members, room_id, max_players,
                                                 owner_ref_id=MEMBER_ID, local_ref_id=JOINER_MEMBER_ID)
-                    conn.sendall(self_room_joined)
-                    conn.sendall(self_member)
+                    conn.sendall(self_room_joined + self_member)
                     emit(f"   parsed opcode={opcode:#x} (find-match search broadcast) - "
-                         f"MATCHED with {peer['npid']!r} - sent RoomJoined+Member as "
-                         f"joiner (member_id={JOINER_MEMBER_ID}) room_id={room_id.hex()}")
+                         f"MATCHED with {peer['npid']!r} - sent RoomJoined+Member as one write "
+                         f"as joiner (member_id={JOINER_MEMBER_ID}) room_id={room_id.hex()}")
             elif opcode == PING_OPCODE:
                 emit(f"   parsed opcode={opcode:#x} (Ping keepalive) - "
                      f"no reply sent, appears fire-and-forget (client-side timer driven)")
