@@ -56,6 +56,17 @@ FIND_MATCH_OPCODE = 0x135
 # Working theory: client is asking us to close out its search-tracking
 # entry for this room now that it's found a real match - has stayed on
 # "Searching for Optimal Game" every time this was left unhandled.
+# NetMatchmakingMemberJoined (declared 120 bytes, actual 16) - one of the 9
+# opcodes in the 0x131-0x144 range never decompiled (docs/protocol/
+# session_manager_and_matchmaking.md ~line 279). Client sends this ~55-70s
+# after a real pairing, same 16-byte shape and same room_id-echo tail as
+# 0x137. Fresh audit 2026-08-15 of the 3 most recent real pairings: in 2 of
+# 3 (including the newest on record), this is the LAST matchmaking traffic
+# before the client goes silent except Ping, forever - it never even
+# reaches 0x137 in those cases. Never acked before. Testing a same-opcode
+# echo reply (mirroring the 0x137/0x138 room_id-echo pattern) since this
+# looks like the earlier, more fundamental gate than anything downstream.
+MEMBER_JOINED_OPCODE = 0x133
 ROOM_SEARCH_INFO_OPCODE = 0x137
 ROOM_SEARCH_RESULT_OPCODE = 0x138
 PING_OPCODE = 0x145
@@ -496,6 +507,12 @@ def handle(conn, addr, log_lock, log):
                          f"MATCHED with {peer['npid']!r} - sent Member+RoomJoined as one write, "
                          f"Member first, as joiner (member_id={JOINER_MEMBER_ID}) "
                          f"room_id={room_id.hex()}")
+            elif opcode == MEMBER_JOINED_OPCODE and len(chunk) >= 16:
+                room_id_tail = chunk[8:16]
+                reply = struct.pack(">I", MEMBER_JOINED_OPCODE) + b"\x00\x00\x00\x00" + room_id_tail
+                conn.sendall(reply)
+                emit(f"   parsed opcode={opcode:#x} (MemberJoined) - sent same-opcode echo "
+                     f"(16 bytes) echoing room_id={room_id_tail.hex()}\n{hexdump(reply)}")
             elif opcode == ROOM_SEARCH_INFO_OPCODE and len(chunk) >= 16:
                 # Echo the room_id straight back at the same wire offset (8),
                 # matching the general "echo the client's own correlation
