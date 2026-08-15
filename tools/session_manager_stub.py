@@ -85,6 +85,24 @@ SET_ATTR_FLAGS_OPCODE = 0x140
 UPDATED_ATTR_FLAGS_OPCODE = 0x141
 PING_OPCODE = 0x145
 CLIENT_HELLO2_OPCODE = 0x146
+# NetMatchmakingKickedout (declared, 16 bytes) - confirmed WRONG both name
+# and size, same "declared table lies" pattern as 0x133. Live-captured
+# 2026-08-15 for the first time this whole project: fires the instant the
+# in-game "invite to party" action is used (client shows a "Creating Party"
+# spinner), 80 bytes, embedding the host's own already-open room_id at wire
+# offset 8:16 (exact match to the room RoomCreate already established) and 4
+# IEEE-754 floats in the tail (1.0, ~0.729, ~0.710, ~0.650 - shape unknown,
+# possibly matchmaking/skill weighting). NOT one of the client's own
+# receive-dispatch (FUN_00ad7604) cases (re-decompiled in full 2026-08-15,
+# confirmed absent) - same outbound-only shape as 0x133, so no numbered
+# reply is expected by name. Left unanswered live, the client times out the
+# spinner and hard-disconnects entirely ("You have been disconnected from
+# the game servers") - a harder failure than find-match's soft "cannot
+# connect" error, suggesting the client wants SOME response, just not a
+# same-opcode one. Working theory: it wants the same RoomJoined+Member
+# confirmation pair Custom Game hosting already gets, re-sent for the
+# party context - untested until now.
+CREATE_PARTY_OPCODE = 0x13a
 
 # Live-observed room-slot heap address (PS3 retail builds have no ASLR).
 # Seen identically across 3 separate RPCS3 debugger breakpoints this session
@@ -442,6 +460,10 @@ def handle(conn, addr, log_lock, log):
         own_npid = np_id.split(b"\x00", 1)[0]
         matched = False
         stop_event = threading.Event()
+        # Populated once RoomCreate (0x12f) fires - reused by CreateParty
+        # (0x13a), which only ever shows up for a connection that already
+        # has a room open.
+        own_room = None
 
         # netmatchmaking_server_hello.ksy: fixed 16 bytes.
         # First guess: big-endian, matching this project's established convention -
@@ -519,6 +541,7 @@ def handle(conn, addr, log_lock, log):
                      f"{hexdump(reply + member)}")
                 start_member_refresher(conn, emit, [(MEMBER_ID, npid)], room_id, max_players,
                                         MEMBER_ID, MEMBER_ID, stop_event)
+                own_room = {"npid": npid, "name": name, "room_id": room_id, "max_players": max_players}
             elif opcode == FIND_MATCH_OPCODE and not matched:
                 matched = True
                 with waiting_lock:
@@ -603,6 +626,24 @@ def handle(conn, addr, log_lock, log):
                 emit(f"   parsed opcode={opcode:#x} (client abandoning room, "
                      f"room_id={room_id_tail.hex()}) - no reply (confirmed "
                      f"fire-and-forget)")
+            elif opcode == CREATE_PARTY_OPCODE and len(chunk) >= 16 and own_room is not None:
+                # EXPERIMENT 2026-08-15: not a confirmed reply, see the
+                # constant's docstring - 0x13a isn't one of the client's own
+                # dispatch cases, so there's no known correct numbered reply.
+                # Trying the same RoomJoined+Member confirmation pair
+                # RoomCreate already gets, re-sent for this same room, on the
+                # theory that "Creating Party" is waiting on the same kind of
+                # confirmation as normal room formation, just not keyed to
+                # this opcode number specifically.
+                party_room_id = chunk[8:16]
+                reply = build_room_joined(own_room["npid"], own_room["name"], party_room_id)
+                member = build_member([(MEMBER_ID, own_room["npid"])], party_room_id,
+                                       own_room["max_players"], owner_ref_id=MEMBER_ID,
+                                       local_ref_id=MEMBER_ID)
+                conn.sendall(reply + member)
+                emit(f"   parsed opcode={opcode:#x} (CreateParty) - EXPERIMENT: sent "
+                     f"RoomJoined+Member as one write for room_id={party_room_id.hex()} "
+                     f"({len(reply)}+{len(member)} bytes)\n{hexdump(reply + member)}")
             elif opcode == ROOM_SEARCH_INFO_OPCODE and len(chunk) >= 16:
                 # Echo the room_id straight back at the same wire offset (8),
                 # matching the general "echo the client's own correlation
