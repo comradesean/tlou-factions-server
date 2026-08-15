@@ -460,10 +460,6 @@ def handle(conn, addr, log_lock, log):
         own_npid = np_id.split(b"\x00", 1)[0]
         matched = False
         stop_event = threading.Event()
-        # Populated once RoomCreate (0x12f) fires - reused by CreateParty
-        # (0x13a), which only ever shows up for a connection that already
-        # has a room open.
-        own_room = None
 
         # netmatchmaking_server_hello.ksy: fixed 16 bytes.
         # First guess: big-endian, matching this project's established convention -
@@ -541,7 +537,6 @@ def handle(conn, addr, log_lock, log):
                      f"{hexdump(reply + member)}")
                 start_member_refresher(conn, emit, [(MEMBER_ID, npid)], room_id, max_players,
                                         MEMBER_ID, MEMBER_ID, stop_event)
-                own_room = {"npid": npid, "name": name, "room_id": room_id, "max_players": max_players}
             elif opcode == FIND_MATCH_OPCODE and not matched:
                 matched = True
                 with waiting_lock:
@@ -626,24 +621,26 @@ def handle(conn, addr, log_lock, log):
                 emit(f"   parsed opcode={opcode:#x} (client abandoning room, "
                      f"room_id={room_id_tail.hex()}) - no reply (confirmed "
                      f"fire-and-forget)")
-            elif opcode == CREATE_PARTY_OPCODE and len(chunk) >= 16 and own_room is not None:
-                # EXPERIMENT 2026-08-15: not a confirmed reply, see the
-                # constant's docstring - 0x13a isn't one of the client's own
-                # dispatch cases, so there's no known correct numbered reply.
-                # Trying the same RoomJoined+Member confirmation pair
-                # RoomCreate already gets, re-sent for this same room, on the
-                # theory that "Creating Party" is waiting on the same kind of
-                # confirmation as normal room formation, just not keyed to
-                # this opcode number specifically.
-                party_room_id = chunk[8:16]
-                reply = build_room_joined(own_room["npid"], own_room["name"], party_room_id)
-                member = build_member([(MEMBER_ID, own_room["npid"])], party_room_id,
-                                       own_room["max_players"], owner_ref_id=MEMBER_ID,
-                                       local_ref_id=MEMBER_ID)
-                conn.sendall(reply + member)
-                emit(f"   parsed opcode={opcode:#x} (CreateParty) - EXPERIMENT: sent "
-                     f"RoomJoined+Member as one write for room_id={party_room_id.hex()} "
-                     f"({len(reply)}+{len(member)} bytes)\n{hexdump(reply + member)}")
+            elif opcode == CREATE_PARTY_OPCODE and len(chunk) >= 16:
+                # REVERTED to log-only 2026-08-15: the RoomJoined+Member reply
+                # experiment had no effect (client still hard-disconnected).
+                # Live breakpoint on the sender (_opd_FUN_00ad6148, vtable
+                # slot +0x50) and its caller (_opd_FUN_00ad1fc0 @ 0xad2034)
+                # found the real cause is unrelated to any reply from us:
+                # _opd_FUN_00ad1fc0's own "this" pointer is passed straight
+                # through as the room argument, and a SECOND call from the
+                # exact same call site (a shared loop/ticker, not a retry of
+                # the first) fires with a garbage "this" that fails the
+                # internal 4-slot room search - _opd_FUN_00ad1fc0 treats that
+                # failure as fatal (trapWord(0x1f,...), an assertion trap
+                # "Stub PPU Traps" downgrades to the observed disconnect
+                # instead of a hard crash). This looks like stale/corrupted
+                # client-side room-slot state, not a missing server reply -
+                # see research/notes/2026-08-15-createparty-trace.md.
+                room_id_tail = chunk[8:16]
+                emit(f"   parsed opcode={opcode:#x} (CreateParty, room_id={room_id_tail.hex()}) "
+                     f"- no reply (confirmed fire-and-forget sender, see "
+                     f"research/notes/2026-08-15-createparty-trace.md)")
             elif opcode == ROOM_SEARCH_INFO_OPCODE and len(chunk) >= 16:
                 # Echo the room_id straight back at the same wire offset (8),
                 # matching the general "echo the client's own correlation
