@@ -71,7 +71,7 @@ waiting_lock = threading.Lock()
 waiting_player = None
 
 
-def build_room_joined(npid, name, room_id):
+def build_room_joined(npid, name, room_id, id_gate=0):
     """Build a guessed NetMatchmakingRoomJoined (opcode 0x132) reply to a
     captured NetMatchmakingRoomCreate (opcode 0x12f).
 
@@ -155,10 +155,21 @@ def build_room_joined(npid, name, room_id):
     """
     body = bytearray(120)
     struct.pack_into(">I", body, 0, ROOM_JOINED_OPCODE)
-    # offset 8:16 left zero - see docstring, live-confirmed against the
-    # client's own room-slot memory rather than echoed from RoomCreate.
-    # offset 16:32 - hypothesized member NpId handle (see docstring) - null-
-    # padded to 16 bytes, matching this project's other SceNpId encodings.
+    # offset 8:16 (id_gate) - zero by default, live-confirmed against the
+    # client's own room-slot memory rather than echoed from RoomCreate (see
+    # docstring). MUST stay zero for the solo-host RoomCreate path (matches
+    # the client's pre-existing pending room slot's own id, or the client's
+    # search at 0x00ad7b14 never finds it and the whole flow stalls). For the
+    # find-match pairing path, a matching id-gate makes RoomJoined's own
+    # handler independently call the SAME member-registration function
+    # Member's handler uses (0x132 case's id-gate search, sessmgr_vtable_dump
+    # .txt) - and since that internal call always embeds the RECIPIENT'S OWN
+    # npid (needed to avoid the earlier malformed-npid bug), it triggers a
+    # self-signaling attempt (`SCE_NP_SIGNALING_ERROR_OWN_NP_ID`, live-
+    # confirmed 2026-08-15) that Member's own (already-sufficient) processing
+    # doesn't need. Passing a non-matching id_gate here makes that search
+    # fail to find a slot, skipping the internal call entirely.
+    struct.pack_into(">Q", body, 8, id_gate)
     body[16:16 + len(npid[:16])] = npid[:16]
     name_field = name[:63]
     body[56:56 + len(name_field)] = name_field
@@ -440,7 +451,15 @@ def handle(conn, addr, log_lock, log):
                     # only position differed, the client evidently treats
                     # roster index 0 as "me" positionally, not by content -
                     # each recipient now gets their own entry first.
-                    peer_room_joined = build_room_joined(peer["npid"], room_name, room_id)
+                    # Non-matching id_gate (all-ones sentinel, vs the default
+                    # 0 the client's pending slot would actually have) - see
+                    # build_room_joined's docstring: makes RoomJoined's own
+                    # id-gate search fail to find a slot, skipping its
+                    # internal self-signaling registration call. Member
+                    # already fully registers this member on its own.
+                    NO_MATCH_ID_GATE = 0xFFFFFFFFFFFFFFFF
+                    peer_room_joined = build_room_joined(peer["npid"], room_name, room_id,
+                                                          id_gate=NO_MATCH_ID_GATE)
                     peer_member = build_member([host_entry, joiner_entry], room_id, max_players,
                                                 owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID)
                     # Member sent BEFORE RoomJoined - see the matching comment
@@ -453,7 +472,8 @@ def handle(conn, addr, log_lock, log):
                                   f"Member+RoomJoined as one write, Member first, as host "
                                   f"(member_id={MEMBER_ID}) room_id={room_id.hex()}")
 
-                    self_room_joined = build_room_joined(own_npid, room_name, room_id)
+                    self_room_joined = build_room_joined(own_npid, room_name, room_id,
+                                                          id_gate=NO_MATCH_ID_GATE)
                     self_member = build_member([joiner_entry, host_entry], room_id, max_players,
                                                 owner_ref_id=MEMBER_ID, local_ref_id=JOINER_MEMBER_ID)
                     conn.sendall(self_member + self_room_joined)
