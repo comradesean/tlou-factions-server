@@ -390,21 +390,26 @@ def handle(conn, addr, log_lock, log):
                 reply = build_room_joined(npid, name, room_id)
                 member = build_member([(MEMBER_ID, npid)], room_id, max_players,
                                        owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID)
-                # Sent as ONE write, not two back-to-back sendall() calls -
-                # live-confirmed 2026-08-15 (2-real-player find-match crash)
-                # that Member's capacity field (room_obj+0x1f8, written by the
-                # dispatch code right before per-entry registration - see
-                # research/ghidra/dispatch_raw2.txt around 0xad77c4-0xad7810)
-                # was reading back as zero at the moment of the fatal trap,
-                # despite being sent correctly on the wire - strongly
-                # suggesting a split/coalesced recv() boundary issue on a
-                # larger combined RoomJoined+Member payload, not a field-value
-                # bug. Concatenating into a single write removes that risk
-                # regardless of the exact internal mechanism.
-                conn.sendall(reply + member)
-                emit(f"   parsed opcode={opcode:#x} (RoomCreate), sent RoomJoined+Member "
-                     f"as one write ({len(reply)}+{len(member)} bytes, room_ptr={ROOM_PTR:#x}, "
-                     f"marking member_id={MEMBER_ID} as both local+owner)\n{hexdump(reply + member)}")
+                # ORDER FIX (2026-08-15, live debugger root-caused): RoomJoined's
+                # OWN handler (0x132 case, sessmgr_vtable_dump.txt) independently
+                # calls the SAME member-registration function Member's handler
+                # uses (_opd_FUN_00ad33d8) via its own id-gate match against the
+                # client's pre-existing room slot - completely separately from
+                # Member. That registration function unconditionally checks
+                # room_obj+0x1f8 (capacity) and traps if zero - but capacity is
+                # only ever WRITTEN during Member's own dispatch processing
+                # (dispatch_raw2.txt ~0xad77c4-0xad7810). Sending RoomJoined
+                # first meant its internal registration call always ran before
+                # capacity was ever set, hitting the same trap regardless of
+                # Member's contents - live-confirmed via a breakpoint at the
+                # capacity-write site (0x00ad77a8) that was NEVER REACHED before
+                # the crash. Member now goes out first so capacity is already
+                # set by the time RoomJoined's own registration call runs.
+                conn.sendall(member + reply)
+                emit(f"   parsed opcode={opcode:#x} (RoomCreate), sent Member+RoomJoined "
+                     f"as one write, Member first ({len(member)}+{len(reply)} bytes, "
+                     f"room_ptr={ROOM_PTR:#x}, marking member_id={MEMBER_ID} as both "
+                     f"local+owner)\n{hexdump(member + reply)}")
             elif opcode == FIND_MATCH_OPCODE and not matched:
                 matched = True
                 with waiting_lock:
@@ -426,21 +431,24 @@ def handle(conn, addr, log_lock, log):
                     peer_room_joined = build_room_joined(peer["npid"], room_name, room_id)
                     peer_member = build_member(members, room_id, max_players,
                                                 owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID)
-                    # Single write - see the matching comment in the
-                    # RoomCreate branch above for why (split-recv risk on the
-                    # combined RoomJoined+Member payload).
-                    peer["conn"].sendall(peer_room_joined + peer_member)
+                    # Member sent BEFORE RoomJoined - see the matching comment
+                    # in the RoomCreate branch above (capacity must be written
+                    # by Member's processing before RoomJoined's own internal
+                    # registration call reads it, or it traps regardless of
+                    # Member's contents).
+                    peer["conn"].sendall(peer_member + peer_room_joined)
                     peer["emit"](f"   MATCHED with {own_npid!r} (find-match pairing) - sent "
-                                  f"RoomJoined+Member as one write as host (member_id={MEMBER_ID}) "
-                                  f"room_id={room_id.hex()}")
+                                  f"Member+RoomJoined as one write, Member first, as host "
+                                  f"(member_id={MEMBER_ID}) room_id={room_id.hex()}")
 
                     self_room_joined = build_room_joined(own_npid, room_name, room_id)
                     self_member = build_member(members, room_id, max_players,
                                                 owner_ref_id=MEMBER_ID, local_ref_id=JOINER_MEMBER_ID)
-                    conn.sendall(self_room_joined + self_member)
+                    conn.sendall(self_member + self_room_joined)
                     emit(f"   parsed opcode={opcode:#x} (find-match search broadcast) - "
-                         f"MATCHED with {peer['npid']!r} - sent RoomJoined+Member as one write "
-                         f"as joiner (member_id={JOINER_MEMBER_ID}) room_id={room_id.hex()}")
+                         f"MATCHED with {peer['npid']!r} - sent Member+RoomJoined as one write, "
+                         f"Member first, as joiner (member_id={JOINER_MEMBER_ID}) "
+                         f"room_id={room_id.hex()}")
             elif opcode == PING_OPCODE:
                 emit(f"   parsed opcode={opcode:#x} (Ping keepalive) - "
                      f"no reply sent, appears fire-and-forget (client-side timer driven)")
