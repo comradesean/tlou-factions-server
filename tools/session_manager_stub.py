@@ -507,21 +507,16 @@ def handle(conn, addr, log_lock, log):
                          f"MATCHED with {peer['npid']!r} - sent Member+RoomJoined as one write, "
                          f"Member first, as joiner (member_id={JOINER_MEMBER_ID}) "
                          f"room_id={room_id.hex()}")
-            elif opcode == MEMBER_JOINED_OPCODE and len(chunk) >= 16:
-                room_id_tail = chunk[8:16]
-                reply = struct.pack(">I", MEMBER_JOINED_OPCODE) + b"\x00\x00\x00\x00" + room_id_tail
-                conn.sendall(reply)
-                emit(f"   parsed opcode={opcode:#x} (MemberJoined) - sent same-opcode echo "
-                     f"(16 bytes) echoing room_id={room_id_tail.hex()}\n{hexdump(reply)}")
-            elif opcode == ROOM_SEARCH_INFO_OPCODE and len(chunk) >= 16:
-                # Echo the room_id straight back at the same wire offset (8),
-                # matching the general "echo the client's own correlation
-                # value" pattern used throughout this protocol.
-                room_id_tail = chunk[8:16]
-                reply = struct.pack(">I", ROOM_SEARCH_RESULT_OPCODE) + b"\x00\x00\x00\x00" + room_id_tail
-                conn.sendall(reply)
-                emit(f"   parsed opcode={opcode:#x} (RoomSearchInfo) - sent RoomSearchResult "
-                     f"(16 bytes) echoing room_id={room_id_tail.hex()}\n{hexdump(reply)}")
+            # MEMBER_JOINED_OPCODE (0x133) / ROOM_SEARCH_INFO_OPCODE (0x137)
+            # auto-replies REVERTED (2026-08-15): live-confirmed the 0x138
+            # reply causes a brand-new crash ("ASSERTION: m_roomId != 0", a
+            # different trap address than anything seen before) on the
+            # previously-crash-free solo Custom Game path, the first time it
+            # ever fired there - and Find Match still hung regardless of
+            # either reply firing. Net effect was negative with zero
+            # confirmed upside, so falling back to the known-safe unhandled
+            # behavior for both until there's real evidence for what these
+            # opcodes actually need (if anything).
             elif opcode == PING_OPCODE:
                 emit(f"   parsed opcode={opcode:#x} (Ping keepalive) - "
                      f"no reply sent, appears fire-and-forget (client-side timer driven)")
