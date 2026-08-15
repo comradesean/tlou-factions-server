@@ -22,6 +22,7 @@ import sys
 import datetime
 import threading
 import struct
+import os
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 7314
 LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else "/mnt/f/ClaudeHole/tlou_factions/captures/tcp_catch.log"
@@ -31,6 +32,17 @@ SERVER_HELLO_OPCODE = 0x12e
 ROOM_CREATE_OPCODE = 0x12f
 MEMBER_OPCODE = 0x131
 ROOM_JOINED_OPCODE = 0x132
+# The opcode/size table (docs/protocol/session_manager_and_matchmaking.md)
+# labels 0x135 "NetMatchmakingRoomLeft", 24 bytes - but the same doc already
+# flags that naive "0x12d + table index" naming as unconfirmed/wrong for
+# tail entries (ClientHello2, Ping). Live capture 2026-08-15 of two real
+# clients both sitting in "Find Match" shows each of them broadcasting this
+# opcode unprompted every ~5s (same cadence as Ping), 36 bytes not 24,
+# payload containing a locale field ("us"), a repeated 0x03e8 pair, and a
+# small mode-shaped field - that's shaped like periodic search-criteria
+# advertisement, not a one-off "I left a room" event. Treating it as the
+# find-match heartbeat/broadcast until proven otherwise.
+FIND_MATCH_OPCODE = 0x135
 PING_OPCODE = 0x145
 CLIENT_HELLO2_OPCODE = 0x146
 
@@ -47,8 +59,19 @@ CLIENT_HELLO2_OPCODE = 0x146
 # multiplayer menu).
 ROOM_PTR = 0x01383bd8
 
+# Cross-connection find-match pairing state (2026-08-15). The stub is
+# otherwise stateless per-connection - with two independent real RPCN
+# accounts both sitting in "Find Match" simultaneously, neither could ever
+# find the other since nothing tied their connections together. Single-slot
+# waiting room: first searcher to arrive registers here and waits; the next
+# *different* searcher pairs with whoever is waiting and both get pushed a
+# real 2-member RoomJoined+Member pair. Guarded by waiting_lock since each
+# connection runs in its own thread.
+waiting_lock = threading.Lock()
+waiting_player = None
 
-def build_room_joined(room_create_msg):
+
+def build_room_joined(npid, name, room_id):
     """Build a guessed NetMatchmakingRoomJoined (opcode 0x132) reply to a
     captured NetMatchmakingRoomCreate (opcode 0x12f).
 
@@ -123,33 +146,30 @@ def build_room_joined(room_create_msg):
     member-shaped local struct (`_opd_FUN_00ad33d8`), which reads as
     self-sufficient for "you are now in this room" without a separate
     Member message, but this is unconfirmed against live behavior.
-    """
-    name_start = 0x28
-    name_end = room_create_msg.find(b"\x00", name_start)
-    name = room_create_msg[name_start:name_end] if name_end != -1 else b""
-    # RoomCreate's room-name field is "<npid>.<timestamp>" (see np_id copy in
-    # netmatchmaking_client_hello.ksy for the same convention) - split off the
-    # npid portion for the member-record fix below.
-    npid = name.split(b".", 1)[0][:16]
 
+    Takes explicit npid/name/room_id rather than parsing a raw RoomCreate
+    blob directly, so the same builder can serve both the solo-host RoomCreate
+    path and the cross-connection find-match pairing path (2026-08-15) - the
+    latter has no RoomCreate message to parse at all, since neither paired
+    client ever explicitly created a room the other could echo fields from.
+    """
     body = bytearray(120)
     struct.pack_into(">I", body, 0, ROOM_JOINED_OPCODE)
     # offset 8:16 left zero - see docstring, live-confirmed against the
     # client's own room-slot memory rather than echoed from RoomCreate.
     # offset 16:32 - hypothesized member NpId handle (see docstring) - null-
     # padded to 16 bytes, matching this project's other SceNpId encodings.
-    body[16:16 + len(npid)] = npid
+    body[16:16 + len(npid[:16])] = npid[:16]
     name_field = name[:63]
     body[56:56 + len(name_field)] = name_field
     return bytes(body)
 
 
 MEMBER_ID = 1
-SYNTHETIC_MEMBER_ID = 2
-SYNTHETIC_MEMBER_NPID = b"bot"
+JOINER_MEMBER_ID = 2
 
 
-def build_member(room_create_msg, roster_count=1):
+def build_member(members, room_id, max_players, owner_ref_id, local_ref_id):
     """Build a NetMatchmakingMember (opcode 0x131) room-roster broadcast.
 
     Field layout from docs/protocol/0x131_member.md / protos/0x131_member.ksy
@@ -211,47 +231,29 @@ def build_member(room_create_msg, roster_count=1):
               trailing region, likely a name/NpId buffer - filled with the
               room-creator's npid (same source as RoomJoined's own npid
               field) on the same "probably safe to echo" theory.
+
+    `members` is a list of (member_id, npid_bytes) tuples, in roster order -
+    same roster content goes to every recipient, only owner_ref_id/
+    local_ref_id differ per-recipient (each recipient needs to see itself
+    correctly flagged as local, but only the actual room owner's member_id
+    is ever "owner" for anyone).
     """
-    name_start = 0x28
-    name_end = room_create_msg.find(b"\x00", name_start)
-    name = room_create_msg[name_start:name_end] if name_end != -1 else b""
-    npid = name.split(b".", 1)[0][:16]
-
-    max_players = struct.unpack(">H", room_create_msg[0x1e:0x20])[0] or 10
-    # RoomCreate's own 8-byte transaction id (wire offset 4:12) - see
-    # "The room_id overwrite - resolved" in the docstring below for why this
-    # goes here and not zero.
-    room_id = room_create_msg[4:12]
-
     header = bytearray(160)
     struct.pack_into(">I", header, 0, MEMBER_OPCODE)
     struct.pack_into(">I", header, 8, ROOM_PTR)
-    struct.pack_into(">H", header, 12, MEMBER_ID)  # owner_ref_id
-    struct.pack_into(">H", header, 14, MEMBER_ID)  # local_ref_id
+    struct.pack_into(">H", header, 12, owner_ref_id)
+    struct.pack_into(">H", header, 14, local_ref_id)
     header[16:24] = room_id
     struct.pack_into(">H", header, 24, max_players)  # capacity - must be nonzero, see docstring
-    struct.pack_into(">H", header, 26, roster_count)
+    struct.pack_into(">H", header, 26, len(members))
 
-    entry = bytearray(104)
-    struct.pack_into(">H", entry, 36, MEMBER_ID)
-    npid_field = npid[:64]
-    entry[40:40 + len(npid_field)] = npid_field
-    entries = bytearray(entry)
-
-    # EXPERIMENTAL (2026-08-14): community research on retail Factions private
-    # matches consistently frames the minimum as 2 players, never 1, and the
-    # client sends zero network traffic when the "Starting Game" spinner
-    # hangs - consistent with a local precondition check (roster size) never
-    # being satisfied rather than a missing server reply. Testing that theory
-    # by padding the roster with a second, non-local, non-owner synthetic
-    # entry. If this is wrong the client likely either ignores the extra slot
-    # or tries to treat it as a real signaling peer and errors/crashes -
-    # revert roster_count to 1 (drop the call site's roster_count=2) if so.
-    if roster_count > 1:
-        synth = bytearray(104)
-        struct.pack_into(">H", synth, 36, SYNTHETIC_MEMBER_ID)
-        synth[40:40 + len(SYNTHETIC_MEMBER_NPID)] = SYNTHETIC_MEMBER_NPID
-        entries += synth
+    entries = bytearray()
+    for member_id, npid in members:
+        entry = bytearray(104)
+        struct.pack_into(">H", entry, 36, member_id)
+        npid_field = npid[:64]
+        entry[40:40 + len(npid_field)] = npid_field
+        entries += entry
 
     return bytes(header) + bytes(entries)
 
@@ -278,6 +280,7 @@ def recv_exact(conn, n, timeout=10):
 
 
 def handle(conn, addr, log_lock, log):
+    global waiting_player
     ts = datetime.datetime.now().isoformat()
 
     def emit(text):
@@ -302,6 +305,8 @@ def handle(conn, addr, log_lock, log):
              f"LE={opcode_le:#x} (expect {CLIENT_HELLO_OPCODE:#x} if LE)")
         np_id = hello[8:44]
         emit(f"   np_id (36 bytes, likely SceNpId incl. online ID): {np_id!r}")
+        own_npid = np_id.split(b"\x00", 1)[0]
+        matched = False
 
         # netmatchmaking_server_hello.ksy: fixed 16 bytes.
         # First guess: big-endian, matching this project's established convention -
@@ -336,7 +341,20 @@ def handle(conn, addr, log_lock, log):
 
             opcode = struct.unpack(">I", chunk[0:4])[0] if len(chunk) >= 4 else None
             if opcode == ROOM_CREATE_OPCODE and len(chunk) >= 232:
-                reply = build_room_joined(chunk)
+                name_start = 0x28
+                name_end = chunk.find(b"\x00", name_start)
+                name = chunk[name_start:name_end] if name_end != -1 else b""
+                # RoomCreate's room-name field is "<npid>.<timestamp>" - split
+                # off the npid portion for the member-record fix (see
+                # build_room_joined/build_member docstrings).
+                npid = name.split(b".", 1)[0][:16]
+                max_players = struct.unpack(">H", chunk[0x1e:0x20])[0] or 10
+                # RoomCreate's own 8-byte transaction id (wire offset 4:12) -
+                # a real, nonzero room identity is expected once past the
+                # RoomJoined id-gate - see build_member's docstring.
+                room_id = chunk[4:12]
+
+                reply = build_room_joined(npid, name, room_id)
                 conn.sendall(reply)
                 emit(f"   parsed opcode={opcode:#x} (RoomCreate), "
                      f"sent RoomJoined reply (120 bytes)\n{hexdump(reply)}")
@@ -349,11 +367,46 @@ def handle(conn, addr, log_lock, log):
                 # sentinel branch, not the second (riskier) vtable call - no
                 # obvious crash cause found in the reachable path for our
                 # current field values. Re-enabled to test empirically.
-                member = build_member(chunk, roster_count=2)
+                member = build_member([(MEMBER_ID, npid)], room_id, max_players,
+                                       owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID)
                 conn.sendall(member)
                 emit(f"   sent Member broadcast ({len(member)} bytes, room_ptr={ROOM_PTR:#x}, "
-                     f"marking member_id={MEMBER_ID} as both local+owner, "
-                     f"+1 synthetic member_id={SYNTHETIC_MEMBER_ID})\n{hexdump(member)}")
+                     f"marking member_id={MEMBER_ID} as both local+owner)\n{hexdump(member)}")
+            elif opcode == FIND_MATCH_OPCODE and not matched:
+                matched = True
+                with waiting_lock:
+                    peer = waiting_player
+                    if peer is not None and peer["npid"] != own_npid:
+                        waiting_player = None
+                    else:
+                        peer = None
+                        waiting_player = {"npid": own_npid, "conn": conn, "emit": emit}
+                if peer is None:
+                    emit(f"   parsed opcode={opcode:#x} (find-match search broadcast) - "
+                         f"no other player waiting, registered npid={own_npid!r} and waiting")
+                else:
+                    room_id = os.urandom(8)
+                    max_players = 10
+                    members = [(MEMBER_ID, peer["npid"]), (JOINER_MEMBER_ID, own_npid)]
+                    room_name = peer["npid"] + b".matched"
+
+                    peer_room_joined = build_room_joined(peer["npid"], room_name, room_id)
+                    peer_member = build_member(members, room_id, max_players,
+                                                owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID)
+                    peer["conn"].sendall(peer_room_joined)
+                    peer["conn"].sendall(peer_member)
+                    peer["emit"](f"   MATCHED with {own_npid!r} (find-match pairing) - sent "
+                                  f"RoomJoined+Member as host (member_id={MEMBER_ID}) "
+                                  f"room_id={room_id.hex()}")
+
+                    self_room_joined = build_room_joined(own_npid, room_name, room_id)
+                    self_member = build_member(members, room_id, max_players,
+                                                owner_ref_id=MEMBER_ID, local_ref_id=JOINER_MEMBER_ID)
+                    conn.sendall(self_room_joined)
+                    conn.sendall(self_member)
+                    emit(f"   parsed opcode={opcode:#x} (find-match search broadcast) - "
+                         f"MATCHED with {peer['npid']!r} - sent RoomJoined+Member as "
+                         f"joiner (member_id={JOINER_MEMBER_ID}) room_id={room_id.hex()}")
             elif opcode == PING_OPCODE:
                 emit(f"   parsed opcode={opcode:#x} (Ping keepalive) - "
                      f"no reply sent, appears fire-and-forget (client-side timer driven)")
@@ -365,6 +418,9 @@ def handle(conn, addr, log_lock, log):
     except (ConnectionError, socket.timeout, OSError) as e:
         emit(f"  (error/early close: {e})")
     finally:
+        with waiting_lock:
+            if waiting_player is not None and waiting_player["conn"] is conn:
+                waiting_player = None
         conn.close()
 
 
