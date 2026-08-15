@@ -223,7 +223,20 @@ def build_member(members, room_id, max_players, owner_ref_id, local_ref_id):
       30  130 unread by the traced code - zero
 
     Per-entry (104 bytes / 0x68) x roster_count:
-      0   36  18x u16 "attributes" - not independently mapped - zero
+      0   16  FIXED 2026-08-15: live-confirmed via a real 2-real-player find-
+              match pairing crash. Previously left zero along with the rest
+              of the 36-byte attribute block below - inert for a solo host
+              (nobody to open real NP signaling to), but with a genuine
+              second npid in the roster, RPCN's own log showed the client
+              sending it a malformed `RequestSignalingInfos` for the SAME
+              npid-shaped-empty-string reason as the original RoomJoined bug
+              (`research/notes/2026-08-14-signaling-crash-npid-trace.md`) -
+              `sceNpSignalingGetConnectionFromNpId`/`ActivateConnection`
+              needs a real per-member NpId that isn't the offset-40 trailing
+              buffer this code always filled. Now filled with this entry's
+              own npid, mirroring RoomJoined's offset 16:32 fix exactly.
+      16  20  remainder of the 18x u16 "attributes" block - not independently
+              mapped - zero
       36  2   member_id - XOR-compared against owner_ref_id/local_ref_id
       38  1   unread - zero
       39  1   unread, flags-shaped - zero
@@ -250,6 +263,8 @@ def build_member(members, room_id, max_players, owner_ref_id, local_ref_id):
     entries = bytearray()
     for member_id, npid in members:
         entry = bytearray(104)
+        npid_16 = npid[:16]
+        entry[0:len(npid_16)] = npid_16
         struct.pack_into(">H", entry, 36, member_id)
         npid_field = npid[:64]
         entry[40:40 + len(npid_field)] = npid_field
