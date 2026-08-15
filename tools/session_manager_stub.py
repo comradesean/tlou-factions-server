@@ -69,6 +69,20 @@ ROOM_LEAVING_OPCODE = 0x133
 # likely actual cause of that hang, not a missing reply to this opcode.
 ROOM_SEARCH_INFO_OPCODE = 0x137
 ROOM_SEARCH_RESULT_OPCODE = 0x138
+# NetMatchmakingSetAttrFlags (0x140) / NetMatchmakingUpdatedAttrFlags (0x141).
+# Live-captured 2026-08-15 for the first time ever this session - only
+# reachable once a room survives long enough to actually load into a match
+# (see research/notes/2026-08-15-room-teardown-and-flag-chain.md and the
+# "Stub PPU Traps" RPCS3 workaround that finally got a client this far).
+# 0x140 arrived as 16 bytes: opcode(4) + a 4-byte flags value + echoed
+# room_id(8) - e.g. `00 01 2f 78` as the flags. 0x141 IS one of the 11
+# opcodes the client's own receive-dispatch (FUN_00ad7604) already has a
+# case for (unlike 0x140, 0x142, 0x143) - a classic "client sets X, server
+# confirms updated X" pair. Untested: echoing the flags value straight back
+# as 0x141, matching the room_id-echo pattern already proven for 0x137/
+# 0x138.
+SET_ATTR_FLAGS_OPCODE = 0x140
+UPDATED_ATTR_FLAGS_OPCODE = 0x141
 PING_OPCODE = 0x145
 CLIENT_HELLO2_OPCODE = 0x146
 
@@ -569,6 +583,14 @@ def handle(conn, addr, log_lock, log):
                 conn.sendall(reply)
                 emit(f"   parsed opcode={opcode:#x} (RoomSearchInfo) - sent RoomSearchResult "
                      f"(16 bytes) echoing room_id={room_id_tail.hex()}\n{hexdump(reply)}")
+            elif opcode == SET_ATTR_FLAGS_OPCODE and len(chunk) >= 16:
+                flags_value = chunk[4:8]
+                room_id_tail = chunk[8:16]
+                reply = struct.pack(">I", UPDATED_ATTR_FLAGS_OPCODE) + flags_value + room_id_tail
+                conn.sendall(reply)
+                emit(f"   parsed opcode={opcode:#x} (SetAttrFlags, flags={flags_value.hex()}) - "
+                     f"sent UpdatedAttrFlags (16 bytes) echoing flags+room_id="
+                     f"{room_id_tail.hex()}\n{hexdump(reply)}")
             elif opcode == PING_OPCODE:
                 emit(f"   parsed opcode={opcode:#x} (Ping keepalive) - "
                      f"no reply sent, appears fire-and-forget (client-side timer driven)")
