@@ -550,6 +550,9 @@ def broadcast_member_departure(departing_key, room_id=None):
                     continue  # room owner leaving - entry teardown handles it
                 other["members"] = [m for m in other.get("members", [])
                                     if m[0] != mid]
+                # Drop the departed member's cached blob so it is not replayed
+                # to a future joiner of this (shared-id) room.
+                member_blobs.pop((other["room_id"], mid), None)
                 affected.append((other, mid))
     for other, mid in affected:
         leave = build_room_leave(other["room_id"], mid)
@@ -940,10 +943,18 @@ def handle(conn, addr, log_lock, log):
                 target_room_id = chunk[0x10:0x18]
                 host = None
                 with rooms_lock:
+                    # The party room_id is a shared static value
+                    # (0000000001387f58) across ALL clients, so several entries
+                    # can carry it. Take the MOST RECENT match on another
+                    # connection: a live host is the freshly-created party,
+                    # while a stale entry left by a failed prior Join Party is
+                    # older. Matching the first (oldest) entry is exactly what
+                    # made a failed attempt "corrupt" the next request (it
+                    # routed the join to a dead connection) - dict preserves
+                    # insertion order, so iterate and keep the last match.
                     for key, info in active_rooms.items():
                         if info["conn"] is not conn and info["room_id"] == target_room_id:
                             host = info
-                            break
                 if host is None:
                     emit(f"   parsed opcode={opcode:#x} (RoomJoin, "
                          f"room_ptr={join_room_ptr:#x}, "
@@ -984,7 +995,24 @@ def handle(conn, addr, log_lock, log):
                                      f"{target_room_id.hex()} - pushed updated "
                                      f"2-member roster + OwnerMember(1)")
                     except OSError as e:
-                        emit(f"   [join] host push failed: {e}")
+                        # The matched host connection is dead. Purge its stale
+                        # registry entry so it can't poison the NEXT join/invite
+                        # for this shared party room_id (the "failed attempt
+                        # corrupts the next request" cascade).
+                        emit(f"   [join] host push failed ({e}) - purging stale "
+                             f"host entry for room {target_room_id.hex()}")
+                        with rooms_lock:
+                            stale = None
+                            for k, v in active_rooms.items():
+                                if v is host:
+                                    stale = k
+                                    break
+                            if stale is not None:
+                                host["stop_event"].set()
+                                del active_rooms[stale]
+                            for (rid, mid) in [kk for kk in member_blobs
+                                               if kk[0] == target_room_id]:
+                                del member_blobs[(rid, mid)]
                     # Replay any already-cached member blobs both ways so the
                     # late joiner sees incumbents' rank/loadout immediately and
                     # vice versa (0x13b must follow Member - same rule as 0x13f).
@@ -1242,6 +1270,12 @@ def handle(conn, addr, log_lock, log):
             info = active_rooms.pop(id(conn), None)
             if info is not None:
                 info["stop_event"].set()
+                # Purge this room's cached blobs so a dead host's stale rank/
+                # loadout data can't be replayed into the next party that
+                # reuses the same shared room_id.
+                for (rid, mid) in [kk for kk in member_blobs
+                                   if kk[0] == info["room_id"]]:
+                    member_blobs.pop((rid, mid), None)
         broadcast_member_departure(id(conn))
         conn.close()
 
