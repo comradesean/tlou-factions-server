@@ -144,9 +144,36 @@ types:
       - id: unknown_byte
         type: u1
         doc: "Offset 38 within entry. Read (local_98) but not further traced. Unconfirmed."
-      - id: flags_byte
+      - id: data_blob_length
         type: u1
-        doc: "Offset 39 within entry. Read (local_e0) but not further traced - plausibly a status/ready flag. Unconfirmed."
-      - id: trailing
+        doc: |
+          Offset 39 within entry. CORRECTED 2026-08-17 (was mislabeled a
+          status/ready flag): this is the LENGTH of the per-member data blob
+          that follows at offset 40. The Member dispatch (0x00ad79b8/
+          0x00ad79c8 -> _opd_FUN_00ad33d8) memcpys data_blob[0:this_length]
+          into the member slot's +0xFC field and writes this length into
+          member_slot+0xF8. Must be <= 64 (compiled assert at 0x00ad3744).
+          CRITICALLY, the rank/loadout UI getter _opd_FUN_00ad2650 returns
+          the blob to the lobby UI ONLY if this length is exactly 32
+          (`cmpwi 32; beq` @ 0x00ad2734) - any other length renders the
+          remote player's rank/loadout as absent. See
+          research/notes/2026-08-17-member-data-blob-rank-and-0x142-hostrank.md.
+      - id: data_blob
         size: 64
-        doc: "Offset 40-103 within entry. Not read by the traced dispatch-loop code at all - by structural parallel with RoomJoined's own trailing 64-byte region (also unread by fixed offset, treated as a pointer target there), likely a per-member name/NpId buffer. Not independently confirmed this pass."
+        doc: |
+          Offset 40-103 within entry. CORRECTED 2026-08-17 (was guessed a
+          name/NpId buffer by parallel with RoomJoined): this is the
+          per-member DATA BLOB, memcpy'd into member_slot+0xFC (see
+          data_blob_length above). The member's DISPLAY NAME does NOT come
+          from here - it comes from the SceNpId in the first 16 bytes of the
+          `attributes` block. When exactly 32 bytes are present the lobby UI
+          reads this as the remote player's card: byte 8 = flags, byte 9 =
+          title index, bytes 10..13 = four loadout item-ids (0xff = empty
+          slot; live: 00 0e ff ff in-game vs ff ff ff ff in the party lobby),
+          u16 at byte 14 = the rank-widget value, remaining bytes = stat
+          region / uninitialised tail. The client also supplies this same
+          32-byte blob at runtime via opcode 0x13a (SetPartyData) and it is
+          re-delivered per-member via 0x13b; Member SEEDS it, 0x13b UPDATES
+          it (the dedupe early-return means the refresher cannot update an
+          already-registered member). Only offset 40..71 (32 bytes) is
+          meaningful; 72..103 is send-zero padding."

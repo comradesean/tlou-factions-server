@@ -1,45 +1,61 @@
 meta:
-  id: periodic_telemetry
+  id: member_set_data
   endian: be
   license: CC0-1.0
 doc: |
   Direction: client-to-server
 
-  Provisionally named - real purpose still UNCONFIRMED. Wire opcode 0x13a,
-  80 bytes, client -> server, fire-and-forget over the Session Manager
-  connection (port 7314).
+  Wire opcode 0x13a, 80 bytes, client -> server, fire-and-forget over the
+  Session Manager connection (port 7314). (Filename says "periodic_telemetry"
+  for historical reasons - that reading is now retired, see below - the
+  message is the client publishing its own per-member data blob. Rename
+  deferred to avoid breaking existing references.)
+
+  CORRECTED 2026-08-16/17. This was previously read as generic "periodic
+  telemetry" because a 2026-08-15 live-breakpoint trace of the sender
+  function _opd_FUN_00ad6148 caught it firing on a UI-transition tick with a
+  Google Analytics beacon string in an adjacent register
+  (research/notes/2026-08-15-createparty-trace.md). That trace was about the
+  unrelated CALLER LOOP, not this message's CONTENT: 0x13a carries the
+  client's own 32-byte member data blob (SetPartyData / "MemberSetData") -
+  the same blob the lobby UI reads for a REMOTE player, containing title,
+  rank and the four loadout item-ids. The stub relays it to the room's other
+  members as 0x13b, and that path is live-confirmed working (the remote
+  player's member slot +0xFC is populated from it). See
+  research/notes/2026-08-17-member-data-blob-rank-and-0x142-hostrank.md and
+  research/notes/2026-08-16-two-player-party-and-match-working.md.
 
   The declared opcode/size table (docs/protocol/session_manager_and_
-  matchmaking.md) names this NetMatchmakingKickedout at 16 bytes - WRONG on
-  both counts, same "declared table lies" pattern as 0x133/0x135. It was
-  first named "CreateParty" after appearing to correlate with the in-game
-  "invite to party" UI action, but a 2026-08-15 live-breakpoint trace of the
-  actual sending function (_opd_FUN_00ad6148, called from 0x003B17CC/
-  0x003B17E0) DISPROVED that: it fires on a periodic/UI-transition tick
-  from the main menu onward, completely independent of party or room
-  state, and the caller's own register context at the time contains a
-  literal Google Analytics beacon URL string ("GET /__utm.gif?..."). See
-  research/notes/2026-08-15-createparty-trace.md for the full trace.
-
-  KNOWN BYTE LAYOUT (confirmed from two live captures), UNKNOWN MEANING:
-  the 80-byte wire shape below is confirmed by direct inspection of two
-  real captures, but since the opcode's actual purpose is unknown, none of
-  these field names should be read as confirmed semantics - only as "this
-  is what's observed at this offset."
+  matchmaking.md) names this NetMatchmakingKickedout at 16 bytes - wrong on
+  both counts (a 2013-08-17 note argues the whole table tail is shifted 2
+  slots from 0x13a onward, making this MemberSetData; pending reconciliation
+  with the stub's functional naming, but the CONTENT below is what matters
+  for implementation).
 doc-ref: ../docs/protocol/session_manager_and_matchmaking.md
 seq:
   - id: opcode
     type: u4
     doc: "Fixed 0x13a (314 decimal). Confirmed live, big-endian."
-  - id: unknown_field
-    size: 4
-    doc: "Offset 4:8. Identical (0x2026e00c) across both live captures referenced in this file's doc block - constant within a session at least, not independently traced. Possibly a session/connection identifier; not confirmed."
+  - id: blob_length
+    type: u1
+    doc: "Offset 4. The client's own declared length of the member blob that follows at offset 16. Live-constant 0x20 = 32 across every capture. This is the value the server must echo as 0x13b's length byte and seed as Member entry offset 39 - the rank/loadout UI getter (_opd_FUN_00ad2650) accepts the blob ONLY if it is exactly 32. (Earlier this whole 4-byte span was recorded as one constant 0x2026e00c; newer captures show byte 4 fixed at 0x20 and bytes 5-7 varying, so byte 4 is the length and 5-7 are a separate per-send field.)"
+  - id: send_tag
+    size: 3
+    doc: "Offset 5:8. Varies every send (e.g. 3a e1 48 / 9f a9 6c / 27 0e 9c / 3e 6d 94). Unidentified - a per-send sequence, checksum, or hash. Not consumed by the server relay."
   - id: room_id
     size: 8
-    doc: "Offset 8:16. Matches the currently-open room's own room_id (the same value this server assigned via Member's header) in both live captures - confirmed by direct comparison. Despite matching the room id, the sender function has been proven (see doc block above) to fire independent of any room/party action, so this is likely just ambient state read at send time, not evidence of room-related purpose."
-  - id: unconfirmed_middle
-    size: 48
-    doc: "Offset 16:64. Mostly zero in both captures, with a few notable non-zero spans (a 4-byte 0xffffffff marker around relative offset 0x1a, a 0x0000bb70-shaped value, and an 8-byte span that DIFFERS between the two captures - possibly a timestamp or counter). Not independently offset-mapped this pass."
-  - id: tail_floats
-    size: 16
-    doc: "Offset 64:80. 4x IEEE-754 big-endian floats, identical across both captures: 1.0, ~0.729, ~0.710, ~0.650. Shape suggests weighting/scoring coefficients (matchmaking skill weighting was the original speculative theory) but this is UNCONFIRMED and now suspect given the sender is proven to be a generic telemetry tick, not anything party/room/matchmaking-specific."
+    doc: "Offset 8:16. The currently-open room's room_id (matches the value the server assigned via Member's header). Used by the stub to route the relay to that room's members. Low 4 bytes coincide with the room-object pointer because the stub derives room_id from RoomCreate's wire bytes; that is a stub artifact, not a wire requirement."
+  - id: member_blob
+    size: 32
+    doc: |
+      Offset 16:48. The 32-byte per-member data blob - the SAME structure the
+      lobby UI reads for a remote player (see protos/0x131_member.ksy
+      data_blob and protos/0x13b's blob). Decoded from live captures:
+      byte 8 = flags, byte 9 = title index, bytes 10..13 = four loadout
+      item-ids (0xff = empty slot; live: `00 0e ff ff` while in a game room
+      vs `ff ff ff ff` in a party lobby with no loadout selected), u16 at
+      byte 14 = the rank-widget value, remaining bytes = a stat region that
+      is zero on an empty profile. The server relays these 32 bytes verbatim.
+  - id: tail
+    size: 32
+    doc: "Offset 48:80. Beyond the declared 32-byte blob length. In live captures this holds leaked stack (e.g. a 0x0137d700 player-array pointer) - uninitialised, not meaningful. (An older capture happened to show four IEEE-754 floats 1.0/~0.729/~0.710/~0.650 here; treated as coincidental stack residue given the blob length is 32, not evidence of scoring coefficients.)"
