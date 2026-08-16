@@ -390,6 +390,302 @@ Deserialize `0x0038955c` / Serialize `0x00389244`: single Read32-variant
 helper, exact meaning of the value not traced further (likely a debug code or
 category id, not confirmed).
 
+## 5. Second pass (2026-08-15): opcodes with dedicated external constructors
+
+The first pass above (section 4) deliberately covered only the ~33
+inline-constructed opcodes reachable via the sequential-TOC-slot vtable trick.
+This pass generalizes that technique to the ~82 opcodes with a **dedicated
+external constructor function** (per-opcode alloc size + constructor address
+already known from `research/ghidra/factory_trampolines_decomp.txt` - see
+`research/notes/2026-08-14-gameplay-opcode-mapping.md`'s ledger) and works
+through a first batch of 25.
+
+### Generalizing vtable resolution to external-constructor opcodes
+
+Each external constructor (e.g. `FUN_00412b70` for opcode 9) sets up the
+object's header the same way the inline trampolines do - write the
+**base**-class (`NetEvent`) vtable pointer first, then overwrite it with the
+**derived** class's own vtable pointer, both loaded via a TOC-relative
+offset. The difference from section 1's inline case is only *which* anchor
+value the offset is relative to: instead of a single shared `unaff_r30`
+register value, each constructor's compilation unit decompiles to a load off
+a named global cell (e.g. `PTR_DAT_012fdfa4`, `PTR_PTR_012fdfa0`) - a
+per-object-file "TOC anchor" slot that holds the exact same TOC base pointer
+value as everywhere else in the binary (confirmed by checking multiple
+constructors sharing an anchor symbol always resolve the same *base*-vtable
+address off it). Concretely, for a derived vtable at decompiled offset
+`puVar2 + -0x7ffc` where `puVar2 = PTR_DAT_012fdfa4`:
+
+```
+anchorVal = *(uint32*)0x012fdfa4        // the literal address in the symbol name
+vtableAddr = *(uint32*)(anchorVal + (-0x7ffc))
+```
+
+then the same PPC32 `.opd`-descriptor double-dereference from section 1
+resolves `vtableAddr+0x8` (Deserialize) and `vtableAddr+0xc` (Serialize) to
+real function addresses. New tooling:
+`tools/ghidra_scripts/ResolveExternalCtorVtables.java` (takes
+`name anchorAddrHex offsetHex` triples, reusable for the remaining ~57
+external-constructor opcodes not covered this pass). Verified correct by
+cross-checking vtable+0x14/+0x18/+0x1c/+0x20 for every opcode in this batch
+against the exact same inherited-function addresses (`FUN_00acb460`,
+`FUN_00acb30c`, `FUN_00388a1c`, `FUN_00388a24`) confirmed in section 1 - a
+strong structural sanity check that the resolution is landing on real
+`NetEvent`-derived vtables, not garbage.
+
+Full resolution dump: `research/ghidra/batch1_vtables.txt`. Constructor
+decompiles (used to find each anchor/offset pair):
+`research/ghidra/batch1_constructors_decomp.txt`. Deserialize/Serialize
+decompiles: embedded in `batch1_vtables.txt`'s second half. Execute
+decompiles: `research/ghidra/batch1_execute_decomp.txt`.
+
+### New BitStream helper findings
+
+This pass's fields exercised several helper functions not seen (or not
+individually decompiled) in section 3's pass:
+
+| Function | Role | Evidence |
+|---|---|---|
+| `FUN_00a1add0` | `ReadFloat() -> f32` | Decompiled this session (`research/ghidra/batch1_helpers_decomp.txt`): 4-byte assembly loop identical in shape to the confirmed `Read32` helpers, first used at `grenade_start_fuse`'s `fuse_time` field. |
+| `FUN_00a1b81c` | `WriteFloat(value)` | Symmetric write; explicitly casts its `double` parameter to `float` before the 4-byte write loop - confirms 32-bit single-precision, not `double`. |
+| `FUN_00a1b488` | `Read32() -> uint` (4th equivalent call site) | Decompiled this session: byte-identical 4-byte-loop shape to the other three confirmed Read32 helpers (`FUN_00a1ae90`/`FUN_00a1b3c8`/`FUN_00a1af50`). **This resolves the width that blocked `request_ownership` (opcode 72) in the first pass** - it's a plain 32-bit read, not a novel width; `request_ownership` is now unblocked for a future pass. |
+| `FUN_00a1be18` | `Write32(value)` (4th equivalent call site) | Symmetric write, same finding. |
+| `FUN_00a1ab64` | `ReadU8() -> byte` (new 8-bit call site) | Decompiled this session: loop bound produces exactly one byte (`*param_2 = (char)uVar3`), confirmed via `swap_booster`'s `flag_byte` field where the *Serialize* side pairs it with the already-known `Write8` (`FUN_00a1b6d4`). |
+| `FUN_00a1b190` | `Read16() -> ushort` (3rd equivalent call site) | Decompiled this session; paired with `FUN_00a1b548` (`Write16`, symmetric) in `swap_booster`'s `old_slot_value` field. |
+
+### The "optional compact id" idiom
+
+Two opcodes this pass (`revive`, opcode 47, and `reset_melee_history`,
+opcode 81) share a distinctive encoding: a bool field is read/written
+*before* an id field, and the id field's bit-width is computed at runtime
+from that bool via the exact same branchless expression in both opcodes'
+Deserialize/Serialize:
+
+```c
+width = ((int)(*(byte*)&flag - 1) >> 0x1f & 0x13) + 0xd;   // flag=1 -> 13 bits, flag=0 -> 32 bits
+```
+
+In both opcodes, Execute uses the bool to choose between two *different*
+object-lookup helpers for the id (`FUN_0039f3d8` when compact/13-bit,
+`FUN_0039e0c8` when full/32-bit) - not just a cosmetic width difference, a
+genuinely different resolution path. Hypothesis (not confirmed further):
+13 bits covers the common in-range player/entity index, 32 bits is a
+fallback for values outside that range or a sentinel (e.g. "no target").
+Modeled in the `.ksy` files via a leading bool field plus two mutually
+exclusive (`if:`-gated) sibling fields for the two widths - see
+`protos/0x2f_revive.ksy` / `protos/0x51_reset_melee_history.ksy`. (Kaitai
+note: comparing a `b1` field against an integer literal fails to compile
+with ksc 0.11 - `error: can't compare BitsType1(BigBitEndian) and
+Int1Type(true)` - use `== true`/`== false` instead.)
+
+### The 25 confirmed opcodes
+
+Field offsets are object offsets, same convention as section 4.
+
+#### 0x09 `kill_projectile_throwable` (opcode 9)
+
+Single field, `throwable_id` (u32, offset 0x10, via `FUN_00a1b3c8`).
+Deserialize `0x00410b40` / Serialize `0x00410a78`. Execute (`0x00413514`)
+resolves it via `FUN_009ef28c` (a dynamic-object registry lookup shared with
+opcode 109 below) then conditionally calls `FUN_006ad9d4` (despawn/kill).
+High confidence, type and semantics.
+
+#### 0x0c `grenade_start_fuse` (opcode 12)
+
+`entity_id` (u32, 0x10) + `fuse_time` (f32, 0x14, first confirmed use of the
+float helper pair) + `team_id` (b13, 0x18). Deserialize `0x00410f78` /
+Serialize `0x00410d40`. Execute (`0x00413824`) resolves `entity_id` via
+`FUN_009ef28c` and, conditionally, `team_id` via `FUN_0039f3d8` (the same
+team-lookup helper confirmed for `spawn_entity`/`coop_team_failed` in
+section 4). `fuse_time` type confirmed; "fuse duration" semantics inferred
+from the opcode name only.
+
+#### 0x15 `request_interact` (opcode 21) / 0x3d `abort_interact` (opcode 61)
+
+Structurally identical: `player_id` (b13, 0x10) + `interact_slot` (u32,
+0x14) + `target_id` (u32, 0x18). `request_interact` Deserialize `0x00406070`
+/ Serialize `0x00405d4c`, Execute `0x00407c68`. `abort_interact` Deserialize
+`0x00405ff8` / Serialize `0x00405ce0`, Execute `0x00406688`. Both Execute
+functions call the exact same validate/apply function pair
+(`FUN_003acc74`/`FUN_003ace50`-or-`FUN_003aceb8`) with the identical argument
+order `(target=0x18, player=0x10, extra=0x14)` - cross-opcode structural
+confirmation of the field mapping. `player_id`/`target_id` high confidence;
+`interact_slot`'s exact role (slot index vs. interact type) unconfirmed.
+
+#### 0x19 `end_interact` (opcode 25)
+
+`player_id` (b13, 0x10) + `interactable_id` (u32, 0x14) + `field_18` (u32,
+0x18, unresolved). Deserialize `0x00405f80` / Serialize `0x00405c70`.
+Execute (`0x00406a74`) resolves `player_id` via `FUN_0039f3d8` and
+`interactable_id` via a distinct interactable-registry helper
+(`FUN_003ac5b8`), clearing a pending-interact flag on it. `field_18` not
+referenced in the traced Execute path.
+
+#### 0x1b `remove_interactable` (opcode 27)
+
+Single field, `interactable_id` (u32, 0x10). Deserialize `0x0040586c` /
+Serialize `0x0040583c`. Execute (`0x0040664c`) passes it straight to a
+one-call removal function (`FUN_003ac8a8`). High confidence.
+
+#### 0x1c `set_interactable_ammo` (opcode 28)
+
+`interactable_id` (u32, 0x10) + `ammo_count` (u32, 0x14). Deserialize
+`0x004057e0` / Serialize `0x00405788`. Execute (`0x00406c80`) resolves the
+interactable and either writes `ammo_count` directly into its `+0x390` field
+or routes it through a weapon-rack setter (vtable+0x30c). High confidence.
+
+#### 0x1e `signal_respawn_player` (opcode 30)
+
+`player_id` (b13, 0x10) + `respawn_flag` (b1, 0x14) + `field_18` (u32, 0x18,
+via `FUN_00a1b488`). Deserialize `0x00409eac` / Serialize `0x00409d08`.
+Execute (`0x0040ec04`) resolves `player_id` and branches on `respawn_flag`
+between a spawn-point-lookup path and a different call; `field_18`
+unreferenced in the traced path.
+
+#### 0x20 `secured_flag_score` (opcode 32)
+
+`score_value` (u32, 0x10) + `team_id` (b13, 0x14). Deserialize `0x003f6b5c`
+/ Serialize `0x003f6948`. Execute (`0x003f7020`) resolves `team_id` via
+`FUN_0039f3d8` and passes `score_value` straight into a score-tracker call
+(`FUN_003ea190`). High confidence, both fields.
+
+#### 0x22 `stop_pack_or_deploy` (opcode 34) / 0x23 `spawn_carry_object` (opcode 35)
+
+Both 2-field, both 32-bit-ish (`stop_pack_or_deploy`: `player_id` b13 +
+`field_14` u32; `spawn_carry_object`: `field_10` u32 + `field_14` u32).
+`stop_pack_or_deploy` Deserialize `0x003f6af8` / Serialize `0x003f68ec`,
+Execute `0x003f70fc` (both fields used jointly as a single lookup key, so
+individual roles aren't disambiguated). `spawn_carry_object` Deserialize
+`0x003f6a9c` / Serialize `0x003f6898`, Execute `0x003f7c64` (branches on
+each field but neither is independently resolved through a registry).
+Type-confirmed high, semantics low-medium for both.
+
+#### 0x27 `npc_kill` (opcode 39) / 0x5f `npc_set_host` (opcode 95)
+
+Both use a **full 32-bit `ReadBits(32)`** for their npc-id field, distinct
+from the common 13-bit player/entity-index scheme used everywhere else in
+this opcode family - a new cross-opcode pattern this pass surfaced.
+`npc_kill`: `npc_id` (b32 via `ReadBits(32)`, 0x10) + `field_14` (u32 via
+`FUN_00a1b3c8`, 0x14); Deserialize `0x0040375c` / Serialize `0x00402c40`,
+Execute `0x00403ca0` (unusually convoluted, includes an exception-trap path
+- semantics left low-medium). `npc_set_host`: `requester_id` (b13, 0x10) +
+`npc_id` (b32 via `ReadBits(32)`, 0x14) + `is_host` (b1, 0x18); Deserialize
+`0x00402dcc` / Serialize `0x00402bcc`, Execute `0x00403df4` resolves
+`npc_id` via the same `FUN_0039e0c8` npc-registry helper as `npc_kill`, and
+`requester_id` by scanning **local player-table slots** rather than a
+generic registry (used to check "is this local machine the requester") -
+confirms `is_host` directly (passed to `FUN_00090074(npc, is_host)`).
+
+#### 0x2f `revive` (opcode 47) / 0x51 `reset_melee_history` (opcode 81)
+
+See "optional compact id" idiom above. `revive` additionally has a fixed
+`reviver_id` (b13, 0x14) and a trailing `extra_flag` (b1, 0x19) that Execute
+(`0x003d9ee4`) uses to select between two stat-increment codes (6 vs 7) -
+suggestive of solo-revive vs. revive-assist, not confirmed. `reset_
+melee_history`'s Execute (`0x00400ad4`) calls a "clear melee history"
+virtual method (vtable+0x3b4) directly matching the opcode name - the
+highest-confidence semantics of the pair.
+
+#### 0x4c `swap_booster` (opcode 76)
+
+`player_id` (b13, 0x10) + `old_slot_value` (b16, 0x14) + `flag_byte` (b8,
+0x16) + `new_booster_id` (b4, 0x18). Deserialize `0x0040a330` / Serialize
+`0x0040a2a8`. Execute (`0x0040ce9c`) resolves `player_id` and applies the
+other three fields via a single setter (`FUN_003665c8`), wrapped in a
+snapshot/verify/revert sequence when the target already exists. The 4-bit
+width on `new_booster_id` is consistent with a small booster-type enum.
+
+#### 0x53 `melee_block` (opcode 83)
+
+`player_id` (b13, 0x10) + `block_value` (u32, 0x14, via `FUN_00a1b488`).
+Deserialize `0x003fed68` / Serialize `0x003fec84`. Execute (`0x004002b0`)
+writes `block_value` directly into the resolved player's `+0x58c` field.
+High confidence, both fields.
+
+#### 0x64 `item_received` (opcode 100)
+
+`field_10` (u32) + `field_14` (u32) + `field_18` (b1). Deserialize
+`0x003fdc94` / Serialize `0x003fdc30`. Execute (`0x003fe0f0`) is a large
+item-pickup VFX/audio routine; both u32 fields are resolved via the player
+registry (`FUN_0039f3d8`) but which is player vs. item is not disambiguated
+- left unguessed per this project's confidence discipline.
+
+#### 0x66 `increment_score` (opcode 102)
+
+`id` (b13, 0x10) + `field_14` (u32, 0x14) + `score_delta` (u32, 0x18).
+Deserialize `0x00409764` / Serialize `0x0040963c`. Execute (`0x0040c8bc`)
+branches on `id == 0` (team-level increment, uses `field_14`) vs. nonzero
+(player increment via `FUN_0039f3d8`, does *not* use `field_14`) - both
+branches pass `score_delta` as the amount. `score_delta` high confidence;
+`field_14` only meaningful in the team branch, not disambiguated further.
+
+#### 0x67 `set_player_exposed` (opcode 103)
+
+`player_id` (b13, 0x10) + `field_14` (u32, 0x14, via `FUN_00a1b488`) +
+`is_exposed` (b1, 0x18). Deserialize `0x00409d80` / Serialize `0x00409bdc`.
+Execute (`0x004094b8`) writes `is_exposed` directly into the resolved
+player's `+0x90a` byte field - direct confirmation, matches the opcode name
+exactly. `field_14` unreferenced in this Execute function.
+
+#### 0x68 `add_net_marker` (opcode 104)
+
+`owner_id` (b13, 0x10) + `marker_type` (u32, 0x14, via `FUN_00a1b3c8`) +
+`field_18` (u32, 0x18, via `FUN_00a1b488`). Deserialize `0x00409ad8` /
+Serialize `0x004099cc`. Execute (`0x00410188`) resolves `owner_id` and uses
+`marker_type` as a key into a per-marker-type dictionary lookup
+(`FUN_007a3878`). `field_18` unreferenced in the traced path.
+
+#### 0x69 `player_left` (opcode 105)
+
+Single field, `player_id` (b13, 0x10). Deserialize `0x004096b0` / Serialize
+`0x00409590`. Execute (`0x0040c5b4`) resolves it twice - once directly, once
+at `player_id + 0x1000` (a primary-slot/shadow-slot addressing scheme) -
+running a cleanup call and invalidating a field (`+0x3c0 = -1`) for each.
+High confidence, matches the opcode name (per-player disconnect cleanup).
+
+#### 0x6b `kill_all_mines` (opcode 107)
+
+**Confirmed empty payload**, same pattern as `start_connection`/`net_go`/
+`assign_team_done`: Deserialize (`0x00410564`) and Serialize (`0x00410568`)
+are both `{ return; }`. Execute (`0x00410c00`) calls a "clear all" function
+on the mine registry itself, needing no per-object field.
+
+#### 0x6d `sync_proxy_mine` (opcode 109)
+
+`entity_id` (u32, 0x10) + `flag_a` (b1, 0x14) + `flag_b` (b1, 0x15).
+Deserialize `0x004108b0` / Serialize `0x0041084c`. Execute (`0x0041374c`)
+resolves `entity_id` via the same `FUN_009ef28c` registry as
+`kill_projectile_throwable`; the two bools aren't visibly consumed in the
+traced code.
+
+#### 0x6f `set_weapon_upgrade_level` (opcode 111)
+
+`entity_id` (u32, 0x10) + `upgrade_level_a` (b8, 0x14) + `upgrade_level_b`
+(b8, 0x15). Deserialize `0x00410704` / Serialize `0x004106a0`. Execute
+(`0x00410638`) resolves `entity_id` and passes both bytes straight into a
+setter call (`FUN_003cd838`). High confidence, matches the opcode name well
+(two weapon-part/upgrade levels).
+
+### Set aside this pass: `sync_stats` (65) / `sync_stats_player` (66)
+
+Both looked at (Deserialize/Serialize decompiled, in
+`research/ghidra/batch1_vtables.txt`). Both are real and their *own* 1-2
+object fields are confirmed (`sync_stats`: two u32 fields, offsets 0x10/
+0x14; `sync_stats_player`: one u32 `player_id`-shaped field, offset 0x10),
+but their Deserialize/Serialize additionally read/write a large *external*
+stats-manager singleton directly from the bitstream - `sync_stats` loops
+over a per-category array (stride 0x6e) via `FUN_003e6308`/`FUN_003e6590`;
+`sync_stats_player` reads a per-player sub-block via `FUN_003e628c`/
+`FUN_003e7a68` (partially decompiled: confirms at least a u32 at `+0x5e8`
+and a u8 at `+0x5ef` relative to the player's stat-block base, with two more
+sub-calls, `FUN_003e63f8`, not resolved). This means the *wire* payload for
+both opcodes extends well beyond what the event object itself stores, so a
+`.ksy` covering only the object's own fields would silently truncate real
+wire data - written up here instead of as an incomplete parser. Good target
+for a dedicated "stats sync family" follow-up (likely shared by
+`increment_tally_stat`/opcode 101 and others in the same address
+neighborhood).
+
 ## Ruled out / explicitly not attempted this session
 
 - **`message` (opcode 45)** - looked at (Deserialize `0x0038d45c`, Serialize
@@ -411,12 +707,15 @@ category id, not confirmed).
   buffer, likely a clan name or tag) and out of scope for a "simple opcodes"
   pass, but the dispatch/vtable resolution machinery documented in section 1
   makes them tractable for a focused follow-up.
-- **`request_ownership`/`transfer_ownership` (opcodes 72/73)** - looked at.
-  `request_ownership` needs the still-unconfirmed-width `FUN_00a1b488`/
-  `FUN_00a1be18` pair. `transfer_ownership` is a tagged union (a byte tag
-  0-3 selects between float/int32/two other 32-bit interpretations for its
-  last field) - real and decodable, just needs the tag's exact meaning
-  pinned down before it's worth writing a `.ksy` for it.
+- **`request_ownership`/`transfer_ownership` (opcodes 72/73)** - looked at
+  in the first pass. `request_ownership` was blocked on the then-unconfirmed
+  width of `FUN_00a1b488`/`FUN_00a1be18` - **section 5 (2026-08-15) now
+  confirms this pair is a plain 32-bit Read32/Write32 equivalent**, so
+  `request_ownership` is unblocked and a good target for the next pass (not
+  done this session - out of the batch picked). `transfer_ownership` is a
+  tagged union (a byte tag 0-3 selects between float/int32/two other 32-bit
+  interpretations for its last field) - real and decodable, just needs the
+  tag's exact meaning pinned down before it's worth writing a `.ksy` for it.
 
 See `research/notes/2026-08-14-gameplay-opcode-mapping.md` for the complete
 115-opcode status ledger (which of the ~33 "simple/inline-constructed"
