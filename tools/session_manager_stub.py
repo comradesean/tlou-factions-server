@@ -636,6 +636,22 @@ def start_member_refresher(conn, emit, members, room_id, max_players,
     ROOM_PTR+0x10 never stays zero long enough for anything reading it to
     lose.
     """
+    # 2026-08-16 REGRESSION FIX: only refresh SOLO rooms. Live TTY showed the
+    # host joining and LEAVING its own party every 10s - exactly this
+    # interval - once a 2-member roster was being re-broadcast. Re-sending the
+    # full roster to an already-established multi-member party makes the client
+    # re-run its membership logic and churn ("You were kicked from the party"
+    # spam on the host). A multi-member room is kept alive by the established
+    # P2P link (SCE_NP_SIGNALING_EVENT_EXT_MUTUAL_ACTIVATED fires on join), so
+    # our periodic re-assertion is unnecessary AND harmful there. The refresher
+    # exists only for the solo-host case (keeping room_obj+0x10 nonzero before
+    # anyone joins); for >1 member, send nothing and let the party stand.
+    if len(members) > 1:
+        emit(f"   [refresh] SKIPPED periodic refresh for {len(members)}-member "
+             f"room {room_id.hex()} (multi-member rooms are P2P-maintained; "
+             f"re-broadcasting churns party membership)")
+        return
+
     def run():
         while not stop_event.wait(interval):
             try:
