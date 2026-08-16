@@ -1,5 +1,5 @@
 meta:
-  id: member_updated_data
+  id: owner_changed
   endian: be
   license: CC0-1.0
 doc: |

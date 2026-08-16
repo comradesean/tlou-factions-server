@@ -1,5 +1,5 @@
 meta:
-  id: room_destroyed
+  id: member_updated_data
   endian: be
   license: CC0-1.0
 doc: |
@@ -27,7 +27,7 @@ doc: |
   member slot is populated. (The "RoomDestroyed" declared name is part of the
   same 2-slot table-shift error discussed in
   research/notes/2026-08-17-member-data-blob-rank-and-0x142-hostrank.md; the
-  matching client supplier is protos/0x13a_periodic_telemetry.ksy.) The
+  matching client supplier is protos/0x13a_member_set_data.ksy.) The
   0x13b message MUST follow a Member (0x131) for this room - it is dropped
   until room_obj+0x10 is set, which only Member does.
 doc-ref: ../docs/protocol/session_manager_and_matchmaking.md

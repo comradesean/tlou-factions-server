@@ -98,7 +98,7 @@ seq:
     doc: "Offset 39:40. 0 normally, 4 on one conditional branch (`stb r0,183(r1)` @ 0x00ad5cbc). Live values 0x00 and 0x04."
   - id: room_name
     size: 128
-    doc: "Offset 40:168. NUL-terminated room name, produced by `_opd_FUN_00e45b10(r1+184, room_obj+0x18)` @ 0x00ad5f74 - i.e. a plain strcpy of `room_obj+0x18`. Format is `<npid>.<unix-timestamp>` (e.g. `comradesean.1786863559`), built by the 0x143 sender's own sprintf-like call. room_obj+0x18 is the SAME 128-byte region 0x143 sends and 0x144 strcpy's into on receipt - see protos/0x143_updated_room_flags.ksy."
+    doc: "Offset 40:168. NUL-terminated room name, produced by `_opd_FUN_00e45b10(r1+184, room_obj+0x18)` @ 0x00ad5f74 - i.e. a plain strcpy of `room_obj+0x18`. Format is `<npid>.<unix-timestamp>` (e.g. `comradesean.1786863559`), built by the 0x143 sender's own sprintf-like call. room_obj+0x18 is the SAME 128-byte region 0x143 sends and 0x144 strcpy's into on receipt - see protos/0x143_set_room_name.ksy."
   - id: room_tail_block
     size: 64
     doc: "Offset 168:232. Verbatim byte-by-byte copy of `room_obj+0x19fc .. +0x1a3b` (copy loop 0x00ad5d30-0x00ad5f2c into r1+312). The live-confirmed team-selection field at wire offset 0xb0 (0=unset, 1=Blue, 2=Red - see research/notes/2026-08-16-team-selection-field-confirmed.md) is the u16 at relative offset 8 within this block, i.e. `room_obj+0x1a04`."

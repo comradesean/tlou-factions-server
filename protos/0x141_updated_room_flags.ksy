@@ -1,5 +1,5 @@
 meta:
-  id: updated_attr_flags
+  id: updated_room_flags
   endian: be
   license: CC0-1.0
 doc: |
@@ -22,7 +22,7 @@ doc: |
 
   So only offset 4:6 is read; offset 6:8 is ignored entirely. This matches
   the 0x140 sender, which also writes only a u16 there (see
-  protos/0x140_set_attr_flags.ksy for the correction).
+  protos/0x140_set_room_flags.ksy for the correction).
 
   SEQUENCING: the room lookup keys on room_obj+0x10, which is set ONLY by
   Member's (0x131) handler from Member wire offset 16. This message is

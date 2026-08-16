@@ -1,5 +1,5 @@
 meta:
-  id: set_room_flags
+  id: host_rank
   endian: be
   license: CC0-1.0
 doc: |

@@ -1,5 +1,5 @@
 meta:
-  id: promote
+  id: set_attr_flags
   endian: be
   license: CC0-1.0
 doc: |

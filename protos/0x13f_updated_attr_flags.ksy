@@ -1,5 +1,5 @@
 meta:
-  id: owner_changed
+  id: updated_attr_flags
   endian: be
   license: CC0-1.0
 doc: |

@@ -1,5 +1,5 @@
 meta:
-  id: set_attr_flags
+  id: set_room_flags
   endian: be
   license: CC0-1.0
 doc: |
