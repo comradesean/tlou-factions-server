@@ -60,8 +60,53 @@ def try_upstream_fetch(host, raw_path):
         return None
 
 
-def build_response(request_line, text):
+def put_key_from_path(raw_path):
+    """Map a path-style S3 PUT path to the same SERVED_DIR key a virtual-hosted
+    GET uses. The game GETs `t1.final.prod.s3.amazonaws.com/profiles/<npid>/
+    profile.21` (vhost, key = the path) but PUTs path-style to
+    `s3.amazonaws.com/t1.final.prod/profiles/<npid>/profile.21` (key = path with
+    the leading bucket segment stripped) - see
+    research/notes/2026-08-16-profile-and-userdata-reverse-engineering.md. So for
+    a path-style PUT, drop the first path segment (the bucket) to land on the
+    same file the GET reads back."""
+    stripped = raw_path.lstrip("/")
+    segs = stripped.split("/", 1)
+    # First segment is the S3 bucket in path-style requests (e.g.
+    # "t1.final.prod"); strip it so the key matches the vhost GET.
+    if len(segs) == 2:
+        return segs[1]
+    return stripped
+
+
+def build_put_response(request_line, text, body):
+    """Store an S3 PUT body under the GET key and 200 OK it, so the client's own
+    correctly-signed profile.21 uploads round-trip and progression persists with
+    zero format knowledge on our side. Requires RPCS3 to redirect
+    s3.amazonaws.com to this host (config IP-swap) - otherwise the PUT never
+    reaches us. See the profile-reverse-engineering note, section 4."""
     parts = request_line.split()
+    raw_path = parts[1].split("?", 1)[0] if len(parts) >= 2 else ""
+    key = put_key_from_path(raw_path)
+    file_path = os.path.join(SERVED_DIR, key)
+    stored = 0
+    if key and body is not None:
+        os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
+        with open(file_path, "wb") as f:
+            f.write(body)
+        stored = len(body)
+    header = (
+        f"HTTP/1.1 200 OK\r\n"
+        f"Content-Length: 0\r\n"
+        f"Connection: close\r\n"
+        f"\r\n"
+    ).encode("ascii")
+    return header, key, stored, " (PUT stored)" if stored else " (PUT empty)"
+
+
+def build_response(request_line, text, body=None):
+    parts = request_line.split()
+    if len(parts) >= 1 and parts[0] == "PUT":
+        return build_put_response(request_line, text, body)
     if len(parts) < 2 or parts[0] != "GET":
         return (f"HTTP/1.1 {FALLBACK_STATUS}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").encode("ascii"), "", 0, ""
 
@@ -119,8 +164,29 @@ def handle(conn, addr, log, log_lock):
         except socket.timeout:
             pass
 
-        text = data.decode("latin1", errors="replace")
-        request_line = text.split("\r\n", 1)[0] if text else ""
+        # Split headers from any body already read; for PUT/POST keep reading
+        # until the full Content-Length body arrives (the client uploads its
+        # signed profile.21 as a PUT body). GET has no body, so this is a no-op
+        # for the common case.
+        head, sep, body = data.partition(b"\r\n\r\n")
+        headers_text = head.decode("latin1", errors="replace")
+        request_line = headers_text.split("\r\n", 1)[0] if headers_text else ""
+        method = request_line.split(" ", 1)[0] if request_line else ""
+        if sep and method in ("PUT", "POST"):
+            content_length = get_header(headers_text + "\r\n", "Content-Length")
+            try:
+                want = int(content_length) if content_length else 0
+            except ValueError:
+                want = 0
+            try:
+                while len(body) < want:
+                    chunk = conn.recv(65536)
+                    if not chunk:
+                        break
+                    body += chunk
+            except socket.timeout:
+                pass
+        text = headers_text
 
         entry = f"==== {ts} from {addr[0]}:{addr[1]} ====\n{text}\n"
         # build_response() can block for up to UPSTREAM_TIMEOUT seconds on a
@@ -133,7 +199,7 @@ def handle(conn, addr, log, log_lock):
         # response at all until the client's own 10s connect timeout gave up
         # and closed it - not a network/firewall/DNS issue, confirmed via a
         # live RPCS3 log trace of the hung connect() call).
-        response, matched_path, served_len, upstream_note = build_response(request_line, text)
+        response, matched_path, served_len, upstream_note = build_response(request_line, text, body)
         entry += f"---- responded: {'served ' + str(served_len) + ' bytes for ' + matched_path if served_len else FALLBACK_STATUS}{upstream_note} ----\n"
         with log_lock:
             print(entry, flush=True)
