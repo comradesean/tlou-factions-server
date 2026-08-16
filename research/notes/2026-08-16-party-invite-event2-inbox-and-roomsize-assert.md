@@ -316,6 +316,30 @@ the empty `%s` in `" joined match"` / `"Removing User ''"` says the member
 record the client built had no npid. All three symptoms are consistent with
 one cause: **the joining client was given a room with no valid roster.**
 
+### Cross-check against `776bd51` (landed concurrently, by the other agent)
+
+`776bd51` ("parse real room_ptr and max_players from RoomCreate") lands right
+on top of this, from the opposite direction, and the two findings agree:
+
+- **The value was never the problem.** Both before and after that commit
+  `max_players` has an `or 10` / `or 8` fallback, so `build_member`'s wire
+  offset 24 was never zero. `m_roomSize == 0` therefore cannot mean "we sent a
+  zero"; it means **that room object never received a `0x131` at all**.
+- **Which the same commit plausibly explains and fixes.** Member header offset
+  8 is `piVar20 = *(int**)(pkt + 8)` - *the room object the whole packet
+  applies to*. Until `776bd51` the stub sent a hardcoded `ROOM_PTR` there;
+  it now echoes the client's own room-object pointer parsed from `RoomCreate`.
+  If the hardcoded pointer ever disagreed with the object the client was
+  actually using, then `m_roomId` (offset 16) and `m_roomSize` (offset 24) were
+  being written into the *wrong* object - leaving the real one at zero on both,
+  which is exactly the observed
+  `m_roomId != 0` + `m_roomSize > 0` assert pair.
+
+**So the first thing to check next session is whether `m_roomSize > 0` still
+fires at all after `776bd51`** - it may already be fixed. If it does still
+fire, the invite-join path (RoomJoined without a preceding Member) is the
+remaining suspect and the spec below applies.
+
 ## Recommended server fix (spec only - not applied here)
 
 `tools/session_manager_stub.py` was deliberately **not edited** in this block:
