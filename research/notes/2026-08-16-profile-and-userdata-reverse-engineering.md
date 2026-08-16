@@ -372,7 +372,8 @@ global (`0x01382082`)**, not from the profile — see §6.
 ## 6. The 32-byte member data blob, decoded field by field
 
 Companion to `2026-08-17-member-data-blob-rank-and-0x142-hostrank.md`
-(sibling agent). That note establishes the transport (`0x13a` →
+(sibling agent); see also `2026-08-16-factions-metagame-reference.md` for the
+game-design meaning of the counters these fields carry. That note establishes the transport (`0x13a` →
 `0x13b`/Member, `FUN_00ad2650`'s `len == 32` gate). This section adds the
 **producer's exact byte-by-byte sources**, read off `FUN_003b15bc`'s raw
 disassembly (`0x3b15bc`-`0x3b17f8`). Stack buffer base is `r1+120`.
@@ -651,12 +652,19 @@ just the file on disk.
 * `userdata/*.txt.crypt` rides the generic `.crypt` downloader and is not
   read by `net-player-data.cpp`.
 
+**High, on independent corroboration**:
+* `P+0x1E34`/`P+0x1E38` = matches played (= in-game *days*) per game mode,
+  and `blob[14..15]` = `weeks_survived + journeys*1000`. The code gives
+  `(P[0x1E34] + P[0x1E38]) / 7` capped at 999, plus `P[0x1E44]` capped at 9;
+  `2026-08-16-factions-metagame-reference.md` independently establishes from
+  external sources that **one completed match = one in-game day, 7 days = 1
+  week, and a Journey is 12 weeks = 84 matches**. The `/7` and the two caps
+  are exactly that rule, arrived at from opposite directions.
+
 **Medium**:
-* Field *semantics* for `P+0x1E34`/`0x1E38` ("matches played per mode") and
-  `P+0x1E44` ("journeys") — the arithmetic (`/7`, cap 999 / cap 9) and the
-  call sites (`task-manager-online.cpp` end-of-match, `net-clan-manager.cpp`)
-  make this the only reading that fits, but no DC variable names survive in
-  the EBOOT to confirm it.
+* Whether the mode split is specifically Supply Raid vs. Survivors — the
+  guards are `FUN_003a3d40(...) == 2` and `== 3`, and that enum was not
+  resolved this pass.
 * `P+0x0A3C+i*8` as the clan **survivor** roster seeds specifically (it is
   definitely a u64-keyed name lookup with a first/last-name procedural
   fallback; whether the index space is survivors or some other roster is not
