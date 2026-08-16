@@ -23,6 +23,7 @@ import datetime
 import threading
 import struct
 import os
+import time
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 7314
 LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else "/mnt/f/ClaudeHole/tlou_factions/captures/tcp_catch.log"
@@ -83,6 +84,20 @@ ROOM_SEARCH_RESULT_OPCODE = 0x138
 # 0x138.
 SET_ATTR_FLAGS_OPCODE = 0x140
 UPDATED_ATTR_FLAGS_OPCODE = 0x141
+# NetMatchmakingUpdatedRoomFlags (declared name, but client->server despite
+# the name - see docs/protocol/session_manager_and_matchmaking.md row 22):
+# 144 bytes, opcode + room_id(8) + a 128-byte verbatim copy of the client's
+# own room_obj+0x18 region. Never handled by this stub before 2026-08-16 -
+# confirmed via live Ghidra dispatch-case decompile that its counterpart,
+# 0x144/HostRank (server->client, same 128 bytes written back into that same
+# room_obj+0x18 region on receipt), is a message the real server would have
+# sent and ours never has. Following this project's established "echo the
+# client's own data back" pattern (RoomSearchResult/0x138 echoing
+# RoomSearchInfo/0x137, UpdatedAttrFlags/0x141 echoing SetAttrFlags/0x140) -
+# EXPERIMENTAL, not yet live-tested. See
+# research/notes/2026-08-16-net-sm-server-lobby-dispatch.md and follow-ups.
+UPDATED_ROOM_FLAGS_OPCODE = 0x143
+HOST_RANK_OPCODE = 0x144
 PING_OPCODE = 0x145
 CLIENT_HELLO2_OPCODE = 0x146
 # NetMatchmakingKickedout (declared, 16 bytes) - confirmed WRONG both name
@@ -163,19 +178,26 @@ def build_room_joined(npid, name, room_id, id_gate=0, map_id=b"\x00\x00\x00\x00"
     - Offset 4:8 (4 bytes): referenced by other dispatch cases (e.g. 0x13b) as
       a generic u16 "room index"-shaped field but not read anywhere in this
       specific 0x132 case in the traced decompile - previously left zero.
-      NEW (2026-08-15): diffing 5 real RoomCreate captures across repeated
-      selections of two different maps found RoomCreate's own wire offset
-      0xc (4 bytes) is IDENTICAL across repeats of the same map (Checkpoint:
-      0x9 both times; Lakeside: 0x13 all three times) and different between
-      maps - not consistent with a simple incrementing counter, which is
-      what this field was previously assumed to be (a counter wouldn't
-      repeat the exact same value across separate RoomCreate messages).
-      Live symptom this correlates with: Checkpoint loaded as an empty
-      skybox with no level geometry, Lakeside loaded much further before
-      being kicked back to lobby - consistent with this being a map/level
-      identifier the client needs echoed back to resolve which content to
-      actually load from the shared level pak. Testing echoing it into this
-      previously-always-zero slot.
+      "map_id" LABEL NOW DISPUTED (2026-08-16) - see
+      research/notes/2026-08-16-map-id-vs-team-confound.md. Originally
+      labeled 2026-08-15 from 5 RoomCreate captures where this field read
+      0x9 for repeated Checkpoint selections and 0x13 for repeated Lakeside
+      selections - concluded "map identifier". NOT reconciled: a controlled
+      test the following night held map AND mode constant (Checkpoint,
+      Supply Raid, confirmed by the user) while only changing team, and got
+      the SAME two values (0x13 for Red x2, 0x9 for Blue) now correlating
+      with team instead. Both can't be literally true of the same field.
+      The original 5-capture raw data was never saved to a dedicated note
+      (only summarized here), so it can't be rechecked for whether team was
+      itself uncontrolled in that original test (plausible: solo-hosting
+      may default to one team unless manually switched, which would explain
+      how "changed only by map" and "changed only by team" both looked true
+      in their own limited samples). Not renaming the field or changing the
+      stub's behavior over this - it's echoed straight back either way, so
+      there's no known code-correctness question here, only a
+      documentation/understanding one. Whatever this field actually
+      encodes, treat the "Checkpoint loads as an empty skybox" explanation
+      as unresolved again, not settled.
     - Offset 16:32 (first 16 bytes of the "18x u16 attribute" block): traced
       this pass to the likely root cause of the post-RoomJoined RPCS3 crash
       ("SIG: ... Unexpected error in reply to RequestSignalingInfos:
@@ -250,7 +272,7 @@ MEMBER_ID = 1
 JOINER_MEMBER_ID = 2
 
 
-def build_member(members, room_id, max_players, owner_ref_id, local_ref_id):
+def build_member(members, room_id, max_players, owner_ref_id, local_ref_id, team=None):
     """Build a NetMatchmakingMember (opcode 0x131) room-roster broadcast.
 
     Field layout from docs/protocol/0x131_member.md / protos/0x131_member.ksy
@@ -325,7 +347,42 @@ def build_member(members, room_id, max_players, owner_ref_id, local_ref_id):
               trap. Left zero for the recipient's own entry, filled for every
               other (remote) entry.
       16  20  remainder of the 18x u16 "attributes" block - not independently
-              mapped - zero
+              mapped - zero. TRIED AND FALSIFIED (2026-08-16): a Ghidra dig
+              for why solo-host permanently stalls in client state
+              NET_SM_SERVER_LOBBY found its handler blocks popping an item
+              off a bounded producer/consumer queue, with a translation
+              helper (_opd_FUN_001953f8) that walks per-member-slot pointers
+              checking fields at +0xc/+0x10 - a plausible per-member ready/
+              team-assigned-flag shape, which lined up with this exact
+              unmapped region. Live-tested team=0 (u16 @ entry offset 16) +
+              ready=1 (u16 @ offset 18): confirmed present correctly on the
+              wire (verified via captures/tcp_catch.log hex dump), but did
+              NOT change observed behavior - the user still hit the same
+              3-attempt pattern (id-gate fail -> brief match then silent
+              drop -> permanent NET_SM_SERVER_LOBBY stall) with this field
+              populated. Reverted to zero. The real blocker is more likely
+              the `team >= 0 && team < NetInfo::kMaxNetTeams` assertion
+              (game/net/net-game-manager.cpp:1358) firing during the 2nd
+              attempt's match load - see research/notes/2026-08-16-net-sm-
+              server-lobby-dispatch.md and follow-up notes for the current
+              theory (that assert's abnormal-exit path is suspected of
+              wedging whatever the 3rd attempt's queue depends on, medium-
+              low confidence, not proven).
+
+              TRYING AGAIN 2026-08-16 (later same night) with a real value
+              instead of a guess: `RoomCreate`'s own wire offset 0xb0:0xb2 is
+              now CONFIRMED (not guessed) to be the client's team selection -
+              0=unset/spectator, 1=Blue, 2=Red - via ~24 live captures
+              spanning every map and both teams with zero exceptions (see
+              research/notes/2026-08-16-team-selection-field-confirmed.md).
+              The earlier team=0 experiment failed to change anything, but
+              it was ALWAYS zero regardless of what the player actually
+              selected - indistinguishable from "spectator" every time, so
+              it never actually tested "does echoing the real team value
+              help." Writing the real captured value into entry offset 16
+              (u16) now, offset 18 left zero (the earlier ready=1 guess is
+              not re-added - no evidence for it, keep this experiment to one
+              variable). EXPERIMENTAL - not yet live-tested.
       36  2   member_id - XOR-compared against owner_ref_id/local_ref_id
       38  1   unread - zero
       39  1   unread, flags-shaped - zero
@@ -364,6 +421,8 @@ def build_member(members, room_id, max_players, owner_ref_id, local_ref_id):
         if member_id != local_ref_id:
             npid_16 = npid[:16]
             entry[0:len(npid_16)] = npid_16
+        if team is not None:
+            struct.pack_into(">H", entry, 16, team)
         struct.pack_into(">H", entry, 36, member_id)
         npid_field = npid[:64]
         entry[40:40 + len(npid_field)] = npid_field
@@ -458,6 +517,20 @@ def handle(conn, addr, log_lock, log):
         own_npid = np_id.split(b"\x00", 1)[0]
         matched = False
         stop_event = threading.Event()
+        # Per-room refresher lifecycle (2026-08-16): start_member_refresher's
+        # background thread only stops on a socket error - nothing ever set
+        # stop_event otherwise, and it was shared across every RoomCreate on
+        # this connection. Since the session-manager connection stays open
+        # across "back to menu, host again" cycles, an earlier room's
+        # refresher kept re-sending Member (which overwrites ROOM_PTR+0x10)
+        # forever, pinning it nonzero long after the room was abandoned - a
+        # live debugger read confirmed ROOM_PTR+0x10 was still the FIRST
+        # room's id going into a SECOND host attempt, causing the RoomJoined
+        # id-gate (id_gate=0) to permanently mismatch and the client to give
+        # up (0x133) without ever reaching a match again. Track the active
+        # room's own stop_event separately so each new RoomCreate/abandon can
+        # stop the previous room's refresher before it can pin stale state.
+        active_room_stop = None
 
         # netmatchmaking_server_hello.ksy: fixed 16 bytes.
         # First guess: big-endian, matching this project's established convention -
@@ -508,10 +581,22 @@ def handle(conn, addr, log_lock, log):
                 # evidenced 2026-08-15 as a likely map/level identifier, see
                 # build_room_joined's docstring. Echo it straight back.
                 map_id = chunk[0xc:0x10]
+                # RoomCreate's own wire offset 0xb0:0xb2 (2 bytes) - CONFIRMED
+                # 2026-08-16 via ~24 live captures spanning every map and both
+                # teams, zero exceptions: 0x0000=unset/spectator, 0x0001=Blue,
+                # 0x0002=Red. See research/notes/2026-08-16-team-selection-
+                # field-confirmed.md. Never echoed anywhere before now - the
+                # slot this feeds (Member's per-entry offset 16, a u16 within
+                # the "18x u16 attributes" block) has sat zeroed all along,
+                # and a blind team=0 guess into that same slot was already
+                # tried and falsified earlier tonight. Trying the REAL
+                # captured value instead - EXPERIMENTAL, not yet live-tested.
+                team = struct.unpack(">H", chunk[0xb0:0xb2])[0]
 
                 reply = build_room_joined(npid, name, room_id, map_id=map_id)
                 member = build_member([(MEMBER_ID, npid)], room_id, max_players,
-                                       owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID)
+                                       owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID,
+                                       team=team)
                 # REVERTED to RoomJoined-first (2026-08-15): the Member-first
                 # order was introduced to fix a capacity trap in the
                 # find-match 2-real-player pairing path (see that branch's
@@ -527,14 +612,36 @@ def handle(conn, addr, log_lock, log):
                 # confirmed at 0x00ad7b14) - it can't use find-match's
                 # non-matching id_gate workaround either, so reverting the
                 # order is the safe fix here specifically.
+                #
+                # EXPERIMENTAL (2026-08-16): research/notes/2026-08-14-room-
+                # slot-gating.md flagged, and never resolved, whether the
+                # client's local room-slot object genuinely exists yet by the
+                # time this reply arrives, or whether it's registered by a
+                # not-yet-run background/async step - i.e. a race, not just
+                # the leftover-refresher staleness already fixed tonight.
+                # Live evidence supports this: even a freshly-rebooted RPCS3's
+                # very first RoomCreate this boot has still intermittently
+                # failed the id-gate tonight, which the refresher fix alone
+                # doesn't explain (nothing could have gone stale yet on a
+                # true first attempt). Trying a small fixed delay before
+                # replying, on the theory that giving the client's own local
+                # slot-registration code a moment to run first reduces how
+                # often our reply beats it there. NOT confirmed - a real
+                # experiment, not a proven fix. If flakiness persists
+                # unchanged, revert this and treat the race theory as
+                # unconfirmed rather than assuming the delay itself is wrong.
+                time.sleep(0.25)
                 conn.sendall(reply + member)
                 emit(f"   parsed opcode={opcode:#x} (RoomCreate, map_id={map_id.hex()}), sent "
                      f"RoomJoined+Member as one write, RoomJoined first "
                      f"({len(reply)}+{len(member)} bytes, room_ptr={ROOM_PTR:#x}, "
                      f"marking member_id={MEMBER_ID} as both local+owner)\n"
                      f"{hexdump(reply + member)}")
+                if active_room_stop is not None:
+                    active_room_stop.set()
+                active_room_stop = threading.Event()
                 start_member_refresher(conn, emit, [(MEMBER_ID, npid)], room_id, max_players,
-                                        MEMBER_ID, MEMBER_ID, stop_event)
+                                        MEMBER_ID, MEMBER_ID, active_room_stop)
             elif opcode == FIND_MATCH_OPCODE and not matched:
                 matched = True
                 with waiting_lock:
@@ -619,6 +726,15 @@ def handle(conn, addr, log_lock, log):
                 emit(f"   parsed opcode={opcode:#x} (client abandoning room, "
                      f"room_id={room_id_tail.hex()}) - no reply (confirmed "
                      f"fire-and-forget)")
+                # Stop this room's Member refresher now, not just at
+                # connection-close - otherwise it keeps re-writing
+                # ROOM_PTR+0x10 nonzero forever on this still-open
+                # connection, pinning the RoomJoined id-gate mismatched for
+                # every subsequent "host again" attempt (2026-08-16, see
+                # active_room_stop's docstring above).
+                if active_room_stop is not None:
+                    active_room_stop.set()
+                    active_room_stop = None
             elif opcode == CREATE_PARTY_OPCODE and len(chunk) >= 16:
                 # Log-only - CORRECTED 2026-08-15, see the constant's
                 # docstring: this is periodic telemetry, unrelated to party
@@ -644,6 +760,15 @@ def handle(conn, addr, log_lock, log):
                 emit(f"   parsed opcode={opcode:#x} (SetAttrFlags, flags={flags_value.hex()}) - "
                      f"sent UpdatedAttrFlags (16 bytes) echoing flags+room_id="
                      f"{room_id_tail.hex()}\n{hexdump(reply)}")
+            elif opcode == UPDATED_ROOM_FLAGS_OPCODE and len(chunk) >= 144:
+                room_id_tail = chunk[8:16]
+                rank_payload = chunk[16:144]
+                reply = (struct.pack(">I", HOST_RANK_OPCODE) + chunk[4:8]
+                          + room_id_tail + rank_payload)
+                conn.sendall(reply)
+                emit(f"   parsed opcode={opcode:#x} (UpdatedRoomFlags/rank-table submit, "
+                     f"room_id={room_id_tail.hex()}) - sent HostRank (144 bytes) echoing "
+                     f"the same 128-byte payload back\n{hexdump(reply)}")
             elif opcode == PING_OPCODE:
                 emit(f"   parsed opcode={opcode:#x} (Ping keepalive) - "
                      f"no reply sent, appears fire-and-forget (client-side timer driven)")
@@ -656,6 +781,8 @@ def handle(conn, addr, log_lock, log):
         emit(f"  (error/early close: {e})")
     finally:
         stop_event.set()
+        if active_room_stop is not None:
+            active_room_stop.set()
         with waiting_lock:
             if waiting_player is not None and waiting_player["conn"] is conn:
                 waiting_player = None
