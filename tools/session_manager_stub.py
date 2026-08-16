@@ -130,6 +130,15 @@ CREATE_PARTY_OPCODE = 0x13a
 # e.g. after a full RPCS3 restart rather than just leaving/rejoining the
 # multiplayer menu).
 ROOM_PTR = 0x01383bd8
+# The two statically-allocated room objects in this build (confirmed static
+# globals, 2026-08-16/17): 0x01383bd8 = the GAME/session room, 0x01387f58 = the
+# PARTY room. The refresher is only needed for a solo GAME host (keeping
+# room_obj+0x10 alive before a match loads); re-broadcasting Member to the
+# PARTY lobby churns party membership and spams "You were kicked from the party"
+# on the host (10s cadence == the refresher interval). Never refresh the party
+# room. See research/notes/2026-08-17-join-party-presence-discovery.md.
+GAME_ROOM_PTR = 0x01383bd8
+PARTY_ROOM_PTR = 0x01387f58
 
 # Cross-connection find-match pairing state (2026-08-15). The stub is
 # otherwise stateless per-connection - with two independent real RPCN
@@ -661,6 +670,15 @@ def start_member_refresher(conn, emit, members, room_id, max_players,
         emit(f"   [refresh] SKIPPED periodic refresh for {len(members)}-member "
              f"room {room_id.hex()} (multi-member rooms are P2P-maintained; "
              f"re-broadcasting churns party membership)")
+        return
+    if room_ptr == PARTY_ROOM_PTR:
+        # A solo occupant of the PARTY room (host who opened a party, or a host
+        # left alone after the joiner departed) must NOT be refreshed - the
+        # party lobby churns on Member re-broadcast and spams "kicked from
+        # party" on the host. Only the GAME room needs solo keepalive.
+        emit(f"   [refresh] SKIPPED periodic refresh for PARTY room "
+             f"{room_id.hex()} (party lobby churns on re-broadcast; only the "
+             f"game room needs solo keepalive)")
         return
 
     def run():
