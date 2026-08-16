@@ -2,8 +2,10 @@
 
 Companion doc for `protos/0x12f_room_create.ksy`.
 
-**status: partial** - size and two fields confirmed from one live capture; the
-bulk of the payload is transcribed but not decompiled from the send site.
+**status: sender fully disassembled 2026-08-16** (`FUN_00ad5b78`, vtable+0x10,
+`li r0,303` @ `0xad5c38`, send buffer base `r1+144`) — superseding the earlier
+"transcribed from one capture" state. Three field corrections below; full
+evidence in `research/notes/2026-08-16-sessmgr-dispatch-audit-and-unsent-opcodes.md`.
 
 ## What this is
 
@@ -16,45 +18,49 @@ bytes, matching the opcode/size debug-log table's declared size exactly (this
 opcode's table entry is trustworthy, unlike its neighbors - see
 `session_manager_and_matchmaking.md`'s corrections).
 
-## Confirmed fields
+## Confirmed fields (from the disassembled sender)
 
 - Offset 0: opcode, literal `0x12f`.
-- Offset 4-11 (`create_id`): an 8-byte client-generated value. Live-captured
-  as `01 27 23 d8 01 38 3b d8`. Confirmed important (not just noise) because
-  the required `RoomJoined` (`0x132`) reply must echo this exact value at its
-  own offset 8, or the client's room-slot matching fails - see
-  `0x132_room_joined.md`.
-- A null-terminated ASCII string, `<npid>.<unix-timestamp>` (e.g.
-  `comradesean.1786732043`), starting around relative offset 0x1c within the
-  payload. Presumed a session/room name; echoed back verbatim by the stub's
-  `RoomJoined` reply.
+- **Offset 4:8 — NOT a `create_id`, and NOT load-bearing (CORRECTED 2026-08-16).**
+  The sender never writes it; it is uninitialised stack, live-proven varying
+  between `01 27 23 d8` and `00 00 00 00` on the same client. The earlier
+  "RoomJoined must echo this" reading was wrong (see the correction in
+  `0x132_room_joined.md`); the stub's `room_id` only needs to be nonzero and
+  session-consistent.
+- **Offset 8:12 — the client's own room-object pointer** (`stw` of the room
+  object `r29` @ `0xad5f34`). This is the value `Member`'s `room_ptr` field
+  needs — read it per connection from here instead of hardcoding. Live-proven
+  equal to the debugger-recovered pointer and different per client (comradesean
+  `01 38 3b d8`, mgnomad2 `01 38 7f 58`; both are static globals in this build).
+- **Offset 0x24 — `max_players`** (u16, live-constant 8), which the client also
+  writes into `room_obj+0x1f8` itself. The earlier read at offset 0x1e was a
+  never-written gap (masked by the stub's `or 8` fallback).
+- Offset 0x28: a null-terminated ASCII string `<npid>.<unix-timestamp>` (e.g.
+  `comradesean.1786732043`), `strcpy`'d from `room_obj+0x18` — the room NAME.
+- Offset 0xb0 (u16): the CONFIRMED team-selection field (`0x0000` unset /
+  `0x0001` Blue / `0x0002` Red — ~24 live captures, see
+  `research/notes/2026-08-16-team-selection-field-confirmed.md`). Copied by the
+  sender into `room_obj+0x1a04` via the 0xa8:0xe8 block.
 
 ## Unconfirmed
 
-Everything else - a region code (`us`), several u16-shaped fields that look
-like counts/limits, and multiple 4-byte spans that look like raw PS3 heap
-pointers (`0x01xxxxxx`/`0xd0xxxxxx`-shaped) rather than meaningful protocol
-data. None of this was traced from the send-site decompile; the `.ksy` treats
-it as one opaque blob. Full raw hexdump and reasoning:
+The remaining spans (a region code `us`, other u16-shaped fields, and
+pointer-shaped 4-byte values) are not individually mapped but are no longer
+load-bearing for the working host/join flow. Full raw hexdump:
 `research/notes/2026-08-14-room-create-joined.md`.
-
-## What would close this out
-
-Decompile the client's own build site for this message (likely one of the
-`Init()` vtable's outbound-builder slots, `+0xc`/`+0x10`/`+0x14`/`+0x18`, or a
-separate function called from `game/net/lobby-flow.cpp`'s `NET_SM_READY_UP`
-transition) to get real field semantics instead of transcribing one capture.
 
 ## Confidence summary
 
 | Field | Confidence | Reason |
 |---|---|---|
 | Opcode (`0x12f`) / total size (232 bytes) | high | Matches the debug-log table exactly, and this opcode's table entry is explicitly noted as trustworthy (unlike several neighboring opcodes - see `session_manager_and_matchmaking.md`'s corrections) |
-| `create_id` (offset 4-11) is a meaningful, load-bearing field | high | Confirmed via a downstream dependency, not guessed: `RoomJoined` (`0x132`) must echo this exact value or the client's room-slot matching fails |
-| `create_id`'s semantic meaning (client-generated correlation value) | medium | Inferred from its required-echo behavior; never independently decompiled at this message's own send site |
-| `<npid>.<timestamp>` string (~offset 0x1c) | medium | Presumed from the literal captured content and echoed back by the stub, but not traced/decompiled at the send site |
-| Region code (`us`), u16-shaped count/limit fields, pointer-shaped 4-byte spans (the "Unconfirmed" section above) | low | Transcribed from a single capture only - none of this was traced from the client's send-site decompile, so any field name here would be a guess |
+| Offset 4:8 is NOT a `create_id` (uninitialised stack, not load-bearing) | high | Disassembled sender never writes it; live-proven varying on the same client — corrected 2026-08-16 |
+| Offset 8:12 is the client's own room-object pointer | high | `stw` of the room object at the send site; live-proven equal to the debugger value and per-client distinct |
+| `max_players` at offset 0x24 (not 0x1e) | high | Disassembled sender; also written to `room_obj+0x1f8` by the client itself |
+| `<npid>.<timestamp>` room name (offset 0x28) | high | `strcpy` from `room_obj+0x18` at the send site |
+| Team selection (offset 0xb0, u16) | high | ~24 live captures, zero exceptions |
+| Region code (`us`), other u16/pointer-shaped spans | low | Not individually traced; not load-bearing for the working flow |
 
-Overall: **medium** as a whole, dragged down by the bulk of the 232-byte
-payload still being an untraced opaque blob (see "What would close this
-out" above) - matches this doc's `status: partial`.
+Overall: **high** for the fields the working host/join flow depends on (all
+disassembled from the sender); the remainder of the 232-byte payload is
+untraced but inert.

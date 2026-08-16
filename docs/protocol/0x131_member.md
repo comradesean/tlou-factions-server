@@ -10,8 +10,14 @@ each nailed down via live RPCS3 debugging after two real crashes - see "The
 found. This is the mechanism this project believes is needed to tell the
 client "you are both a member of this room AND its owner" - something
 `RoomJoined` (0x132) alone does not do (see "Why this message matters"
-below). `tools/session_manager_stub.py` sends this immediately after
-`RoomJoined` in response to `RoomCreate`.
+below). **UPDATED 2026-08-16**: `tools/session_manager_stub.py` now sends
+`Member` **without** `RoomJoined` on the solo-host and find-match/party paths
+(followed by `0x13f`/OwnerChanged and `0x13d`/OwnerMember). RoomJoined's
+hardcoded `is_local=0` registration created a phantom second member and
+starved the local-player identity/team lookup; Member alone carries the
+room-create-completed latch, and dropping RoomJoined is what got solo-host and
+2-player matches loading and playing end-to-end (see the "LIVE-CONFIRMED
+WORKING" banner in `session_manager_and_matchmaking.md`).
 
 ## Why this message matters
 
@@ -77,8 +83,8 @@ the entry's own id plus two more bytes:
 | 0 | 36 | 18x u16 "attributes" - structurally parallel to `RoomJoined`'s own unconfirmed attribute block, not independently mapped | low |
 | 36 | 2 | `member_id` - XOR-compared against the header's `owner_ref_id`/`local_ref_id` | high |
 | 38 | 1 | unread byte in traced code | low |
-| 39 | 1 | unread byte (flags-shaped) in traced code | low |
-| 40 | 64 | not read by the traced loop - by parallel with `RoomJoined`'s own trailing region, likely a name/NpId buffer | unconfirmed |
+| 39 | 1 | **data-blob LENGTH** (CORRECTED 2026-08-17 — was "flags-shaped unread byte"): memcpy'd count for the blob at offset 40, written to `member_slot+0xF8`. The rank/loadout UI getter `_opd_FUN_00ad2650` returns the blob only if this is exactly 32 | high |
+| 40 | 64 | **per-member DATA BLOB** (CORRECTED 2026-08-17 — was "likely a name/NpId buffer"): the first `data-blob length` bytes are memcpy'd into `member_slot+0xFC`, the field the lobby reads for a REMOTE player's rank/title/loadout. The DISPLAY NAME is NOT here — it comes from the SceNpId in the first 16 bytes of the offset-0 attributes block. When 32 bytes: byte 8 flags, byte 9 title index, bytes 10..13 four loadout item-ids, u16 at byte 14 = rank value. Same blob the client supplies at runtime via `0x13a` and that is re-delivered per-member via `0x13b`. See `research/notes/2026-08-17-member-data-blob-rank-and-0x142-hostrank.md` | high (structure) |
 
 ## The `room_ptr` hazard - resolved
 
@@ -114,7 +120,16 @@ respectively) - consistent with "the server tells the client which of its
 own local room-slot objects to finalize, using data the server provides",
 which only makes sense if the server already knows that object's address.
 
-**Resolved 2026-08-14**: `ROOM_PTR = 0x01383bd8` in `session_manager_stub.py`.
+**Resolved 2026-08-14, then improved 2026-08-16**: originally hardcoded as
+`ROOM_PTR = 0x01383bd8`, but the sender-side disassembly (2026-08-16 audit)
+showed the client hands its own room-object pointer to the server on every
+`RoomCreate` at wire offset 8 (and on `RoomJoin`/0x130 at offset 8), so the
+stub now PARSES it per-connection instead of hardcoding — required for
+correctness once a second client (mgnomad2, pointer `0x01387f58`) and the
+separate party-room object are in play, since one client's pointer sent to
+another is a wild vtable dereference. The two pointers turn out to be static
+globals in this build (`0x01383bd8` game/session room, `0x01387f58` party
+room). The original hardcode was:
 Confirmed live via a fresh RPCS3 debugger breakpoint at `0x00ad7b14` (the
 `RoomJoined` id-gate, `r27`) taken specifically for the boot this value was
 used in - matching the same value observed identically across at least four
