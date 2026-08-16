@@ -89,6 +89,20 @@ anything below, most of which has its own dedicated note with full evidence.
    **Do not conclude "client-internal, unfixable" again without new evidence** -
    that framing was wrong multiple times tonight, called out directly twice.
 
+   **UPDATE 2026-08-16 (static follow-up), both halves now have dedicated
+   notes with live-test checklists:**
+   - `2026-08-16-party-invite-commid-and-npbasic-gates.md` - the sender does
+     NOT choose the commId (RPCS3 fills it from the *sender's own* registered
+     handler context), so "two independent values" was wrong; but the game
+     really does pick between **two** communication ids at runtime
+     (`NPWR03073_00` / `NPWR00795_00`, selector `_opd_FUN_003ac074`), which is
+     a real way two clients can disagree. A per-recipient server-side
+     communication_id rewrite is implemented in RPCN and built. Every other
+     gate on the sceNpBasic receive path is enumerated there too.
+   - `2026-08-16-party-invite-sender-assert-corrected.md` - the 2026-08-15
+     assert mechanism was misread; corrected, with the caller located
+     (`_opd_FUN_003b15bc` @ `0x3b15bc`) and exact breakpoint addresses.
+
 4. **Checkpoint's empty-skybox symptom** — both leading theories from tonight
    (missing content pak, map_id-based content-lookup gap) are now ruled out by
    direct evidence, not just deprioritized. See the "Correction" sections in

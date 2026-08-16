@@ -1,5 +1,20 @@
 # CreateParty (0x13a) live trace: fire-and-forget sender, disconnect is a client-side assert on a second, unrelated call
 
+**CORRECTION 2026-08-16 (second) — read
+`2026-08-16-party-invite-sender-assert-corrected.md` before using anything in
+the "The caller" / "Conclusion" sections below.** Two claims here are now
+disproven at the instruction level:
+1. The hit-2 `param_1` is **not** a garbage/stale pointer. Both `this` values
+   are statically initialised globals (`0x01269afc` -> `0x01383bd8`,
+   `0x01269b14` -> `0x01387f58`) read by two hardcoded consecutive calls in
+   `_opd_FUN_003b15bc` @ `0x3b15bc`. The suggested "retry after a clean RPCS3
+   restart" experiment is therefore pointless.
+2. `_opd_FUN_00ad1fc0` does **not** trap on a nonzero SetPartyData return - it
+   returns it silently (`00ad2040 bne cr7,0x00ad2118`). The `trapWord` at
+   `0x00ad2114` is reachable only when SetPartyData *succeeded* and the
+   object's 12-slot member table contains no live entry whose id matches
+   `obj+0x19ec`. That is a server-shaped failure, not a client-internal one.
+
 **CORRECTION 2026-08-15 (later same day)**: everything below this point is an
 accurate trace of `0x13a`/`_opd_FUN_00ad6148` - but it is NOT the party-invite
 trigger. A follow-up live-breakpoint session on the two direct callers
