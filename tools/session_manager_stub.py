@@ -142,6 +142,22 @@ ROOM_PTR = 0x01383bd8
 waiting_lock = threading.Lock()
 waiting_player = None
 
+# Cross-connection room registry (2026-08-16, party-join support). Every
+# room a connection creates via RoomCreate is registered here so that a
+# LATER 0x130 RoomJoin from a DIFFERENT connection can find it. Live
+# evidence for 0x130 (party-invite accept flow, first capture 2026-08-16):
+# 88 bytes; offset 8 = the JOINER's own local room-object pointer (the
+# party room object 0x1387f58 - both clients share the same two static
+# room globals, 0x1383bd8 game / 0x1387f58 party); offset 0x10:0x18 = the
+# 8-byte room_id being joined (learned from the invite's tag-267 payload
+# {be64 room_id; u8 flag} on the NP message bus); ffffffff party-data
+# sentinel at 0x22. Ignoring 0x130 is what made "Joining Party" time out
+# to "Unable to join party" while the invite itself delivered fine.
+# Keyed by id(conn); each value keeps everything needed to push an updated
+# roster to the host connection when someone joins. Guarded by rooms_lock.
+rooms_lock = threading.Lock()
+active_rooms = {}
+
 
 def build_room_joined(npid, name, room_id, id_gate=0, map_id=b"\x00\x00\x00\x00"):
     """Build a guessed NetMatchmakingRoomJoined (opcode 0x132) reply to a
@@ -732,8 +748,91 @@ def handle(conn, addr, log_lock, log):
                 start_member_refresher(conn, emit, [(MEMBER_ID, npid)], room_id, max_players,
                                         MEMBER_ID, MEMBER_ID, active_room_stop,
                                         room_ptr=room_ptr, populate_self_npid=True)
+                with rooms_lock:
+                    active_rooms[id(conn)] = {
+                        "npid": npid, "conn": conn, "emit": emit,
+                        "room_id": room_id, "room_ptr": room_ptr,
+                        "max_players": max_players,
+                        "stop_event": active_room_stop,
+                    }
+            elif opcode == 0x130 and len(chunk) >= 0x18:
+                # RoomJoin - see active_rooms' comment for the wire evidence.
+                join_room_ptr = struct.unpack(">I", chunk[8:12])[0]
+                target_room_id = chunk[0x10:0x18]
+                host = None
+                with rooms_lock:
+                    for key, info in active_rooms.items():
+                        if info["conn"] is not conn and info["room_id"] == target_room_id:
+                            host = info
+                            break
+                if host is None:
+                    emit(f"   parsed opcode={opcode:#x} (RoomJoin, "
+                         f"room_ptr={join_room_ptr:#x}, "
+                         f"target room_id={target_room_id.hex()}) - NO matching "
+                         f"room found on another connection, no reply sent")
+                else:
+                    # Same roster discipline as everywhere else: per-recipient,
+                    # own entry FIRST, self npid populated (the local member
+                    # needs a real identity for team/user lookups), no
+                    # RoomJoined anywhere, host flag set only for the actual
+                    # host via 0x13f (explicit 0 for the joiner in case a
+                    # stale 1 survives from an earlier hosted room - only
+                    # RoomCreate's own sender clears it client-side).
+                    host_entry = (MEMBER_ID, host["npid"])
+                    joiner_entry = (JOINER_MEMBER_ID, own_npid)
+                    self_member = build_member([joiner_entry, host_entry],
+                                               target_room_id, host["max_players"],
+                                               owner_ref_id=MEMBER_ID,
+                                               local_ref_id=JOINER_MEMBER_ID,
+                                               room_ptr=join_room_ptr,
+                                               populate_self_npid=True)
+                    conn.sendall(self_member + build_owner_changed(target_room_id, 0))
+                    emit(f"   parsed opcode={opcode:#x} (RoomJoin) - JOINED "
+                         f"{host['npid']!r}'s room {target_room_id.hex()} as "
+                         f"member_id={JOINER_MEMBER_ID}, sent Member+OwnerChanged(0) "
+                         f"(room_ptr={join_room_ptr:#x})")
+                    host_member = build_member([host_entry, joiner_entry],
+                                               target_room_id, host["max_players"],
+                                               owner_ref_id=MEMBER_ID,
+                                               local_ref_id=MEMBER_ID,
+                                               room_ptr=host["room_ptr"],
+                                               populate_self_npid=True)
+                    try:
+                        host["conn"].sendall(host_member)
+                        host["emit"](f"   [join] {own_npid!r} joined room "
+                                     f"{target_room_id.hex()} - pushed updated "
+                                     f"2-member roster")
+                    except OSError as e:
+                        emit(f"   [join] host push failed: {e}")
+                    # Restart both refreshers with the joint roster.
+                    host["stop_event"].set()
+                    new_host_stop = threading.Event()
+                    host["stop_event"] = new_host_stop
+                    start_member_refresher(host["conn"], host["emit"],
+                                           [host_entry, joiner_entry],
+                                           target_room_id, host["max_players"],
+                                           MEMBER_ID, MEMBER_ID, new_host_stop,
+                                           room_ptr=host["room_ptr"],
+                                           populate_self_npid=True)
+                    if active_room_stop is not None:
+                        active_room_stop.set()
+                    active_room_stop = threading.Event()
+                    start_member_refresher(conn, emit, [joiner_entry, host_entry],
+                                           target_room_id, host["max_players"],
+                                           MEMBER_ID, JOINER_MEMBER_ID,
+                                           active_room_stop,
+                                           room_ptr=join_room_ptr,
+                                           populate_self_npid=True)
             elif opcode == FIND_MATCH_OPCODE and not matched:
                 matched = True
+                # 0x135's header shares RoomCreate's shape: wire offset 8 is
+                # the searcher's own room-object pointer (live capture
+                # 2026-08-16: both clients broadcast 01 38 3b d8 - the game
+                # room object). This is what unblocks per-recipient room_ptr
+                # on this path (the audit note flagged it as the open
+                # problem: find-match has no RoomCreate to parse it from).
+                own_room_ptr = (struct.unpack(">I", chunk[8:12])[0]
+                                if len(chunk) >= 12 else ROOM_PTR)
                 with waiting_lock:
                     peer = waiting_player
                     if peer is not None and peer["npid"] != own_npid:
@@ -741,7 +840,8 @@ def handle(conn, addr, log_lock, log):
                     else:
                         peer = None
                         waiting_player = {"npid": own_npid, "conn": conn, "emit": emit,
-                                           "stop_event": stop_event}
+                                           "stop_event": stop_event,
+                                           "room_ptr": own_room_ptr}
                 if peer is None:
                     emit(f"   parsed opcode={opcode:#x} (find-match search broadcast) - "
                          f"no other player waiting, registered npid={own_npid!r} and waiting")
@@ -752,62 +852,59 @@ def handle(conn, addr, log_lock, log):
                     joiner_entry = (JOINER_MEMBER_ID, own_npid)
                     room_name = peer["npid"] + b".matched"
 
-                    # Roster order is per-recipient, own entry FIRST - live-
-                    # confirmed 2026-08-15: with a shared host-first order for
-                    # both recipients, the host (self at index 0) reached the
-                    # lobby fine but the joiner (self at index 1, after the
-                    # real remote entry) hit SCE_NP_SIGNALING_ERROR_OWN_NP_ID -
-                    # a self-signaling attempt - despite both recipients using
-                    # the exact same self-npid-skip logic in build_member.
-                    # Since the field-content fix was identical for both but
-                    # only position differed, the client evidently treats
-                    # roster index 0 as "me" positionally, not by content -
-                    # each recipient now gets their own entry first.
-                    # REVERTING the non-matching id_gate workaround (2026-08-15):
-                    # it dodged the self-signaling crash by skipping
-                    # RoomJoined's internal registration call entirely, but
-                    # solo-host - which DOES let that call run (id_gate=0,
-                    # matching) - has since progressed much further (loads
-                    # into an actual match) than find-match ever has (never
-                    # gets past "Searching for Optimal Game"). That call may
-                    # do more than just the thing that was crashing us.
-                    # Testing id_gate=0 again now that two things have
-                    # changed since we first added this workaround: (a) the
-                    # self-npid-skip fix in build_member's per-entry
-                    # attribute block (untested against this specific path
-                    # at the time), and (b) "Stub PPU Traps" in RPCS3 turns
-                    # fatal traps into graceful stubs, making this a much
-                    # lower-risk experiment than when the workaround was
-                    # first added.
-                    ID_GATE = 0
-                    peer_room_joined = build_room_joined(peer["npid"], room_name, room_id,
-                                                          id_gate=ID_GATE)
+                    # 2026-08-16: same surgery as the (now live-confirmed
+                    # working) solo-host path, for the same audit-evidenced
+                    # reasons: NO RoomJoined (its is_local=0 registration is
+                    # the phantom-member / self-signaling source - the
+                    # 3-slot lobby with a nameless rank entry seen live on
+                    # this path today IS that phantom), self npids populated
+                    # (blank local identity starves the team-assignment
+                    # lookup -> net-game-manager.cpp:1358 boot), 0x13f
+                    # OwnerChanged so the host recipient actually becomes
+                    # host (explicit 0 for the joiner - only RoomCreate's
+                    # sender clears the flag client-side, and these clients
+                    # never ran it in this flow), and each recipient's own
+                    # room_ptr parsed from their own 0x135 broadcast.
+                    # Roster order stays per-recipient own-entry-FIRST
+                    # (live-confirmed 2026-08-15: index 0 is treated as "me"
+                    # positionally).
                     peer_member = build_member([host_entry, joiner_entry], room_id, max_players,
-                                                owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID)
-                    # Member sent BEFORE RoomJoined - see the matching comment
-                    # in the RoomCreate branch above (capacity must be written
-                    # by Member's processing before RoomJoined's own internal
-                    # registration call reads it, or it traps regardless of
-                    # Member's contents).
-                    peer["conn"].sendall(peer_member + peer_room_joined)
+                                                owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID,
+                                                room_ptr=peer["room_ptr"],
+                                                populate_self_npid=True)
+                    peer["conn"].sendall(peer_member + build_owner_changed(room_id, 1))
                     peer["emit"](f"   MATCHED with {own_npid!r} (find-match pairing) - sent "
-                                  f"Member+RoomJoined as one write, Member first, as host "
-                                  f"(member_id={MEMBER_ID}) room_id={room_id.hex()}")
+                                  f"Member+OwnerChanged(1) as one write, NO RoomJoined, as host "
+                                  f"(member_id={MEMBER_ID}, room_ptr={peer['room_ptr']:#x}) "
+                                  f"room_id={room_id.hex()}")
                     start_member_refresher(peer["conn"], peer["emit"], [host_entry, joiner_entry],
                                             room_id, max_players, MEMBER_ID, MEMBER_ID,
-                                            peer["stop_event"])
+                                            peer["stop_event"],
+                                            room_ptr=peer["room_ptr"],
+                                            populate_self_npid=True)
+                    with rooms_lock:
+                        active_rooms[id(peer["conn"])] = {
+                            "npid": peer["npid"], "conn": peer["conn"],
+                            "emit": peer["emit"], "room_id": room_id,
+                            "room_ptr": peer["room_ptr"],
+                            "max_players": max_players,
+                            "stop_event": peer["stop_event"],
+                        }
 
-                    self_room_joined = build_room_joined(own_npid, room_name, room_id,
-                                                          id_gate=ID_GATE)
                     self_member = build_member([joiner_entry, host_entry], room_id, max_players,
-                                                owner_ref_id=MEMBER_ID, local_ref_id=JOINER_MEMBER_ID)
-                    conn.sendall(self_member + self_room_joined)
+                                                owner_ref_id=MEMBER_ID, local_ref_id=JOINER_MEMBER_ID,
+                                                room_ptr=own_room_ptr,
+                                                populate_self_npid=True)
+                    conn.sendall(self_member + build_owner_changed(room_id, 0))
                     emit(f"   parsed opcode={opcode:#x} (find-match search broadcast) - "
-                         f"MATCHED with {peer['npid']!r} - sent Member+RoomJoined as one write, "
-                         f"Member first, as joiner (member_id={JOINER_MEMBER_ID}) "
+                         f"MATCHED with {peer['npid']!r} - sent Member+OwnerChanged(0) "
+                         f"as one write, NO RoomJoined, as joiner "
+                         f"(member_id={JOINER_MEMBER_ID}, room_ptr={own_room_ptr:#x}) "
                          f"room_id={room_id.hex()}")
                     start_member_refresher(conn, emit, [joiner_entry, host_entry], room_id,
-                                            max_players, MEMBER_ID, JOINER_MEMBER_ID, stop_event)
+                                            max_players, MEMBER_ID, JOINER_MEMBER_ID, stop_event,
+                                            room_ptr=own_room_ptr,
+                                            populate_self_npid=True)
             elif opcode == ROOM_LEAVING_OPCODE and len(chunk) >= 16:
                 # No reply - confirmed fire-and-forget, see the constant's
                 # docstring. This firing means the client just gave up on
@@ -825,6 +922,11 @@ def handle(conn, addr, log_lock, log):
                 if active_room_stop is not None:
                     active_room_stop.set()
                     active_room_stop = None
+                with rooms_lock:
+                    info = active_rooms.get(id(conn))
+                    if info is not None and info["room_id"] == room_id_tail:
+                        info["stop_event"].set()
+                        del active_rooms[id(conn)]
             elif opcode == CREATE_PARTY_OPCODE and len(chunk) >= 16:
                 # Log-only - CORRECTED 2026-08-15, see the constant's
                 # docstring: this is periodic telemetry, unrelated to party
@@ -876,6 +978,10 @@ def handle(conn, addr, log_lock, log):
         with waiting_lock:
             if waiting_player is not None and waiting_player["conn"] is conn:
                 waiting_player = None
+        with rooms_lock:
+            info = active_rooms.pop(id(conn), None)
+            if info is not None:
+                info["stop_event"].set()
         conn.close()
 
 
