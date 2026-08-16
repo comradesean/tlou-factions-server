@@ -33,6 +33,7 @@ SERVER_HELLO_OPCODE = 0x12e
 ROOM_CREATE_OPCODE = 0x12f
 MEMBER_OPCODE = 0x131
 ROOM_JOINED_OPCODE = 0x132
+OWNER_CHANGED_OPCODE = 0x13f
 # The opcode/size table (docs/protocol/session_manager_and_matchmaking.md)
 # labels 0x135 "NetMatchmakingRoomLeft", 24 bytes - but the same doc already
 # flags that naive "0x12d + table index" naming as unconfirmed/wrong for
@@ -272,7 +273,8 @@ MEMBER_ID = 1
 JOINER_MEMBER_ID = 2
 
 
-def build_member(members, room_id, max_players, owner_ref_id, local_ref_id, team=None):
+def build_member(members, room_id, max_players, owner_ref_id, local_ref_id, team=None,
+                 room_ptr=ROOM_PTR):
     """Build a NetMatchmakingMember (opcode 0x131) room-roster broadcast.
 
     Field layout from docs/protocol/0x131_member.md / protos/0x131_member.ksy
@@ -399,7 +401,13 @@ def build_member(members, room_id, max_players, owner_ref_id, local_ref_id, team
     """
     header = bytearray(160)
     struct.pack_into(">I", header, 0, MEMBER_OPCODE)
-    struct.pack_into(">I", header, 8, ROOM_PTR)
+    # 2026-08-16 dispatch audit: RoomCreate wire offset 8 IS this pointer,
+    # sent by the client itself (FUN_00ad5b78 writes its own room-object
+    # address there) - so the solo-host path now echoes the sender's real
+    # value instead of the debugger-recovered hardcode. The hardcoded default
+    # remains for paths with no RoomCreate to parse it from (find-match).
+    # See research/notes/2026-08-16-sessmgr-dispatch-audit-and-unsent-opcodes.md 4b.
+    struct.pack_into(">I", header, 8, room_ptr)
     struct.pack_into(">H", header, 12, owner_ref_id)
     struct.pack_into(">H", header, 14, local_ref_id)
     header[16:24] = room_id
@@ -431,12 +439,36 @@ def build_member(members, room_id, max_players, owner_ref_id, local_ref_id, team
     return bytes(header) + bytes(entries)
 
 
+def build_owner_changed(room_id, is_owner=1):
+    """Build a NetMatchmakingOwnerChanged (opcode 0x13f), 16 bytes.
+
+    2026-08-16 dispatch audit finding #1 (see research/notes/2026-08-16-
+    sessmgr-dispatch-audit-and-unsent-opcodes.md 2): RoomCreate's own sender
+    unconditionally CLEARS the client's "I am the host" flag
+    (room_obj+0x19f4), and this message's handler (0xad8264-0xad82d0) is the
+    only inbound writer of that flag - so a solo host that never receives
+    this never becomes the host, and three game-layer readers (including the
+    9-state room state machine at _opd_FUN_003ca9d0) gate on it.
+
+    Layout: opcode(4) | is_owner_byte(1) | unused(3) | room_id(8).
+    The handler searches the 4 room slots for room_obj+0x10 == wire[8:16]
+    before writing wire[4] & 1 - room_obj+0x10 is only set by Member's
+    handler, so this MUST be sent after Member or it is silently swallowed.
+    """
+    body = bytearray(16)
+    struct.pack_into(">I", body, 0, OWNER_CHANGED_OPCODE)
+    body[4] = is_owner & 1
+    body[8:16] = room_id
+    return bytes(body)
+
+
 MEMBER_REFRESH_INTERVAL_SECONDS = 10
 
 
 def start_member_refresher(conn, emit, members, room_id, max_players,
                             owner_ref_id, local_ref_id, stop_event,
-                            interval=MEMBER_REFRESH_INTERVAL_SECONDS):
+                            interval=MEMBER_REFRESH_INTERVAL_SECONDS,
+                            room_ptr=ROOM_PTR):
     """EXPERIMENTAL (2026-08-15): live-confirmed via RPCS3 debugger memory
     read that ROOM_PTR+0x10 (room id) goes to zero shortly after Member is
     first processed - client-internal behavior (room "finalization"), not
@@ -456,7 +488,8 @@ def start_member_refresher(conn, emit, members, room_id, max_players,
     def run():
         while not stop_event.wait(interval):
             try:
-                member = build_member(members, room_id, max_players, owner_ref_id, local_ref_id)
+                member = build_member(members, room_id, max_players, owner_ref_id,
+                                      local_ref_id, room_ptr=room_ptr)
                 conn.sendall(member)
                 emit(f"   [refresh] re-sent Member ({len(member)} bytes) to keep "
                      f"room_id={room_id.hex()} fresh")
@@ -572,10 +605,22 @@ def handle(conn, addr, log_lock, log):
                 # off the npid portion for the member-record fix (see
                 # build_room_joined/build_member docstrings).
                 npid = name.split(b".", 1)[0][:16]
-                max_players = struct.unpack(">H", chunk[0x1e:0x20])[0] or 10
-                # RoomCreate's own 8-byte transaction id (wire offset 4:12) -
-                # a real, nonzero room identity is expected once past the
-                # RoomJoined id-gate - see build_member's docstring.
+                # 2026-08-16 dispatch audit (research/notes/2026-08-16-
+                # sessmgr-dispatch-audit-and-unsent-opcodes.md 4b/4c):
+                # RoomCreate's sender never writes offset 0x1e (the old
+                # max_players read - uninitialized stack, masked by the
+                # `or 10` fallback); the real field is at 0x24 (live-constant
+                # 8, which the client also writes to room_obj+0x1f8 itself).
+                # And offset 8 is the client's OWN room-object pointer -
+                # echo that instead of the hardcoded debugger-recovered
+                # ROOM_PTR, which only ever matched this one machine's boot.
+                max_players = struct.unpack(">H", chunk[0x24:0x26])[0] or 8
+                room_ptr = struct.unpack(">I", chunk[8:12])[0]
+                # 8-byte room identity echoed into Member wire 16:24 and the
+                # RoomJoined id-gate - kept as chunk[4:12] for continuity even
+                # though the audit shows offset 4:8 is never client-written
+                # (the value only needs to be nonzero and session-consistent;
+                # its low half is the room_ptr, guaranteeing nonzero).
                 room_id = chunk[4:12]
                 # RoomCreate's own wire offset 0xc:0x10 (4 bytes) - live-
                 # evidenced 2026-08-15 as a likely map/level identifier, see
@@ -596,7 +641,13 @@ def handle(conn, addr, log_lock, log):
                 reply = build_room_joined(npid, name, room_id, map_id=map_id)
                 member = build_member([(MEMBER_ID, npid)], room_id, max_players,
                                        owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID,
-                                       team=team)
+                                       team=team, room_ptr=room_ptr)
+                # EXPERIMENTAL (2026-08-16, dispatch audit finding #1): the
+                # client's RoomCreate sender clears its own "I am the host"
+                # flag and only 0x13f can set it - without this a solo host
+                # never becomes the host (see build_owner_changed's
+                # docstring). Must come after Member in the write.
+                owner_changed = build_owner_changed(room_id, is_owner=1)
                 # REVERTED to RoomJoined-first (2026-08-15): the Member-first
                 # order was introduced to fix a capacity trap in the
                 # find-match 2-real-player pairing path (see that branch's
@@ -631,17 +682,20 @@ def handle(conn, addr, log_lock, log):
                 # unchanged, revert this and treat the race theory as
                 # unconfirmed rather than assuming the delay itself is wrong.
                 time.sleep(0.25)
-                conn.sendall(reply + member)
+                conn.sendall(reply + member + owner_changed)
                 emit(f"   parsed opcode={opcode:#x} (RoomCreate, map_id={map_id.hex()}), sent "
-                     f"RoomJoined+Member as one write, RoomJoined first "
-                     f"({len(reply)}+{len(member)} bytes, room_ptr={ROOM_PTR:#x}, "
-                     f"marking member_id={MEMBER_ID} as both local+owner)\n"
-                     f"{hexdump(reply + member)}")
+                     f"RoomJoined+Member+OwnerChanged as one write, RoomJoined first "
+                     f"({len(reply)}+{len(member)}+{len(owner_changed)} bytes, "
+                     f"room_ptr={room_ptr:#x} (parsed from wire offset 8), "
+                     f"max_players={max_players} (parsed from wire offset 0x24), "
+                     f"marking member_id={MEMBER_ID} as both local+owner+host)\n"
+                     f"{hexdump(reply + member + owner_changed)}")
                 if active_room_stop is not None:
                     active_room_stop.set()
                 active_room_stop = threading.Event()
                 start_member_refresher(conn, emit, [(MEMBER_ID, npid)], room_id, max_players,
-                                        MEMBER_ID, MEMBER_ID, active_room_stop)
+                                        MEMBER_ID, MEMBER_ID, active_room_stop,
+                                        room_ptr=room_ptr)
             elif opcode == FIND_MATCH_OPCODE and not matched:
                 matched = True
                 with waiting_lock:
