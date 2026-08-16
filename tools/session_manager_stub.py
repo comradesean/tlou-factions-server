@@ -274,7 +274,7 @@ JOINER_MEMBER_ID = 2
 
 
 def build_member(members, room_id, max_players, owner_ref_id, local_ref_id, team=None,
-                 room_ptr=ROOM_PTR):
+                 room_ptr=ROOM_PTR, populate_self_npid=False):
     """Build a NetMatchmakingMember (opcode 0x131) room-roster broadcast.
 
     Field layout from docs/protocol/0x131_member.md / protos/0x131_member.ksy
@@ -426,7 +426,20 @@ def build_member(members, room_id, max_players, owner_ref_id, local_ref_id, team
         # recipient's own local entry, which made the client try to signal
         # itself and crash. member_id == local_ref_id identifies "this
         # recipient's own entry" - skip it there.
-        if member_id != local_ref_id:
+        # 2026-08-16 UPDATE (live boot test + dispatch audit): zeroing the
+        # self entry's NpId here made the client register its LOCAL member
+        # with a blank identity - live TTY shows "Removing User '' failed"
+        # and ' joined match' with an empty name, and downstream
+        # find-player-by-npid lookups (team assignment feeding the
+        # net-game-manager.cpp:1358 assert) come up empty. The audit shows
+        # the OWN_NP_ID self-signaling this skip was added for actually came
+        # from ROOMJOINED's registration (is_local hardcoded 0 - the
+        # signaling resolve at 0xad34a4 only fires for is_local==0 slots),
+        # not from Member's self entry (is_local=1, never signals). So on
+        # paths that no longer send RoomJoined (solo-host), the real NpId is
+        # restored via populate_self_npid=True. Find-match still sends
+        # RoomJoined and keeps the old skip until it gets the same treatment.
+        if member_id != local_ref_id or populate_self_npid:
             npid_16 = npid[:16]
             entry[0:len(npid_16)] = npid_16
         if team is not None:
@@ -468,7 +481,7 @@ MEMBER_REFRESH_INTERVAL_SECONDS = 10
 def start_member_refresher(conn, emit, members, room_id, max_players,
                             owner_ref_id, local_ref_id, stop_event,
                             interval=MEMBER_REFRESH_INTERVAL_SECONDS,
-                            room_ptr=ROOM_PTR):
+                            room_ptr=ROOM_PTR, populate_self_npid=False):
     """EXPERIMENTAL (2026-08-15): live-confirmed via RPCS3 debugger memory
     read that ROOM_PTR+0x10 (room id) goes to zero shortly after Member is
     first processed - client-internal behavior (room "finalization"), not
@@ -489,7 +502,8 @@ def start_member_refresher(conn, emit, members, room_id, max_players,
         while not stop_event.wait(interval):
             try:
                 member = build_member(members, room_id, max_players, owner_ref_id,
-                                      local_ref_id, room_ptr=room_ptr)
+                                      local_ref_id, room_ptr=room_ptr,
+                                      populate_self_npid=populate_self_npid)
                 conn.sendall(member)
                 emit(f"   [refresh] re-sent Member ({len(member)} bytes) to keep "
                      f"room_id={room_id.hex()} fresh")
@@ -638,10 +652,31 @@ def handle(conn, addr, log_lock, log):
                 # captured value instead - EXPERIMENTAL, not yet live-tested.
                 team = struct.unpack(">H", chunk[0xb0:0xb2])[0]
 
-                reply = build_room_joined(npid, name, room_id, map_id=map_id)
+                # EXPERIMENTAL (2026-08-16, dispatch audit proposal #4, applied
+                # after the OwnerChanged-alone test still hit the team assert):
+                # RoomJoined is DROPPED from the solo-host reply. Audit
+                # evidence: 0x132's handler registers a member with
+                # is_local/is_owner hardcoded 0, which (a) creates a phantom
+                # 2nd member slot for a 1-player room, (b) is the actual
+                # source of the OWN_NP_ID self-signaling (the resolve at
+                # 0xad34a4 only fires for is_local==0 slots), and (c) forced
+                # the self-npid zeroing hack in build_member that left the
+                # local player nameless ("Removing User ''..."). Member's own
+                # handler carries the real room-create-completed latch
+                # (0xad79ec) and takes the room pointer straight from wire
+                # offset 8 - no id-gate, so the historical id-gate race that
+                # motivated the 250ms delay shouldn't apply on this path
+                # either (delay kept for now to change one thing at a time).
+                # See research/notes/2026-08-16-sessmgr-dispatch-audit-and-
+                # unsent-opcodes.md 3. With RoomJoined gone, the self entry's
+                # real NpId is restored (populate_self_npid=True) so the
+                # local member finally has an identity - the empty-name user
+                # record is the live-evidenced feeder of the team-assignment
+                # miss behind the net-game-manager.cpp:1358 boot.
                 member = build_member([(MEMBER_ID, npid)], room_id, max_players,
                                        owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID,
-                                       team=team, room_ptr=room_ptr)
+                                       team=team, room_ptr=room_ptr,
+                                       populate_self_npid=True)
                 # EXPERIMENTAL (2026-08-16, dispatch audit finding #1): the
                 # client's RoomCreate sender clears its own "I am the host"
                 # flag and only 0x13f can set it - without this a solo host
@@ -682,20 +717,21 @@ def handle(conn, addr, log_lock, log):
                 # unchanged, revert this and treat the race theory as
                 # unconfirmed rather than assuming the delay itself is wrong.
                 time.sleep(0.25)
-                conn.sendall(reply + member + owner_changed)
+                conn.sendall(member + owner_changed)
                 emit(f"   parsed opcode={opcode:#x} (RoomCreate, map_id={map_id.hex()}), sent "
-                     f"RoomJoined+Member+OwnerChanged as one write, RoomJoined first "
-                     f"({len(reply)}+{len(member)}+{len(owner_changed)} bytes, "
+                     f"Member+OwnerChanged as one write, NO RoomJoined "
+                     f"({len(member)}+{len(owner_changed)} bytes, "
                      f"room_ptr={room_ptr:#x} (parsed from wire offset 8), "
                      f"max_players={max_players} (parsed from wire offset 0x24), "
+                     f"self npid populated, "
                      f"marking member_id={MEMBER_ID} as both local+owner+host)\n"
-                     f"{hexdump(reply + member + owner_changed)}")
+                     f"{hexdump(member + owner_changed)}")
                 if active_room_stop is not None:
                     active_room_stop.set()
                 active_room_stop = threading.Event()
                 start_member_refresher(conn, emit, [(MEMBER_ID, npid)], room_id, max_players,
                                         MEMBER_ID, MEMBER_ID, active_room_stop,
-                                        room_ptr=room_ptr)
+                                        room_ptr=room_ptr, populate_self_npid=True)
             elif opcode == FIND_MATCH_OPCODE and not matched:
                 matched = True
                 with waiting_lock:
