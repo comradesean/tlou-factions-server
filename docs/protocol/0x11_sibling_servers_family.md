@@ -10,11 +10,12 @@ handshake, per the coordinator's ask this session.
 
 **status: partial** - messages A/B (hello/hello_response) confirmed
 identical for four of the five (by construction: literally the same
-function, `FUN_00acc424`); `invite-server` confirmed to have **no live code
-call site at all** in this build. Post-hello payload shapes documented per
-service to the depth time allowed - breadth prioritized over depth per the
-coordinator's brief, and see the "Encrypted frame layer" cross-reference
-below, which affects every service in this family.
+function, `FUN_00acc424`); `invite-server` confirmed **dead code** (see
+below - not just the connect string, the entire `net-invite.cpp`
+translation unit has zero live code references). Post-hello payload shapes
+documented per service to the depth time allowed - breadth prioritized over
+depth per the coordinator's brief, and see the "Encrypted frame layer"
+cross-reference below, which affects every service in this family.
 
 ## Method
 
@@ -44,30 +45,49 @@ Callers of 00acc424:
 Exactly **10 code call sites**, covering 4 of the 5 sibling names plus
 ticket-server. `invite-server` has zero entries in this list.
 
-## `invite-server`: no live call site found - very likely dead/unused in this build
+## `invite-server`: confirmed dead code (2026-08-15)
 
 `invite-server`'s string (`0x00e7d0b0`) has exactly **one** cross-reference
 in the whole binary (`research/ghidra/sibling_servers_report.txt`,
 address `0x01269950`), and it is a **data reference**, not a call site or
 even a load-into-register in any function body - i.e. it sits in a table
-(almost certainly the same service-descriptor table that holds
-ticket-server's own IP/port/name-pointer entry, going by the shape of the
-"other" data ref that shows up for every other confirmed-live service too)
-but nothing in the compiled code ever reads that particular table slot to
-build a connection. Every other sibling has both a data-table entry AND one
-or more real code call sites; `invite-server` has only the former.
+(a TOC/literal-pointer table, not the same net1.bin-populated
+service-descriptor struct the four live siblings' IP/port fields come from -
+see below) but nothing in the compiled code ever reads that particular
+table slot to build a connection. Every other sibling has both a data-table
+entry AND one or more real code call sites; `invite-server` has only the
+former.
 
-**Confidence: medium.** This is a real, cheap, mechanically-verifiable
-negative result (Ghidra's reference manager finding zero code xrefs is not
-a matter of interpretation), but it can't rule out a call reached only
-through fully dynamic dispatch (e.g. a function-pointer table walked by
-index with no direct reference Ghidra's static analysis would catch) -
-considered unlikely given every other sibling in this same family resolves
-via a direct, statically-visible literal load, and there'd be no obvious
-reason for just one service in an otherwise-uniform family to be wired up
-differently. Best read: the invite/friend-invite feature was either never
-shipped, or its client-side networking code was cut from this particular
-build while the string/table-slot metadata was left in place.
+A follow-up pass (`research/notes/2026-08-15-invite-server-dead-code-confirmed.md`)
+extended this check to the rest of `invite-server`'s literal pool - it sits
+alongside four sibling strings from the same source file (`game/net/net-invite.cpp`,
+per its own `__FILE__` string at `0x00e7d0e0`): two command formats
+(`"invite-list %s"`, `"invite-delete %s %s"`) and an `ASSERT` condition
+(`"m_thread == 0"`). **All five have zero code cross-references**, including
+the file's own `ASSERT` filename string - which, unlike a connect call site,
+is loaded unconditionally by its containing function whenever that function
+is linked in, regardless of whether the assert ever fires or the "real"
+logic path is ever taken. Zero refs to *that* string means no function
+from `net-invite.cpp` was linked into reachable code at all, not just that
+this one connect path is unused. A control check against neighboring
+literal-pool entries in the identical table region, belonging to
+definitely-alive files (`net-interactable-manager.cpp`,
+`net-late-join.cpp`), found real code call sites via the same method,
+ruling out a systemic gap in the reference-resolution approach itself.
+
+**Confidence: high.** Static analysis can't reach absolute certainty on a
+fully stripped 20MB binary (an esoteric fully-dynamic dispatch pattern
+can never be 100% excluded), but this is as close as it gets: not one
+string in the entire source file - including one whose reference is
+independent of any runtime condition - has a single code cross-reference,
+while the identical check finds real call sites on both sides of it in the
+same table. Best read: the invite/friend-invite feature's client-side
+networking code was cut from this particular build (whole translation unit
+dropped at link time) while the string/table-slot metadata was left in
+place; see `research/notes/2026-08-15-createparty-trace.md` for a live
+trace of the in-game "invite to party" action that also did not find this
+code path, consistent with the game's actual invite mechanism (if any, in
+this build) going through Sony's native `sceNp` friends/invite API instead.
 
 ## Messages A/B: confirmed identical for all four live siblings
 
@@ -207,7 +227,7 @@ periodic background keepalive/heartbeat ping, consistent with the name.
 | Claim | Confidence | Reason |
 |---|---|---|
 | `heartbeat-server`, `leaderboard-server`, `facebook-server`, `single-player-server` all use the identical `FUN_00acc424` hello/hello_response (messages A/B) | high | Same function, confirmed via `FindCallersOf` reference enumeration - not re-derived, structurally identical by construction |
-| `invite-server` has no live call site in this build | medium-high | Zero code xrefs found via the same mechanical method that found 10/10 real call sites for the others; can't rule out fully-dynamic dispatch |
+| `invite-server` is dead code in this build | high | Zero code xrefs across the entire `net-invite.cpp` literal pool (name, both command formats, `ASSERT` condition, and the file's own `ASSERT` filename string) via the same mechanical method that found 10/10 real call sites for the others; control check against neighboring live-file table entries confirms the method isn't blind to this table region. See `research/notes/2026-08-15-invite-server-dead-code-confirmed.md`. |
 | Post-hello payloads for all five are wrapped in the same encrypted frame as ticket-server's messages C/D | high (structural), unconfirmed (independently, per-service, live) | Same shared `FUN_00acd5f8`/`FUN_00acb6fc`/`FUN_00acd568`/`FUN_00acbb90` functions confirmed via decompile; no sibling-specific live capture exists yet |
 | Per-service plaintext payload shapes (this doc's per-service section) | medium | Structurally traced via decompile (loop counts, buffer sizes, helper functions used) but format-string contents and exact field boundaries not fully resolved |
 | Per-service IP/port table offsets | medium | Directly visible in decompile; actual port *values* not decoded from `net1.bin` this pass |
@@ -222,3 +242,7 @@ periodic background keepalive/heartbeat ping, consistent with the name.
   the per-service payload descriptions above
 - `research/ghidra/acc424_all_callers.txt` - the reference-enumeration
   backing the "10 call sites, invite-server has none" finding
+- `research/notes/2026-08-15-invite-server-dead-code-confirmed.md` -
+  follow-up pass confirming `invite-server` dead code to high confidence
+  (`research/ghidra/invite_related_refs.txt`, `invite_struct_dump.txt`,
+  `invite_control_refs.txt`)
