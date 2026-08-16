@@ -44,3 +44,17 @@ Decompile the client's own build site for this message (likely one of the
 `Init()` vtable's outbound-builder slots, `+0xc`/`+0x10`/`+0x14`/`+0x18`, or a
 separate function called from `game/net/lobby-flow.cpp`'s `NET_SM_READY_UP`
 transition) to get real field semantics instead of transcribing one capture.
+
+## Confidence summary
+
+| Field | Confidence | Reason |
+|---|---|---|
+| Opcode (`0x12f`) / total size (232 bytes) | high | Matches the debug-log table exactly, and this opcode's table entry is explicitly noted as trustworthy (unlike several neighboring opcodes - see `session_manager_and_matchmaking.md`'s corrections) |
+| `create_id` (offset 4-11) is a meaningful, load-bearing field | high | Confirmed via a downstream dependency, not guessed: `RoomJoined` (`0x132`) must echo this exact value or the client's room-slot matching fails |
+| `create_id`'s semantic meaning (client-generated correlation value) | medium | Inferred from its required-echo behavior; never independently decompiled at this message's own send site |
+| `<npid>.<timestamp>` string (~offset 0x1c) | medium | Presumed from the literal captured content and echoed back by the stub, but not traced/decompiled at the send site |
+| Region code (`us`), u16-shaped count/limit fields, pointer-shaped 4-byte spans (the "Unconfirmed" section above) | low | Transcribed from a single capture only - none of this was traced from the client's send-site decompile, so any field name here would be a guess |
+
+Overall: **medium** as a whole, dragged down by the bulk of the 232-byte
+payload still being an untraced opaque blob (see "What would close this
+out" above) - matches this doc's `status: partial`.

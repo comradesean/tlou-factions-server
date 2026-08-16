@@ -57,3 +57,17 @@ attribute block is the most likely culprit; cross-referencing it against
 `RoomCreate`'s send-site decompile (see that doc's "what would close this
 out") would let both messages' shared fields be filled in with real values
 instead of zero.
+
+## Confidence summary
+
+| Field | Confidence | Reason |
+|---|---|---|
+| Total size (120 bytes, not the declared 160) | high | Confirmed by decompile of the receive-dispatch's own buffer-advance logic (`FUN_00ad7604`) - about as strong as evidence gets in this project, and it directly contradicts the debug-log table |
+| `create_id` echo requirement (offset 8-15) | high | Decompile-confirmed: the dispatch code searches the connection's 4 room slots for a longlong match at this offset and does nothing further if none is found |
+| Existence, size, and that the client reads offset 16-51 (18x u16), 52-55, and 56-119 | high | Decompile-confirmed - traced directly in `FUN_00ad7604`/`_opd_FUN_00ad33d8`, not inferred |
+| Semantic meaning of offset 16-51, 52-55, and 56-119 | low | Only presence/size is confirmed; the 18x u16 block is guessed-by-analogy to `RoomCreate`'s similarly-sized cluster (offsets don't line up 1:1 between the two messages, so no real mapping was attempted), and offset 56-119 being a name/string buffer is inferred from the client storing a pointer to it rather than reading fixed sub-fields |
+| Whether this message is also the correct reply to `RoomJoin` (`0x130`) | low | Untested - a reasonable guess from the shared "you are now in a room" shape, never exercised live |
+
+Overall: **medium-high** on wire framing and the one enforced correlation
+field (`create_id`); low on everything else's semantics - matches this
+doc's `status: partial`.
