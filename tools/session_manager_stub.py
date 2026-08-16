@@ -486,6 +486,60 @@ def build_owner_member(room_id, owner_member_id=MEMBER_ID):
     return bytes(body)
 
 
+def build_room_leave(room_id, member_id):
+    """Build a 0x134 RoomLeave (24 bytes) - "member X left the room".
+
+    Dispatch audit 7 (2026-08-16): +8 room id (lookup), +16 member_id (u16,
+    lhz @ 0xad7cc8) -> FUN_00ad0d4c member lookup -> FUN_00ad3190 removal.
+    Audit 8.4 called it "the correct way to tell a client that another
+    member left". First needed live 2026-08-16: a joiner leaving gave the
+    HOST "You were kicked from the game/party" spammed at exactly the
+    Member-refresher cadence - the stale joint roster kept re-adding the
+    departed member every 10s and the client's party logic kicked on the
+    conflict each time.
+    """
+    body = bytearray(24)
+    struct.pack_into(">I", body, 0, 0x134)
+    body[8:16] = room_id
+    struct.pack_into(">H", body, 16, member_id)
+    return bytes(body)
+
+
+def broadcast_member_departure(departing_key, room_id=None):
+    """A joined connection left (0x133 or socket close): remove it from any
+    room it was a member of, tell the remaining members via 0x134, and
+    restart the room owner's refresher with the shrunken roster so the
+    departed member stops being re-registered every interval."""
+    affected = []
+    with rooms_lock:
+        for other in active_rooms.values():
+            if departing_key in other.get("conns", {}) and (
+                    room_id is None or other["room_id"] == room_id):
+                mid = other["conns"].pop(departing_key)[0]
+                if id(other["conn"]) == departing_key:
+                    continue  # room owner leaving - entry teardown handles it
+                other["members"] = [m for m in other.get("members", [])
+                                    if m[0] != mid]
+                affected.append((other, mid))
+    for other, mid in affected:
+        leave = build_room_leave(other["room_id"], mid)
+        for m2id, c2, em2 in list(other["conns"].values()):
+            try:
+                c2.sendall(leave)
+                em2(f"   [leave] member_id={mid} left room "
+                    f"{other['room_id'].hex()} - sent RoomLeave (0x134)")
+            except OSError:
+                pass
+        other["stop_event"].set()
+        ev = threading.Event()
+        other["stop_event"] = ev
+        start_member_refresher(other["conn"], other["emit"], other["members"],
+                               other["room_id"], other["max_players"],
+                               MEMBER_ID, MEMBER_ID, ev,
+                               room_ptr=other["room_ptr"],
+                               populate_self_npid=True)
+
+
 MEMBER_BLOB_OPCODE = 0x13b
 
 
@@ -812,6 +866,7 @@ def handle(conn, addr, log_lock, log):
                         # member_id -> connection map for per-room broadcast
                         # (0x13a -> 0x13b relay); joiners get added by 0x130.
                         "conns": {id(conn): (MEMBER_ID, conn, emit)},
+                        "members": [(MEMBER_ID, npid)],
                     }
             elif opcode == 0x130 and len(chunk) >= 0x18:
                 # RoomJoin - see active_rooms' comment for the wire evidence.
@@ -866,6 +921,7 @@ def handle(conn, addr, log_lock, log):
                         emit(f"   [join] host push failed: {e}")
                     with rooms_lock:
                         host["conns"][id(conn)] = (JOINER_MEMBER_ID, conn, emit)
+                        host["members"] = [host_entry, joiner_entry]
                     # Restart both refreshers with the joint roster.
                     host["stop_event"].set()
                     new_host_stop = threading.Event()
@@ -954,6 +1010,7 @@ def handle(conn, addr, log_lock, log):
                             "stop_event": peer["stop_event"],
                             "conns": {id(peer["conn"]): (MEMBER_ID, peer["conn"], peer["emit"]),
                                       id(conn): (JOINER_MEMBER_ID, conn, emit)},
+                            "members": [host_entry, joiner_entry],
                         }
 
                     self_member = build_member([joiner_entry, host_entry], room_id, max_players,
@@ -993,12 +1050,10 @@ def handle(conn, addr, log_lock, log):
                     if info is not None and info["room_id"] == room_id_tail:
                         info["stop_event"].set()
                         del active_rooms[id(conn)]
-                    # Also drop this connection from any room it JOINED
-                    # (0x130) whose id matches the abandoned one.
-                    for other in active_rooms.values():
-                        if (other["room_id"] == room_id_tail
-                                and id(conn) in other.get("conns", {})):
-                            del other["conns"][id(conn)]
+                # If this connection had JOINED someone else's room with this
+                # id, notify the remaining members (0x134) and shrink their
+                # refresher roster.
+                broadcast_member_departure(id(conn), room_id=room_id_tail)
             elif opcode == CREATE_PARTY_OPCODE and len(chunk) >= 16:
                 # RE-CORRECTED 2026-08-16: this is SetPartyData - the client
                 # pushing its own <=64-byte per-member data blob for a room
@@ -1093,8 +1148,7 @@ def handle(conn, addr, log_lock, log):
             info = active_rooms.pop(id(conn), None)
             if info is not None:
                 info["stop_event"].set()
-            for other in active_rooms.values():
-                other.get("conns", {}).pop(id(conn), None)
+        broadcast_member_departure(id(conn))
         conn.close()
 
 
