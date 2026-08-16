@@ -636,6 +636,17 @@ def start_member_refresher(conn, emit, members, room_id, max_players,
     ROOM_PTR+0x10 never stays zero long enough for anything reading it to
     lose.
     """
+    # *** RE-REVIEW AFTER FULL 2-PLAYER FLOW WORKS (flagged 2026-08-16) ***
+    # This multi-member skip fixed a CONFIRMED live bug (see below) but rests on
+    # a single live observation. Open question: does a multi-member room's
+    # room_obj+0x10 stay alive without our periodic re-assertion, or will it go
+    # stale (the original reason the refresher existed for solo)? P2P
+    # MUTUAL_ACTIVATED suggests the party self-maintains, but that was not
+    # verified over a long-lived multi-member session. Re-validate once the full
+    # flow is stable; if multi-member rooms DO go stale, the right fix is a
+    # much longer interval or a room_obj+0x10-only keepalive, not full-roster
+    # re-broadcast. Do not treat this skip as settled.
+    #
     # 2026-08-16 REGRESSION FIX: only refresh SOLO rooms. Live TTY showed the
     # host joining and LEAVING its own party every 10s - exactly this
     # interval - once a 2-member roster was being re-broadcast. Re-sending the
