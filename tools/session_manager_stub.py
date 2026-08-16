@@ -468,6 +468,53 @@ def build_member(members, room_id, max_players, owner_ref_id, local_ref_id, team
     return bytes(header) + bytes(entries)
 
 
+def build_owner_member(room_id, owner_member_id=MEMBER_ID):
+    """Build a NetMatchmakingOwnerMemberChanged (opcode 0x13d), 16 bytes.
+
+    Dispatch audit 8.2 (2026-08-16): writes the u16 at wire offset 4 into
+    room_obj+0x19f0 (the owner's member id) and then fires
+    room->vtable[0x34]() - a client-side ownership-notification callback
+    that Member does NOT fire (Member only sets +0x19f0 silently via the
+    is_owner flag). First sent 2026-08-16 chasing the "Host Migrate Room"
+    + "Host quit for cheating" match teardown seen ~3.5s into the first
+    real 2-player party match.
+    """
+    body = bytearray(16)
+    struct.pack_into(">I", body, 0, 0x13d)
+    struct.pack_into(">H", body, 4, owner_member_id)
+    body[8:16] = room_id
+    return bytes(body)
+
+
+MEMBER_BLOB_OPCODE = 0x13b
+
+
+def build_member_blob(member_id, room_id, blob):
+    """Build a 0x13b per-member data blob, 80 bytes.
+
+    Dispatch audit 7 (2026-08-16): handler looks up the member by the u16
+    at wire offset 4 (FUN_00ad0d4c), writes the length byte at offset 6
+    into member+0xF8 and memcpys that many payload bytes from offset 16
+    into member+0xFC (cap 64). The audit called it "speculative - nothing
+    principled to put in it" because no client->server supplier was known;
+    the supplier is 0x13a (SetPartyData): same 80-byte size, same <=64
+    payload cap, member-scoped, sent by every client about itself. The
+    stub relays each client's own 0x13a payload to every room member as
+    this message. Live theory (2026-08-16): member+0xFC is where the
+    lobby's per-member rank display reads from (missing ranks were the
+    first live symptom), and possibly what peer-consistency checks
+    ("Host quit for cheating") compare.
+    """
+    body = bytearray(80)
+    struct.pack_into(">I", body, 0, MEMBER_BLOB_OPCODE)
+    struct.pack_into(">H", body, 4, member_id)
+    payload = blob[:64]
+    body[6] = len(payload)
+    body[8:16] = room_id
+    body[16:16 + len(payload)] = payload
+    return bytes(body)
+
+
 def build_owner_changed(room_id, is_owner=1):
     """Build a NetMatchmakingOwnerChanged (opcode 0x13f), 16 bytes.
 
@@ -733,9 +780,10 @@ def handle(conn, addr, log_lock, log):
                 # unchanged, revert this and treat the race theory as
                 # unconfirmed rather than assuming the delay itself is wrong.
                 time.sleep(0.25)
-                conn.sendall(member + owner_changed)
+                conn.sendall(member + owner_changed
+                             + build_owner_member(room_id, MEMBER_ID))
                 emit(f"   parsed opcode={opcode:#x} (RoomCreate, map_id={map_id.hex()}), sent "
-                     f"Member+OwnerChanged as one write, NO RoomJoined "
+                     f"Member+OwnerChanged+OwnerMember as one write, NO RoomJoined "
                      f"({len(member)}+{len(owner_changed)} bytes, "
                      f"room_ptr={room_ptr:#x} (parsed from wire offset 8), "
                      f"max_players={max_players} (parsed from wire offset 0x24), "
@@ -749,11 +797,21 @@ def handle(conn, addr, log_lock, log):
                                         MEMBER_ID, MEMBER_ID, active_room_stop,
                                         room_ptr=room_ptr, populate_self_npid=True)
                 with rooms_lock:
+                    old_entry = active_rooms.get(id(conn))
+                    if old_entry is not None:
+                        # A joint-roster refresher started by the 0x130 join
+                        # handler holds a NEWER stop_event than this thread's
+                        # local active_room_stop - stop it via the registry
+                        # so it can't outlive its room.
+                        old_entry["stop_event"].set()
                     active_rooms[id(conn)] = {
                         "npid": npid, "conn": conn, "emit": emit,
                         "room_id": room_id, "room_ptr": room_ptr,
                         "max_players": max_players,
                         "stop_event": active_room_stop,
+                        # member_id -> connection map for per-room broadcast
+                        # (0x13a -> 0x13b relay); joiners get added by 0x130.
+                        "conns": {id(conn): (MEMBER_ID, conn, emit)},
                     }
             elif opcode == 0x130 and len(chunk) >= 0x18:
                 # RoomJoin - see active_rooms' comment for the wire evidence.
@@ -786,7 +844,8 @@ def handle(conn, addr, log_lock, log):
                                                local_ref_id=JOINER_MEMBER_ID,
                                                room_ptr=join_room_ptr,
                                                populate_self_npid=True)
-                    conn.sendall(self_member + build_owner_changed(target_room_id, 0))
+                    conn.sendall(self_member + build_owner_changed(target_room_id, 0)
+                                 + build_owner_member(target_room_id, MEMBER_ID))
                     emit(f"   parsed opcode={opcode:#x} (RoomJoin) - JOINED "
                          f"{host['npid']!r}'s room {target_room_id.hex()} as "
                          f"member_id={JOINER_MEMBER_ID}, sent Member+OwnerChanged(0) "
@@ -798,12 +857,15 @@ def handle(conn, addr, log_lock, log):
                                                room_ptr=host["room_ptr"],
                                                populate_self_npid=True)
                     try:
-                        host["conn"].sendall(host_member)
+                        host["conn"].sendall(host_member
+                                             + build_owner_member(target_room_id, MEMBER_ID))
                         host["emit"](f"   [join] {own_npid!r} joined room "
                                      f"{target_room_id.hex()} - pushed updated "
-                                     f"2-member roster")
+                                     f"2-member roster + OwnerMember(1)")
                     except OSError as e:
                         emit(f"   [join] host push failed: {e}")
+                    with rooms_lock:
+                        host["conns"][id(conn)] = (JOINER_MEMBER_ID, conn, emit)
                     # Restart both refreshers with the joint roster.
                     host["stop_event"].set()
                     new_host_stop = threading.Event()
@@ -872,7 +934,8 @@ def handle(conn, addr, log_lock, log):
                                                 owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID,
                                                 room_ptr=peer["room_ptr"],
                                                 populate_self_npid=True)
-                    peer["conn"].sendall(peer_member + build_owner_changed(room_id, 1))
+                    peer["conn"].sendall(peer_member + build_owner_changed(room_id, 1)
+                                         + build_owner_member(room_id, MEMBER_ID))
                     peer["emit"](f"   MATCHED with {own_npid!r} (find-match pairing) - sent "
                                   f"Member+OwnerChanged(1) as one write, NO RoomJoined, as host "
                                   f"(member_id={MEMBER_ID}, room_ptr={peer['room_ptr']:#x}) "
@@ -889,13 +952,16 @@ def handle(conn, addr, log_lock, log):
                             "room_ptr": peer["room_ptr"],
                             "max_players": max_players,
                             "stop_event": peer["stop_event"],
+                            "conns": {id(peer["conn"]): (MEMBER_ID, peer["conn"], peer["emit"]),
+                                      id(conn): (JOINER_MEMBER_ID, conn, emit)},
                         }
 
                     self_member = build_member([joiner_entry, host_entry], room_id, max_players,
                                                 owner_ref_id=MEMBER_ID, local_ref_id=JOINER_MEMBER_ID,
                                                 room_ptr=own_room_ptr,
                                                 populate_self_npid=True)
-                    conn.sendall(self_member + build_owner_changed(room_id, 0))
+                    conn.sendall(self_member + build_owner_changed(room_id, 0)
+                                 + build_owner_member(room_id, MEMBER_ID))
                     emit(f"   parsed opcode={opcode:#x} (find-match search broadcast) - "
                          f"MATCHED with {peer['npid']!r} - sent Member+OwnerChanged(0) "
                          f"as one write, NO RoomJoined, as joiner "
@@ -927,14 +993,59 @@ def handle(conn, addr, log_lock, log):
                     if info is not None and info["room_id"] == room_id_tail:
                         info["stop_event"].set()
                         del active_rooms[id(conn)]
+                    # Also drop this connection from any room it JOINED
+                    # (0x130) whose id matches the abandoned one.
+                    for other in active_rooms.values():
+                        if (other["room_id"] == room_id_tail
+                                and id(conn) in other.get("conns", {})):
+                            del other["conns"][id(conn)]
             elif opcode == CREATE_PARTY_OPCODE and len(chunk) >= 16:
-                # Log-only - CORRECTED 2026-08-15, see the constant's
-                # docstring: this is periodic telemetry, unrelated to party
-                # invites or room state. Not the bug we were chasing.
+                # RE-CORRECTED 2026-08-16: this is SetPartyData - the client
+                # pushing its own <=64-byte per-member data blob for a room
+                # (the 2026-08-15 "periodic telemetry" reading was about the
+                # unrelated caller loop, not this message's content). It is
+                # the natural client->server supplier for the 0x13b
+                # per-member blob delivery (same 80-byte size, same 64-byte
+                # payload cap, member-scoped - see build_member_blob's
+                # docstring). Relay it to every member of the room it names
+                # so all clients hold all members' data (rank display /
+                # peer-consistency theory).
                 room_id_tail = chunk[8:16]
-                emit(f"   parsed opcode={opcode:#x} (periodic telemetry, not "
-                     f"party-related - see CREATE_PARTY_OPCODE docstring), "
-                     f"unrelated field={room_id_tail.hex()} - no reply")
+                entry = None
+                targets = []
+                sender_member_id = None
+                with rooms_lock:
+                    for info in active_rooms.values():
+                        if id(conn) in info.get("conns", {}) and info["room_id"] == room_id_tail:
+                            entry = info
+                            break
+                    if entry is None:
+                        for info in active_rooms.values():
+                            if id(conn) in info.get("conns", {}):
+                                entry = info
+                                break
+                    if entry is not None:
+                        sender_member_id = entry["conns"][id(conn)][0]
+                        targets = list(entry["conns"].values())
+                if entry is None or len(chunk) < 80:
+                    emit(f"   parsed opcode={opcode:#x} (SetPartyData, "
+                         f"room_id={room_id_tail.hex()}) - sender not in any "
+                         f"registered room (or short packet, {len(chunk)}b), "
+                         f"no relay")
+                else:
+                    blob = build_member_blob(sender_member_id, entry["room_id"],
+                                             chunk[16:80])
+                    sent = 0
+                    for mid, c, em in targets:
+                        try:
+                            c.sendall(blob)
+                            sent += 1
+                        except OSError:
+                            pass
+                    emit(f"   parsed opcode={opcode:#x} (SetPartyData from "
+                         f"member_id={sender_member_id}) - relayed as 0x13b "
+                         f"blob (64b) to {sent} member connection(s) of room "
+                         f"{entry['room_id'].hex()}")
             elif opcode == ROOM_SEARCH_INFO_OPCODE and len(chunk) >= 16:
                 # Echo the room_id straight back at the same wire offset (8),
                 # matching the general "echo the client's own correlation
@@ -982,6 +1093,8 @@ def handle(conn, addr, log_lock, log):
             info = active_rooms.pop(id(conn), None)
             if info is not None:
                 info["stop_event"].set()
+            for other in active_rooms.values():
+                other.get("conns", {}).pop(id(conn), None)
         conn.close()
 
 
