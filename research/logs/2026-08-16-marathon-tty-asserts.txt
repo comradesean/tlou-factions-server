@@ -1,0 +1,753 @@
+# TLOU marathon RPCS3 log — game-side (sys_tty) assert banners and NP message-bus traffic
+#
+# Source: /mnt/f/rpcs3_testing/rpcs3-v0.0.41-19598-357b7d44_win64_msvc/log/RPCS3.log (3.4 GB, 2026-08-16)
+# Filter: grep -aE 'ASSERTION:|File: ndlib|Line: [0-9]+|Post Message|Get Message|joined match|left match|0x8002a816'
+#         then kept only 'sys_tty_write():' lines, ANSI stripped, and the 1090 repeats of the
+#         net-game-manager.cpp:1358 team assert collapsed to their timestamps only.
+#
+# Totals across the whole log:
+#   1090x  team >= 0 && team < NetInfo::kMaxNetTeams   game/net/net-game-manager.cpp:1358
+#     26x  m_roomId != 0                             game/net/net-event/net-event-player.cpp:560
+#     15x  m_roomSize > 0                            ndlib/net/net-session.cpp:227
+#      4x  Post Message 10b, size 16   (invites received)
+#      1x  Get Message 10b, size 16    (invites consumed)
+#
+156288:·W 0:01:27.951378 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[34.4633] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+156290:·! 0:01:27.951521 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[34.4633] comradesean joined match“ << endl
+156294:·! 0:01:27.951773 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[34.4633]  joined match“ << endl
+169545:·! 0:01:38.185914 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[44.7000] comradesean left match“ << endl
+169552:·! 0:01:38.186462 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[44.7000]  left match“ << endl
+169568:·! 0:01:38.194857 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomId != 0“ << endl
+169576:·! 0:01:38.195310 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 560“ << endl
+182602:·! 0:01:47.952041 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[54.4633]  joined match“ << endl
+196508:·! 0:01:58.493458 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[64.9967]  left match“ << endl
+196843:·W 0:01:58.751781 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[65.2667] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+196849:·! 0:01:58.752155 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomSize > 0“ << endl
+196855:·! 0:01:58.752439 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      File: ndlib/net/net-session.cpp“ << endl
+196857:·! 0:01:58.752534 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 227“ << endl
+196864:·! 0:01:58.752979 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[65.2667]  joined match“ << endl
+242797:·! 0:02:32.503561 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+242856:·! 0:02:32.525585 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+242915:·! 0:02:32.558795 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+242974:·! 0:02:32.591538 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+243033:·! 0:02:32.625375 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+243092:·! 0:02:32.657413 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+243151:·! 0:02:32.692497 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+243210:·! 0:02:32.724718 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+243269:·! 0:02:32.758694 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+243328:·! 0:02:32.792357 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+243387:·! 0:02:32.825242 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+243446:·! 0:02:32.859400 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+243505:·! 0:02:32.892195 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+243564:·! 0:02:32.926152 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+243623:·! 0:02:32.959751 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+243682:·! 0:02:32.992192 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+243741:·! 0:02:33.025133 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+243800:·! 0:02:33.058556 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+243859:·! 0:02:33.092876 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+243918:·! 0:02:33.125955 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+243980:·! 0:02:33.158160 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+244039:·! 0:02:33.192933 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+244098:·! 0:02:33.225963 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+244157:·! 0:02:33.259222 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+244216:·! 0:02:33.292142 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+244275:·! 0:02:33.325725 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+244334:·! 0:02:33.360068 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+244393:·! 0:02:33.391451 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+244452:·! 0:02:33.426546 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+244511:·! 0:02:33.460784 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+244570:·! 0:02:33.491662 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+244630:·! 0:02:33.526637 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+244688:·! 0:02:33.559482 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+244746:·! 0:02:33.592682 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+244804:·! 0:02:33.626323 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+244862:·! 0:02:33.659759 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+244920:·! 0:02:33.692942 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+244978:·! 0:02:33.726724 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+245036:·! 0:02:33.759078 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+245094:·! 0:02:33.792436 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+245153:·! 0:02:33.826246 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+245211:·! 0:02:33.858456 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+245269:·! 0:02:33.893091 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+245327:·! 0:02:33.925406 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+245385:·! 0:02:33.960391 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+245443:·! 0:02:33.992880 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+245501:·! 0:02:34.025357 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+245559:·! 0:02:34.058173 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+245617:·! 0:02:34.091873 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+246037:·! 0:02:34.125476 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+246096:·! 0:02:34.158891 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+246154:·! 0:02:34.194005 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+246212:·! 0:02:34.225516 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+246270:·! 0:02:34.258004 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+246328:·! 0:02:34.291541 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+246386:·! 0:02:34.325711 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+246444:·! 0:02:34.359290 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+246502:·! 0:02:34.391853 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+246560:·! 0:02:34.424394 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+246618:·! 0:02:34.458767 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+246676:·! 0:02:34.492814 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+246734:·! 0:02:34.525382 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+246793:·! 0:02:34.558424 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+246852:·! 0:02:34.594413 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+246909:·! 0:02:34.626242 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+246967:·! 0:02:34.658074 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+247025:·! 0:02:34.692126 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+247083:·! 0:02:34.725449 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+247141:·! 0:02:34.759008 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+247199:·! 0:02:34.791976 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+247257:·! 0:02:34.825467 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+247315:·! 0:02:34.859309 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+247373:·! 0:02:34.891774 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+247431:·! 0:02:34.925846 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+247489:·! 0:02:34.959360 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+247547:·! 0:02:34.991289 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+247605:·! 0:02:35.024540 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+247663:·! 0:02:35.058850 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+247721:·! 0:02:35.091594 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+247779:·! 0:02:35.126198 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+247837:·! 0:02:35.158089 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+247895:·! 0:02:35.192738 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+247953:·! 0:02:35.225221 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+248011:·! 0:02:35.258240 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+248069:·! 0:02:35.291709 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+248128:·! 0:02:35.326720 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+248185:·! 0:02:35.358752 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+248243:·! 0:02:35.391758 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+248301:·! 0:02:35.425952 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+248359:·! 0:02:35.459934 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+248417:·! 0:02:35.491364 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+261338:·! 0:02:45.589051 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[14.3667]  left match“ << endl
+272955:·! 0:02:52.584332 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[21.3667] comradesean joined match“ << endl
+272959:·! 0:02:52.584573 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[21.3667]  joined match“ << endl
+328047:·! 0:03:35.473736 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[64.1167] comradesean left match“ << endl
+328054:·! 0:03:35.474147 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[64.1167]  left match“ << endl
+462052:·W 0:04:34.187243 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[17.7833] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+462054:·! 0:04:34.187396 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[17.7833] comradesean joined match“ << endl
+462058:·! 0:04:34.187645 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[17.7833]  joined match“ << endl
+475260:·! 0:04:44.404181 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[28.0000] comradesean left match“ << endl
+475267:·! 0:04:44.404775 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[28.0000]  left match“ << endl
+475283:·! 0:04:44.412264 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomId != 0“ << endl
+475291:·! 0:04:44.412643 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 560“ << endl
+488359:·! 0:04:54.204040 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[37.7967]  joined match“ << endl
+697519:·! 0:07:32.946818 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[196.5333]  left match“ << endl
+697856:·W 0:07:33.203384 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[196.8000] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+697862:·! 0:07:33.204125 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomSize > 0“ << endl
+697868:·! 0:07:33.204622 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      File: ndlib/net/net-session.cpp“ << endl
+697870:·! 0:07:33.204729 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 227“ << endl
+697877:·! 0:07:33.205523 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[196.8000]  joined match“ << endl
+748231:·! 0:08:10.036739 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+748293:·! 0:08:10.060175 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+748354:·! 0:08:10.093723 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+748415:·! 0:08:10.126877 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+748476:·! 0:08:10.161069 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+748537:·! 0:08:10.194719 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+748598:·! 0:08:10.226551 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+748659:·! 0:08:10.261395 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+748720:·! 0:08:10.294608 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+748781:·! 0:08:10.327855 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+748842:·! 0:08:10.360073 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+748903:·! 0:08:10.392853 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+748964:·! 0:08:10.426284 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+749025:·! 0:08:10.459752 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+749086:·! 0:08:10.493226 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+749147:·! 0:08:10.526641 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+749208:·! 0:08:10.560531 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+749268:·! 0:08:10.593503 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+749330:·! 0:08:10.633968 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+749391:·! 0:08:10.659853 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+749454:·! 0:08:10.694592 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+749515:·! 0:08:10.726438 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+749576:·! 0:08:10.759809 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+749637:·! 0:08:10.793612 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+749698:·! 0:08:10.827093 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+749759:·! 0:08:10.859732 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+749820:·! 0:08:10.893879 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+749881:·! 0:08:10.926649 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+749942:·! 0:08:10.960270 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+750003:·! 0:08:10.993312 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+750064:·! 0:08:11.026491 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+750124:·! 0:08:11.058963 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+750185:·! 0:08:11.093569 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+750245:·! 0:08:11.126152 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+750305:·! 0:08:11.160195 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+750365:·! 0:08:11.192995 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+750425:·! 0:08:11.226655 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+750485:·! 0:08:11.260390 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+750545:·! 0:08:11.293092 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+750605:·! 0:08:11.326451 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+750665:·! 0:08:11.360611 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+750725:·! 0:08:11.393606 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+750785:·! 0:08:11.427048 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+750845:·! 0:08:11.460154 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+750905:·! 0:08:11.493677 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+750965:·! 0:08:11.526513 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+751025:·! 0:08:11.559603 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+751085:·! 0:08:11.593703 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+751144:·! 0:08:11.626601 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+751204:·! 0:08:11.663808 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+751264:·! 0:08:11.693104 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+751324:·! 0:08:11.726590 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+751384:·! 0:08:11.763298 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+751444:·! 0:08:11.793216 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+751506:·! 0:08:11.826692 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+751566:·! 0:08:11.859271 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+751626:·! 0:08:11.893266 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+751686:·! 0:08:11.926473 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+751746:·! 0:08:11.959347 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+751806:·! 0:08:11.993353 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+751866:·! 0:08:12.026308 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+751926:·! 0:08:12.059430 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+751986:·! 0:08:12.092778 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+752046:·! 0:08:12.127014 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+752106:·! 0:08:12.161234 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+752166:·! 0:08:12.192816 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+752226:·! 0:08:12.227019 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+752286:·! 0:08:12.260003 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+752346:·! 0:08:12.293264 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+752406:·! 0:08:12.327456 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+752466:·! 0:08:12.360256 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+752526:·! 0:08:12.393063 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+752586:·! 0:08:12.426381 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+752646:·! 0:08:12.460549 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+752706:·! 0:08:12.493425 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+752766:·! 0:08:12.526068 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+752826:·! 0:08:12.560909 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+752886:·! 0:08:12.592815 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+752946:·! 0:08:12.626908 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+753006:·! 0:08:12.660434 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+753066:·! 0:08:12.693198 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+753126:·! 0:08:12.726233 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+753186:·! 0:08:12.759883 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+753600:·! 0:08:12.794006 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+753661:·! 0:08:12.826646 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+753721:·! 0:08:12.859735 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+753781:·! 0:08:12.893733 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+753841:·! 0:08:12.926028 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+753901:·! 0:08:12.960778 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+753962:·! 0:08:12.993119 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+754022:·! 0:08:13.026648 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+767498:·! 0:08:23.124425 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[14.5667]  left match“ << endl
+787914:·! 0:08:36.753480 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[28.2000] comradesean joined match“ << endl
+787918:·! 0:08:36.753703 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[28.2000]  joined match“ << endl
+810038:·! 0:08:53.774796 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[45.0833] comradesean left match“ << endl
+810045:·! 0:08:53.775204 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[45.0833]  left match“ << endl
+1029764:·W 0:11:12.342882 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[48.9333] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+1029766:·! 0:11:12.343066 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[48.9333] comradesean joined match“ << endl
+1029770:·! 0:11:12.343474 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[48.9333]  joined match“ << endl
+1043019:·! 0:11:22.576998 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[59.1667] comradesean left match“ << endl
+1043026:·! 0:11:22.577607 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[59.1667]  left match“ << endl
+1043042:·! 0:11:22.585471 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomId != 0“ << endl
+1043050:·! 0:11:22.585918 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 560“ << endl
+1052702:·W 0:11:29.608967 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[66.2000] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+1052704:·! 0:11:29.609174 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[66.2000] comradesean joined match“ << endl
+1052708:·! 0:11:29.609576 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[66.2000]  joined match“ << endl
+1065957:·! 0:11:39.843079 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[76.4333] comradesean left match“ << endl
+1065964:·! 0:11:39.843806 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[76.4333]  left match“ << endl
+1065980:·! 0:11:39.852621 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomId != 0“ << endl
+1065988:·! 0:11:39.853086 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 560“ << endl
+1073058:·W 0:11:45.109327 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[81.6967] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+1073060:·! 0:11:45.109557 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[81.6967] comradesean joined match“ << endl
+1073064:·! 0:11:45.109798 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[81.6967]  joined match“ << endl
+1086367:·! 0:11:55.376639 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[91.9667] comradesean left match“ << endl
+1086374:·! 0:11:55.377230 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[91.9667]  left match“ << endl
+1086390:·! 0:11:55.385232 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomId != 0“ << endl
+1086398:·! 0:11:55.386109 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 560“ << endl
+1094067:·W 0:12:01.076131 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[97.6633] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+1094069:·! 0:12:01.076340 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[97.6633] comradesean joined match“ << endl
+1094072:·! 0:12:01.076581 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[97.6633]  joined match“ << endl
+1107339:·! 0:12:11.342756 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[107.9300] comradesean left match“ << endl
+1107346:·! 0:12:11.343356 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[107.9300]  left match“ << endl
+1107362:·! 0:12:11.351322 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomId != 0“ << endl
+1107370:·! 0:12:11.351786 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 560“ << endl
+1120338:·! 0:12:21.077040 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[117.6667]  joined match“ << endl
+1120931:·! 0:12:21.553551 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[118.1333]  left match“ << endl
+1121265:·W 0:12:21.808794 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[118.3967] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+1121271:·! 0:12:21.809371 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomSize > 0“ << endl
+1121277:·! 0:12:21.809690 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      File: ndlib/net/net-session.cpp“ << endl
+1121279:·! 0:12:21.809817 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 227“ << endl
+1121286:·! 0:12:21.810319 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[118.3967]  joined match“ << endl
+1167662:·! 0:12:56.470240 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1167722:·! 0:12:56.499475 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1167781:·! 0:12:56.531139 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1167840:·! 0:12:56.566208 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1167900:·! 0:12:56.597308 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1167959:·! 0:12:56.632647 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1168018:·! 0:12:56.664696 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1168077:·! 0:12:56.698944 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1168136:·! 0:12:56.732781 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1168195:·! 0:12:56.765633 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1168254:·! 0:12:56.799212 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1168313:·! 0:12:56.831550 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1168372:·! 0:12:56.866177 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1168430:·! 0:12:56.897160 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1168490:·! 0:12:56.931625 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1168549:·! 0:12:56.965477 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1168607:·! 0:12:56.997325 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1168667:·! 0:12:57.032217 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1168726:·! 0:12:57.064130 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1168785:·! 0:12:57.098204 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1168843:·! 0:12:57.130540 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1168903:·! 0:12:57.164998 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1168962:·! 0:12:57.199126 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1169021:·! 0:12:57.231858 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1169080:·! 0:12:57.265669 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1169138:·! 0:12:57.298567 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1169198:·! 0:12:57.332007 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1169257:·! 0:12:57.366342 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1169316:·! 0:12:57.398689 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1169375:·! 0:12:57.432460 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1169434:·! 0:12:57.466644 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1169493:·! 0:12:57.498258 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1169551:·! 0:12:57.530777 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1169609:·! 0:12:57.566954 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1169667:·! 0:12:57.598381 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1169725:·! 0:12:57.633159 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1169783:·! 0:12:57.665931 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1169841:·! 0:12:57.698493 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1169898:·! 0:12:57.730283 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1169957:·! 0:12:57.764666 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1170015:·! 0:12:57.797533 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1170073:·! 0:12:57.831448 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1170130:·! 0:12:57.865560 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1170189:·! 0:12:57.898529 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1170247:·! 0:12:57.930577 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1170305:·! 0:12:57.965459 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1170363:·! 0:12:57.998618 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1170421:·! 0:12:58.031201 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1170479:·! 0:12:58.065468 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1170537:·! 0:12:58.098624 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1170595:·! 0:12:58.132221 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1170653:·! 0:12:58.163778 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1170710:·! 0:12:58.197223 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1170769:·! 0:12:58.231594 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1170827:·! 0:12:58.266992 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1170885:·! 0:12:58.298744 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1170943:·! 0:12:58.331359 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1171001:·! 0:12:58.366094 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1171059:·! 0:12:58.398754 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1171117:·! 0:12:58.430886 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1171175:·! 0:12:58.465677 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1171233:·! 0:12:58.498774 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1171291:·! 0:12:58.532692 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1171349:·! 0:12:58.563797 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1171408:·! 0:12:58.598216 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1171466:·! 0:12:58.632491 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1171524:·! 0:12:58.664419 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1171582:·! 0:12:58.698688 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1171685:·! 0:12:58.730593 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1171743:·! 0:12:58.764463 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1171800:·! 0:12:58.798439 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1171858:·! 0:12:58.831305 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1171917:·! 0:12:58.866356 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1171975:·! 0:12:58.898417 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1172032:·! 0:12:58.932166 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1172091:·! 0:12:58.964946 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1172149:·! 0:12:58.998985 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1172207:·! 0:12:59.032135 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1172265:·! 0:12:59.065282 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1172322:·! 0:12:59.097335 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1172381:·! 0:12:59.132531 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1172439:·! 0:12:59.165182 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1172497:·! 0:12:59.198009 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1172555:·! 0:12:59.230955 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1172613:·! 0:12:59.265660 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1172671:·! 0:12:59.299027 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1172729:·! 0:12:59.331381 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1173155:·! 0:12:59.367991 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1173214:·! 0:12:59.398998 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1173272:·! 0:12:59.432587 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1173330:·! 0:12:59.466179 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1186895:·! 0:13:09.563380 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[14.4167]  left match“ << endl
+1202190:·! 0:13:19.442637 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[24.3000] comradesean joined match“ << endl
+1202193:·! 0:13:19.442947 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[24.3000]  joined match“ << endl
+1232692:·! 0:13:42.816001 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[47.5333] comradesean left match“ << endl
+1232699:·! 0:13:42.816462 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[47.5333]  left match“ << endl
+1359015:·W 0:14:36.171412 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[11.6333] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+1359017:·! 0:14:36.171625 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[11.6333] comradesean joined match“ << endl
+1359021:·! 0:14:36.171872 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[11.6333]  joined match“ << endl
+1372625:·! 0:14:46.405576 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[21.8667] comradesean left match“ << endl
+1372632:·! 0:14:46.406443 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[21.8667]  left match“ << endl
+1372648:·! 0:14:46.415460 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomId != 0“ << endl
+1372656:·! 0:14:46.416073 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 560“ << endl
+1385684:·! 0:14:56.171623 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[31.6300]  joined match“ << endl
+1391928:·! 0:15:00.781625 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[36.2333]  left match“ << endl
+1392263:·W 0:15:01.037760 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[36.4967] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+1392269:·! 0:15:01.038209 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomSize > 0“ << endl
+1392275:·! 0:15:01.038563 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      File: ndlib/net/net-session.cpp“ << endl
+1392277:·! 0:15:01.038784 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 227“ << endl
+1392284:·! 0:15:01.039203 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[36.4967]  joined match“ << endl
+1436705:·! 0:15:35.165862 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1436765:·! 0:15:35.195080 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1436824:·! 0:15:35.227141 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1436883:·! 0:15:35.260050 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1436941:·! 0:15:35.293078 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1437001:·! 0:15:35.327290 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1437060:·! 0:15:35.360413 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1437119:·! 0:15:35.393694 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1437178:·! 0:15:35.427204 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1437237:·! 0:15:35.459805 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1437295:·! 0:15:35.492319 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1437355:·! 0:15:35.527001 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1437414:·! 0:15:35.559826 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1437473:·! 0:15:35.593269 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1437532:·! 0:15:35.626902 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1437591:·! 0:15:35.659932 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1437649:·! 0:15:35.692910 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1437709:·! 0:15:35.726390 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1437767:·! 0:15:35.759061 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1437827:·! 0:15:35.792936 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1437886:·! 0:15:35.826644 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1437945:·! 0:15:35.860147 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1438003:·! 0:15:35.892889 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1438063:·! 0:15:35.926863 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1438122:·! 0:15:35.960465 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1438181:·! 0:15:35.992984 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1438239:·! 0:15:36.026291 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1438299:·! 0:15:36.060114 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1438358:·! 0:15:36.092926 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1438417:·! 0:15:36.127141 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1438475:·! 0:15:36.159505 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1438535:·! 0:15:36.193330 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1438592:·! 0:15:36.226300 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1438651:·! 0:15:36.260055 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1438709:·! 0:15:36.294535 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1438766:·! 0:15:36.326109 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1438824:·! 0:15:36.359550 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1438883:·! 0:15:36.393435 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1438941:·! 0:15:36.427045 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1438999:·! 0:15:36.460468 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1439057:·! 0:15:36.492734 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1439115:·! 0:15:36.527023 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1439173:·! 0:15:36.560569 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1439230:·! 0:15:36.593007 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1439288:·! 0:15:36.626308 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1439347:·! 0:15:36.659800 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1439405:·! 0:15:36.694758 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1439463:·! 0:15:36.727075 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1439520:·! 0:15:36.759383 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1439579:·! 0:15:36.793251 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1439636:·! 0:15:36.826349 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1439694:·! 0:15:36.859641 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1439753:·! 0:15:36.893621 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1439811:·! 0:15:36.926563 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1439868:·! 0:15:36.959462 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1439928:·! 0:15:36.992818 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1439986:·! 0:15:37.026956 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1440044:·! 0:15:37.060545 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1440102:·! 0:15:37.093213 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1440160:·! 0:15:37.126836 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1440218:·! 0:15:37.159408 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1440276:·! 0:15:37.193335 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1440334:·! 0:15:37.227071 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1440392:·! 0:15:37.260207 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1440450:·! 0:15:37.295537 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1440508:·! 0:15:37.326865 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1440566:·! 0:15:37.359778 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1440624:·! 0:15:37.393224 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1440682:·! 0:15:37.426936 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1440740:·! 0:15:37.460256 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1440798:·! 0:15:37.495036 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1440856:·! 0:15:37.526504 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1440914:·! 0:15:37.560244 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1440972:·! 0:15:37.593173 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1441029:·! 0:15:37.626308 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1441088:·! 0:15:37.659579 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1441145:·! 0:15:37.692757 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1441250:·! 0:15:37.726681 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1441307:·! 0:15:37.759898 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1441374:·! 0:15:37.793318 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1441432:·! 0:15:37.826414 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1441489:·! 0:15:37.859916 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1441547:·! 0:15:37.892808 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1441614:·! 0:15:37.927102 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1441679:·! 0:15:37.959832 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1441738:·! 0:15:37.992832 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1441795:·! 0:15:38.026325 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1441862:·! 0:15:38.059879 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1441927:·! 0:15:38.092538 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1441994:·! 0:15:38.128058 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1442060:·! 0:15:38.160622 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+1454915:·! 0:15:48.260578 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[14.4167]  left match“ << endl
+1469411:·! 0:15:57.571440 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[23.7333] comradesean joined match“ << endl
+1469415:·! 0:15:57.571803 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[23.7333]  joined match“ << endl
+1529540:·! 0:16:44.677966 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[70.6800] comradesean left match“ << endl
+1529547:·! 0:16:44.678608 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[70.6800]  left match“ << endl
+2015153:·W 0:23:02.150520 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[18.2300] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+2015155:·! 0:23:02.150662 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[18.2300] comradesean joined match“ << endl
+2015159:·! 0:23:02.150896 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[18.2300]  joined match“ << endl
+2028412:·! 0:23:12.384043 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[28.4667] comradesean left match“ << endl
+2028419:·! 0:23:12.384669 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[28.4667]  left match“ << endl
+2028435:·! 0:23:12.392292 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomId != 0“ << endl
+2028443:·! 0:23:12.392872 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 560“ << endl
+2037844:·W 0:23:19.183457 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[35.2633] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+2037846:·! 0:23:19.183713 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[35.2633] comradesean joined match“ << endl
+2037850:·! 0:23:19.184118 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[35.2633]  joined match“ << endl
+2051095:·! 0:23:29.417410 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[45.4967] comradesean left match“ << endl
+2051102:·! 0:23:29.418171 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[45.4967]  left match“ << endl
+2051118:·! 0:23:29.426640 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomId != 0“ << endl
+2051126:·! 0:23:29.427006 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 560“ << endl
+2063778:·! 0:23:39.183516 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[55.2633]  joined match“ << endl
+2079139:·! 0:23:50.592336 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[66.6633]  left match“ << endl
+2079475:·W 0:23:50.849722 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[66.9300] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+2079481:·! 0:23:50.850080 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomSize > 0“ << endl
+2079487:·! 0:23:50.850356 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      File: ndlib/net/net-session.cpp“ << endl
+2079489:·! 0:23:50.850451 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 227“ << endl
+2079496:·! 0:23:50.850949 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[66.9300]  joined match“ << endl
+2114229:·! 0:24:17.345107 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2114289:·! 0:24:17.371698 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2114348:·! 0:24:17.406671 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2114406:·! 0:24:17.438391 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2114465:·! 0:24:17.471820 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2114524:·! 0:24:17.504277 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2114583:·! 0:24:17.538098 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2114643:·! 0:24:17.571943 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2114701:·! 0:24:17.604444 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2114761:·! 0:24:17.639042 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2114820:·! 0:24:17.671501 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2114878:·! 0:24:17.704651 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2114984:·! 0:24:17.739528 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2115043:·! 0:24:17.773950 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2115102:·! 0:24:17.806299 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2115160:·! 0:24:17.837780 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2115221:·! 0:24:17.872464 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2115280:·! 0:24:17.906145 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2115339:·! 0:24:17.937862 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2115397:·! 0:24:17.971470 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2115456:·! 0:24:18.004789 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2115516:·! 0:24:18.038571 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2115575:·! 0:24:18.072024 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2115633:·! 0:24:18.104228 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2115692:·! 0:24:18.138326 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2115751:·! 0:24:18.170827 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2115811:·! 0:24:18.205418 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2115869:·! 0:24:18.237558 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2115928:·! 0:24:18.271593 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2115988:·! 0:24:18.306026 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2116046:·! 0:24:18.337722 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2116105:·! 0:24:18.371132 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2116164:·! 0:24:18.405677 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2116221:·! 0:24:18.437826 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2116280:·! 0:24:18.472970 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2116337:·! 0:24:18.505064 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2116395:·! 0:24:18.538529 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2116454:·! 0:24:18.571354 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2116512:·! 0:24:18.606497 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2116569:·! 0:24:18.638140 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2116627:·! 0:24:18.670583 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2116685:·! 0:24:18.704644 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2116743:·! 0:24:18.737672 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2116802:·! 0:24:18.772306 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2116860:·! 0:24:18.805751 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2116917:·! 0:24:18.839110 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2116975:·! 0:24:18.872670 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2117033:·! 0:24:18.906213 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2117091:·! 0:24:18.942891 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2117149:·! 0:24:18.972499 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2117207:·! 0:24:19.005830 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2117265:·! 0:24:19.037905 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2117323:·! 0:24:19.070991 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2117382:·! 0:24:19.106323 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2117440:·! 0:24:19.138855 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2117497:·! 0:24:19.170952 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2117556:·! 0:24:19.206352 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2117613:·! 0:24:19.237621 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2117671:·! 0:24:19.271116 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2117729:·! 0:24:19.303996 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2117787:·! 0:24:19.338708 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2117846:·! 0:24:19.372632 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2117904:·! 0:24:19.405593 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2117961:·! 0:24:19.437841 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2118020:·! 0:24:19.473294 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2118077:·! 0:24:19.504386 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2118501:·! 0:24:19.539844 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2118560:·! 0:24:19.571669 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2118617:·! 0:24:19.604954 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2118676:·! 0:24:19.639002 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2118733:·! 0:24:19.671838 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2118792:·! 0:24:19.705595 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2118850:·! 0:24:19.738701 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2118908:·! 0:24:19.772104 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2118966:·! 0:24:19.805669 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2119023:·! 0:24:19.837828 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2119082:·! 0:24:19.870904 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2119140:·! 0:24:19.904746 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2119198:·! 0:24:19.938183 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2119256:·! 0:24:19.970852 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2119315:·! 0:24:20.006527 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2119373:·! 0:24:20.038251 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2119430:·! 0:24:20.071264 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2119489:·! 0:24:20.104605 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2119546:·! 0:24:20.137721 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2119605:·! 0:24:20.172348 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2119662:·! 0:24:20.203827 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2119720:·! 0:24:20.238006 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2119778:·! 0:24:20.270885 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2119836:·! 0:24:20.304177 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+2132786:·! 0:24:30.525449 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[14.4633]  left match“ << endl
+3206068:·W 0:37:44.803922 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[17.0833] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+3206070:·! 0:37:44.804075 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[17.0833] comradesean joined match“ << endl
+3206074:·! 0:37:44.804305 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[17.0833]  joined match“ << endl
+3219602:·! 0:37:55.071084 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[27.3500] comradesean left match“ << endl
+3219609:·! 0:37:55.071719 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[27.3500]  left match“ << endl
+3219625:·! 0:37:55.079510 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomId != 0“ << endl
+3219633:·! 0:37:55.079956 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 560“ << endl
+3222833:·W 0:37:57.570751 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[29.8467] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+3222835:·! 0:37:57.570906 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[29.8467] comradesean joined match“ << endl
+3222839:·! 0:37:57.571154 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[29.8467]  joined match“ << endl
+3236121:·! 0:38:07.837689 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[40.1133] comradesean left match“ << endl
+3236128:·! 0:38:07.838376 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[40.1133]  left match“ << endl
+3236144:·! 0:38:07.846706 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomId != 0“ << endl
+3236152:·! 0:38:07.847073 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 560“ << endl
+3241361:·W 0:38:11.570901 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[43.8500] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+3241363:·! 0:38:11.571104 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[43.8500] comradesean joined match“ << endl
+3241367:·! 0:38:11.571438 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[43.8500]  joined match“ << endl
+3254629:·! 0:38:21.804249 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[54.0800] comradesean left match“ << endl
+3254636:·! 0:38:21.804903 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[54.0800]  left match“ << endl
+3254652:·! 0:38:21.812251 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomId != 0“ << endl
+3254660:·! 0:38:21.812613 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 560“ << endl
+3262346:·W 0:38:27.504359 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[59.7800] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+3262348:·! 0:38:27.504630 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[59.7800] comradesean joined match“ << endl
+3262351:·! 0:38:27.505071 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[59.7800]  joined match“ << endl
+3276121:·! 0:38:37.755442 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[70.0333] comradesean left match“ << endl
+3276128:·! 0:38:37.756233 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[70.0333]  left match“ << endl
+3276144:·! 0:38:37.764832 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomId != 0“ << endl
+3276152:·! 0:38:37.765584 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 560“ << endl
+3289261:·! 0:38:47.522689 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[79.8000]  joined match“ << endl
+3448800:·! 0:40:48.964165 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[201.2300]  left match“ << endl
+3449134:·W 0:40:49.220817 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[201.4967] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+3449140:·! 0:40:49.221566 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomSize > 0“ << endl
+3449146:·! 0:40:49.222097 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      File: ndlib/net/net-session.cpp“ << endl
+3449148:·! 0:40:49.222211 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 227“ << endl
+3449155:·! 0:40:49.222608 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[201.4967]  joined match“ << endl
+3488220:·! 0:41:18.048303 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3488280:·! 0:41:18.078612 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3488338:·! 0:41:18.109864 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3488398:·! 0:41:18.142945 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3488458:·! 0:41:18.177069 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3488517:·! 0:41:18.211388 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3488576:·! 0:41:18.243492 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3488634:·! 0:41:18.276659 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3488693:·! 0:41:18.309519 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3488752:·! 0:41:18.342472 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3488811:·! 0:41:18.376477 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3488871:·! 0:41:18.410694 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3488930:·! 0:41:18.443717 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3488988:·! 0:41:18.476521 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3489047:·! 0:41:18.509603 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3489106:·! 0:41:18.542886 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3489165:·! 0:41:18.576149 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3489224:·! 0:41:18.609253 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3489283:·! 0:41:18.642387 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3489343:·! 0:41:18.676426 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3489401:·! 0:41:18.709061 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3489461:·! 0:41:18.743298 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3489519:·! 0:41:18.776592 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3489578:·! 0:41:18.809445 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3489637:·! 0:41:18.842734 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3489698:·! 0:41:18.876936 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3489757:·! 0:41:18.910641 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3489815:·! 0:41:18.942452 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3489874:·! 0:41:18.976026 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3489933:·! 0:41:19.009208 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3489992:·! 0:41:19.042535 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3490413:·! 0:41:19.078292 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3490471:·! 0:41:19.109263 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3490529:·! 0:41:19.142232 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3490587:·! 0:41:19.176155 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3490645:·! 0:41:19.209602 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3490706:·! 0:41:19.243103 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3490764:·! 0:41:19.276275 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3490822:·! 0:41:19.309245 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3490880:·! 0:41:19.343117 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3490937:·! 0:41:19.376263 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3490995:·! 0:41:19.409170 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3491053:·! 0:41:19.443064 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3491111:·! 0:41:19.476029 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3491169:·! 0:41:19.509265 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3491227:·! 0:41:19.542424 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3491285:·! 0:41:19.576700 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3491343:·! 0:41:19.609308 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3491401:·! 0:41:19.642829 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3491459:·! 0:41:19.677027 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3491518:·! 0:41:19.709782 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3491575:·! 0:41:19.742737 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3491633:·! 0:41:19.776256 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3491691:·! 0:41:19.809488 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3491749:·! 0:41:19.842240 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3491808:·! 0:41:19.876922 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3491866:·! 0:41:19.909765 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3491923:·! 0:41:19.942808 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3491981:·! 0:41:19.976043 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3492039:·! 0:41:20.009217 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3492097:·! 0:41:20.041871 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3492155:·! 0:41:20.075979 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3492214:·! 0:41:20.109491 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3492272:·! 0:41:20.142900 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3492330:·! 0:41:20.176125 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3492387:·! 0:41:20.210146 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3492445:·! 0:41:20.242406 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3492504:·! 0:41:20.277060 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3492561:·! 0:41:20.309765 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3492619:·! 0:41:20.343062 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3492678:·! 0:41:20.376016 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3492736:·! 0:41:20.409875 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3492793:·! 0:41:20.442214 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3492851:·! 0:41:20.476232 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3492909:·! 0:41:20.509048 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3492967:·! 0:41:20.542421 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3493026:·! 0:41:20.576769 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3493084:·! 0:41:20.610116 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3493141:·! 0:41:20.642730 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3493200:·! 0:41:20.676936 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3493257:·! 0:41:20.709667 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3493315:·! 0:41:20.741965 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3493374:·! 0:41:20.777471 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3493431:·! 0:41:20.808414 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3493489:·! 0:41:20.842771 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3493548:·! 0:41:20.875937 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3493606:·! 0:41:20.909984 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3493665:·! 0:41:20.943381 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3493722:·! 0:41:20.976750 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3493781:·! 0:41:21.010837 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3493838:·! 0:41:21.042795 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 1358“ << endl
+3507337:·! 0:41:31.142049 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[14.3800]  left match“ << endl
+3976056:·! 0:47:23.672639 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[366.9133]  joined match“ << endl
+3976062:·! 0:47:23.673276 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[366.9133] mgnomad2 joined match“ << endl
+4034023:·! 0:48:07.740727 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[410.9833]  left match“ << endl
+4034027:·! 0:48:07.741086 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[410.9833] mgnomad2 left match“ << endl
+4041906:·! 0:48:13.672289 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[416.9133]  joined match“ << endl
+4041913:·! 0:48:13.672957 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[416.9133] mgnomad2 joined match“ << endl
+4613909:·! 0:55:23.060570 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[74.6500]  joined match“ << endl
+4613917:·! 0:55:23.061446 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[74.6500] mgnomad2 joined match“ << endl
+4613928:·W 0:55:23.063525 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[74.6500] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+4613934:·! 0:55:23.065498 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomSize > 0“ << endl
+4613940:·! 0:55:23.066015 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      File: ndlib/net/net-session.cpp“ << endl
+4613943:·! 0:55:23.066618 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 227“ << endl
+4657028:·! 0:55:54.594227 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[106.1800]  left match“ << endl
+4657032:·! 0:55:54.595161 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[106.1800] mgnomad2 left match“ << endl
+4668126:·! 0:56:03.058794 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[114.6467]  joined match“ << endl
+4668133:·! 0:56:03.059613 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[114.6467] mgnomad2 joined match“ << endl
+4699134:·! 0:56:25.993210 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[137.5833]  left match“ << endl
+4699138:·! 0:56:25.993806 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[137.5833] mgnomad2 left match“ << endl
+4708432:·! 0:56:33.058788 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[144.6467]  joined match“ << endl
+4708439:·! 0:56:33.060067 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[144.6467] mgnomad2 joined match“ << endl
+4712579:·W 0:56:36.059101 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[147.6467] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+4725674:·! 0:56:45.804751 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[157.3800]  left match“ << endl
+4725678:·! 0:56:45.805611 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[157.3800] mgnomad2 left match“ << endl
+4806216:·W 0:57:49.028883 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[206.5800] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+4806222:·! 0:57:49.029801 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomSize > 0“ << endl
+4806228:·! 0:57:49.030716 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      File: ndlib/net/net-session.cpp“ << endl
+4806230:·! 0:57:49.031216 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 227“ << endl
+4806237:·! 0:57:49.032436 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[206.5800]  joined match“ << endl
+4819687:·! 0:57:59.170977 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[216.7133] comradesean left match“ << endl
+4819694:·! 0:57:59.171640 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[216.7133]  left match“ << endl
+5509944:·! 1:07:01.060012 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “Post Message 10b, size 16“ << endl
+5509978:·! 1:07:01.076531 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “Get Message 10b, size 16“ << endl
+5510357:·W 1:07:01.377805 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[713.2134] sceNpSignalingGetConnectionFromNpId() failed . ret = 0x8002a816“ << endl
+5510363:·! 1:07:01.379126 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “*** ASSERTION: m_roomSize > 0“ << endl
+5510369:·! 1:07:01.379795 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      File: ndlib/net/net-session.cpp“ << endl
+5510371:·! 1:07:01.379898 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “***      Line: 227“ << endl
+5510378:·! 1:07:01.380477 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[713.2134]  joined match“ << endl
+5532442:·! 1:07:19.754996 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[731.5800] comradesean left match“ << endl
+5532449:·! 1:07:19.755975 {PPU[0x1000000] Thread (main_thread) [0x00e495d8]} sys_tty: sys_tty_write(): “[731.5800]  left match“ << endl

@@ -1,5 +1,27 @@
 # Party invites, part A: every gate on the sceNpBasic receive path, and where the commId actually comes from
 
+> **VERDICT SUPERSEDED 2026-08-16 (later, by marathon-log evidence) — read
+> `2026-08-16-party-invite-event2-inbox-and-roomsize-assert.md` first.**
+> The gate analysis below is accurate and still worth having, but its two
+> candidate causes are both now dead:
+> 1. **commId mismatch: did not happen.** Every `sceNpBasicRegisterHandler` in
+>    the 3.4 GB log registers `NPWR03073` (12+ boots, no exceptions) and the
+>    received message carried `commId: NPWR03073`. Gates 1-6 *all* passed:
+>    `rpcn: Received message from mgnomad2` -> `basic_event: event:2` ->
+>    the game's own TTY `"Post Message 10b, size 16"` -> `"Get Message 10b,
+>    size 16"` 17 ms later. **The invite is delivered and consumed correctly.**
+>    The `NPWR03073`/`NPWR00795` runtime split found below is real, so the RPCN
+>    normalization (submodule `1f272cd`) stays as a guard - but it is a **no-op
+>    for this pair** and will not change anything.
+> 2. **The `sceNpBasicGetMessageEntryCount` / `GetCustomInvitationEntryCount`
+>    stub theory: irrelevant.** Those feed a custom-data *badge counter*, not
+>    the invite list. **No RPCS3 patch is needed.**
+>
+> The real failure is 300 ms downstream of delivery:
+> `*** ASSERTION: m_roomSize > 0`, `ndlib/net/net-session.cpp:227` - a room
+> object our own server left without a `0x131` Member packet. It fires 15
+> times across the marathon, on nearly every online session, invite or not.
+
 Static follow-up to open item #3 in `2026-08-16-session-handoff.md` ("receiver's
 Invites screen stays empty after a confirmed-delivered RPCN invite"). No live
 testing in this block - everything below is from RPCS3's real source (shallow

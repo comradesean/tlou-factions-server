@@ -60,6 +60,15 @@ anything below, most of which has its own dedicated note with full evidence.
    during an actual solo-host session (static tracing hit a wall — needs live
    debugging now).
 
+   **New data point 2026-08-16:** this assert fired **1090 times** across the
+   3.4 GB marathon log — by far the most common. It is very likely downstream
+   of the `m_roomId != 0` / `m_roomSize > 0` pair documented in
+   `2026-08-16-party-invite-event2-inbox-and-roomsize-assert.md` (a room object
+   left unpopulated by the `0x131` Member packet); worth re-testing this one
+   *after* the Member/RoomJoined ordering fix rather than chasing it
+   separately. Grepping `sys_tty_write():` in the RPCS3 log gives the game's
+   own assert banners with file+line for free — see `tools/eboot_analysis/`.
+
 2. **`NET_SM_SERVER_LOBBY` permanent stall** (3rd+ host attempt on one
    connection, no timeout). Dispatcher found (`_opd_FUN_001594bc`), blocks
    popping an item off a bounded producer/consumer queue. Producer/writer of
@@ -102,6 +111,16 @@ anything below, most of which has its own dedicated note with full evidence.
    - `2026-08-16-party-invite-sender-assert-corrected.md` - the 2026-08-15
      assert mechanism was misread; corrected, with the caller located
      (`_opd_FUN_003b15bc` @ `0x3b15bc`) and exact breakpoint addresses.
+
+   **RESOLVED (mostly) 2026-08-16 by marathon-log evidence — see
+   `2026-08-16-party-invite-event2-inbox-and-roomsize-assert.md`.** Both notes
+   above are superseded on their verdicts. The invite is delivered and consumed
+   correctly (commId matched; the game's own TTY logs `"Post Message 10b, size
+   16"` then `"Get Message 10b, size 16"`). It dies 300 ms later on
+   `*** ASSERTION: m_roomSize > 0` at `ndlib/net/net-session.cpp:227`, i.e.
+   `room_obj+0x1f8 == 0` - a field only ever written by the `0x131` Member
+   packet's wire offset 24. **Do NOT rewrite `mainType` 1->3** (event 5 is a
+   no-op in this game's event jump table) and **no RPCS3 patch is needed.**
 
 4. **Checkpoint's empty-skybox symptom** — both leading theories from tonight
    (missing content pak, map_id-based content-lookup gap) are now ruled out by

@@ -1,5 +1,27 @@
 # Party invites, part B: the sender-side assert — caller loop found, and the 2026-08-15 mechanism was WRONG
 
+> **CORRECTION 2026-08-16 (later, from the marathon RPCS3 log) — the assert
+> analysed in this note NEVER FIRED.** Grepping the full 3.4 GB log for
+> `*** ASSERTION:` banners yields exactly three distinct texts:
+> `team >= 0 && team < NetInfo::kMaxNetTeams` (1090x,
+> `game/net/net-game-manager.cpp:1358`), `m_roomId != 0` (26x,
+> `game/net/net-event/net-event-player.cpp:560`), and `m_roomSize > 0` (15x,
+> `ndlib/net/net-session.cpp:227`). `_opd_FUN_00ad1fc0`'s trap
+> (`net-session.cpp:786`, message text literally `"0"`, i.e. a plain
+> `ASSERT(0)` "unreachable") produced **zero** log lines all session. The
+> mechanism described below is real and correctly decoded, but it is **not**
+> what boots the sender. The one that actually fires - 15 times, on nearly
+> every online session - is `m_roomSize > 0`, and it is squarely ours:
+> see `2026-08-16-party-invite-event2-inbox-and-roomsize-assert.md`.
+>
+> Useful byproduct that *is* confirmed: the whole `0xad1xxx`-`0xad3xxx`
+> function family is `ndlib/net/net-session.cpp`, and the assert ids in this
+> note are that file's line numbers - `0x312` = 786 (`_opd_FUN_00ad1fc0`),
+> `0xe3` = 227 and `0xda` = 218 (`_opd_FUN_00ad33d8`, the latter being
+> `member->m_binDataSize <= SCE_NP_MATCHING2_ROOMMEMBER_BIN_ATTR_...`),
+> `0x567` = 1383 (`_opd_FUN_00ad6148`,
+> `size <= SCE_NP_MATCHING2_ROOM_BIN_ATTR_INTERNAL_MAX_SIZE`).
+
 Static Ghidra pass against open item #3 / the "sender gets booted fully offline
 on invite" half of `2026-08-16-session-handoff.md`. Every address below was
 sanity-checked against the decompile *and* the raw disassembly before anything
