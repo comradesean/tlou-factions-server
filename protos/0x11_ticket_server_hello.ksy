@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: client-to-server
+
   First message the client sends after connecting (raw TCP, port 7320 in this
   build's net1.bin config) to the "ticket-server" backend, as part of NetInit's
   post-RPCN-ticket session establishment. Fixed size, 0x58 (88) bytes.

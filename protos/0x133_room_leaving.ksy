@@ -5,6 +5,8 @@ meta:
   imports:
     - common/opcodes
 doc: |
+  Direction: client-to-server
+
   net_event_type opcode 0x133 (307). Declared table calls this
   NetMatchmakingMemberJoined (naive "0x12d + table index" formula), but that
   name is confirmed WRONG - see doc-ref for full decompiled evidence

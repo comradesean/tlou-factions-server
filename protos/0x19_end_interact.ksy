@@ -6,6 +6,8 @@ meta:
   imports:
     - common/opcodes
 doc: |
+  Direction: peer-to-peer (client<->client, relayed via the current host peer; not server-terminated - see docs/protocol/net_event_dispatch_and_simple_opcodes.md and research/notes/network-topology.md)
+
   net_event_type opcode 25. 3-field payload: player id, an interactable id,
   and an unresolved third field. Part of the interact family (see also
   opcodes 21/23/24/61).

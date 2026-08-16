@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: server-to-client
+
   Server's reply to ticket_server_ticket_submit, on the same connection.
   Uses the SAME encrypt-then-MAC frame format as ticket_server_ticket_submit
   (see that schema's doc for the full frame layout and evidence) - NOT a

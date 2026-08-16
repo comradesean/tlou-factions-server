@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: bidirectional - client sends it, AND the client's own receive-dispatch (FUN_00ad7604) has a confirmed case for this opcode too; see below and docs/protocol/session_manager_and_matchmaking.md
+
   NetMatchmakingRoomLeave - client -> server, over the Session Manager
   connection (port 7314). One of the 11 opcodes the client's own
   receive-dispatch (FUN_00ad7604) has a case for (this file documents the

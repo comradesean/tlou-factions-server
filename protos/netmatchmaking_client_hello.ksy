@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: client-to-server
+
   First message sent on the "Session Manager" connection - a brand-new raw TCP
   connection `g_pSessionManager::Init()` (FUN_00ad71a0 @ 0x00ad71a0) opens
   during NetInit, immediately after the ticket-server handshake completes but

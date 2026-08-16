@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: client-to-server
+
   NetMatchmakingPing - client -> server keepalive over the Session Manager
   connection (port 7314). The declared opcode/size table (docs/protocol/
   session_manager_and_matchmaking.md) originally guessed opcode 0x147 via

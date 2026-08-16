@@ -6,6 +6,8 @@ meta:
   imports:
     - common/opcodes
 doc: |
+  Direction: peer-to-peer (client<->client, relayed via the current host peer; not server-terminated - see docs/protocol/net_event_dispatch_and_simple_opcodes.md and research/notes/network-topology.md)
+
   net_event_type opcode 47. 4-field, bit-packed payload with a variable-width
   target-id field (13 or 32 bits, selected by a preceding bool) - the same
   "optional compact id" idiom also seen in opcode 81 (reset_melee_history);

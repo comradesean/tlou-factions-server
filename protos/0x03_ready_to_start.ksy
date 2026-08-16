@@ -6,6 +6,8 @@ meta:
   imports:
     - common/opcodes
 doc: |
+  Direction: peer-to-peer (client<->client, relayed via the current host peer; not server-terminated - see docs/protocol/net_event_dispatch_and_simple_opcodes.md and research/notes/network-topology.md)
+
   net_event_type opcode 3. Fixed 2-field, bit-packed payload: a 12-bit player
   index followed immediately by a 1-bit ready flag (no padding).
 

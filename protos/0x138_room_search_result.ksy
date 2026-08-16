@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: server-to-client
+
   NetMatchmakingRoomSearchResult - server -> client reply to RoomSearchInfo
   (0x137), over the Session Manager connection (port 7314). One of the 11
   opcodes the client's own receive-dispatch (FUN_00ad7604) already has a

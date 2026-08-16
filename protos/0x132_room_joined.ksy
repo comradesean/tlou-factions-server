@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: server-to-client
+
   NetMatchmakingRoomJoined - server -> client reply sent over the Session
   Manager connection (port 7314) in response to RoomCreate (0x12f) and
   presumably also RoomJoin (0x130), confirming the player is now a member of

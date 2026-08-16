@@ -8,7 +8,7 @@ This is a legitimate reverse-engineering / game-preservation effort: the analysi
 
 Protocol RE is well advanced and live infrastructure is up and running — see `docs/protocol/README.md` for the current opcode/packet documentation index and `research/prior-art.md` for what's already known from outside sources.
 
-- All 115 `NetEventType` gameplay opcodes have confirmed numeric IDs and a fully mapped dispatch mechanism (`protos/common/opcodes.ksy`); 16 have fully confirmed wire schemas, most of the rest have a known object size and/or constructor ready for the next pass.
+- All 115 `NetEventType` gameplay opcodes have confirmed numeric IDs and a fully mapped dispatch mechanism (`protos/common/opcodes.ksy`); 41 have fully confirmed wire schemas, most of the rest have a known object size and/or constructor ready for the next pass.
 - The ticket-server control channel's encrypt-then-MAC cipher is fully solved (`tools/ticket_cipher.py` decrypts a real captured message and recovers a genuine Sony NP ticket).
 - All 28 `NetMatchmaking*` session-manager opcodes (auth handshake, room create/join/search) have confirmed numeric IDs and wire sizes.
 - A self-hosted RPCN fork (`backend/`) plus custom stub servers (`tools/`) now get a real RPCS3 client all the way through auth → lobby → hosting/joining a room → loading into an actual map — this is live-tested, not just statically analyzed.

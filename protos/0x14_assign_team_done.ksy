@@ -5,6 +5,8 @@ meta:
   imports:
     - common/opcodes
 doc: |
+  Direction: peer-to-peer (client<->client, relayed via the current host peer; not server-terminated - see docs/protocol/net_event_dispatch_and_simple_opcodes.md and research/notes/network-topology.md)
+
   net_event_type opcode 20. Confirmed EMPTY payload - carries no fields
   beyond the shared per-event wire envelope, same pattern as
   start_connection (opcode 0) and net_go (opcode 75).

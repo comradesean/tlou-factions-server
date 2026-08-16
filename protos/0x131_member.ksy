@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: server-to-client
+
   NetMatchmakingMember - server -> client roster broadcast over the Session
   Manager connection (port 7314), presumably sent after RoomCreate/RoomJoin
   to populate/update a room's member list. Field layout decompiled from

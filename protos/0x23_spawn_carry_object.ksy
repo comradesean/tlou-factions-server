@@ -6,6 +6,8 @@ meta:
   imports:
     - common/opcodes
 doc: |
+  Direction: peer-to-peer (client<->client, relayed via the current host peer; not server-terminated - see docs/protocol/net_event_dispatch_and_simple_opcodes.md and research/notes/network-topology.md)
+
   net_event_type opcode 35. 2-field payload, both 32-bit.
 
   STATUS: confirmed structurally, high confidence on type/width; semantics

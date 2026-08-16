@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: client-to-server
+
   NetMatchmakingRoomCreate - sent by the client over the Session Manager
   connection (port 7314) when the player chooses to host a game, right after
   the NET_SM_READY_UP/NET_SM_CREATE_GAME_WAIT lobby-flow state transition

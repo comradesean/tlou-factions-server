@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: server-to-client
+
   Server's reply to the 88-byte ticket_server_hello message, on the same TCP
   connection. Fixed size, 8 bytes.
 

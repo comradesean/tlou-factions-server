@@ -6,6 +6,8 @@ meta:
   imports:
     - common/opcodes
 doc: |
+  Direction: peer-to-peer (client<->client, relayed via the current host peer; not server-terminated - see docs/protocol/net_event_dispatch_and_simple_opcodes.md and research/notes/network-topology.md)
+
   net_event_type opcode 81. 2-field, bit-packed payload using the same
   "optional compact id" idiom as opcode 47 (revive): a bool selects whether
   the following id is 13 or 32 bits wide.

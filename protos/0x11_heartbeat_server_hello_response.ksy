@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: server-to-client
+
   Server's reply to heartbeat_server_hello, on the same connection. Fixed
   size, 8 bytes - byte-for-byte identical layout to
   ticket_server_hello_response.ksy, same shared validating function

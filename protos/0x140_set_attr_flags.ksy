@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: client-to-server
+
   NetMatchmakingSetAttrFlags - sent by the client over the Session Manager
   connection (port 7314). Live-captured for the first time 2026-08-15,
   only reachable once a room survives long enough to actually load into a

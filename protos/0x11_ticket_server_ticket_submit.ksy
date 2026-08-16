@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: client-to-server
+
   Second client->server message on the SAME ticket-server TCP connection,
   sent immediately after a valid ticket_server_hello_response is received (no
   reconnect). Carries the raw NP ticket RPCN already issued via

@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: client-to-server
+
   NetMatchmaking find-match search broadcast, sent by the client repeatedly
   (~5s cadence, same as Ping) while sitting in the "Find Match" screen -
   correlates with the client's *own* matchmaking-search state, not a

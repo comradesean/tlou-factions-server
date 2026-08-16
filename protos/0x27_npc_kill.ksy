@@ -6,6 +6,8 @@ meta:
   imports:
     - common/opcodes
 doc: |
+  Direction: peer-to-peer (client<->client, relayed via the current host peer; not server-terminated - see docs/protocol/net_event_dispatch_and_simple_opcodes.md and research/notes/network-topology.md)
+
   net_event_type opcode 39. 2-field payload: a full 32-bit npc id (read via
   the generic ReadBits(32) form rather than one of the dedicated Read32
   call sites) and a second 32-bit field.

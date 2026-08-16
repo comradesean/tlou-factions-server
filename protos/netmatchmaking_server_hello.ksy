@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: server-to-client
+
   Server's reply to netmatchmaking_client_hello, on the same new TCP
   connection (see that schema's doc for the connection setup). Fixed size,
   0x10 (16) bytes. This is the recv() call that fails live with errno=9

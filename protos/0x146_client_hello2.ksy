@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: client-to-server
+
   NetMatchmakingClientHello2 - client -> server, sent once over the Session
   Manager connection (port 7314) right after the initial ClientHello/
   ServerHello exchange, as part of Init()'s startup sequence. The declared

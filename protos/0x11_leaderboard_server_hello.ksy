@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: client-to-server
+
   First message the client sends after connecting to the "leaderboard-server"
   backend, on the same raw-TCP opcode-0x11 control channel as ticket-server.
   Fixed size, 0x58 (88) bytes - byte-for-byte identical layout to

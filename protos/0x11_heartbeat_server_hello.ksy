@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: client-to-server
+
   First message the client sends after connecting to the "heartbeat-server"
   backend, on the same raw-TCP opcode-0x11 control channel as ticket-server
   (see docs/protocol/0x11_ticket_server_hello.md). Fixed size, 0x58 (88)

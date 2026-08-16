@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: client-to-server
+
   NetMatchmakingRoomSearchInfo - sent unprompted by the client after
   Member/RoomJoined, over the Session Manager connection (port 7314).
 

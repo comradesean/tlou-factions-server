@@ -6,6 +6,8 @@ meta:
   imports:
     - common/opcodes
 doc: |
+  Direction: peer-to-peer (client<->client, relayed via the current host peer; not server-terminated - see docs/protocol/net_event_dispatch_and_simple_opcodes.md and research/notes/network-topology.md)
+
   net_event_type opcode 61. 3-field payload, structurally identical to
   opcode 21 (request_interact) and confirming its field-role hypothesis:
   player id, an interact-slot value, and a target id.

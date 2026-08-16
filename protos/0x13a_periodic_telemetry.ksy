@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: client-to-server
+
   Provisionally named - real purpose still UNCONFIRMED. Wire opcode 0x13a,
   80 bytes, client -> server, fire-and-forget over the Session Manager
   connection (port 7314).

@@ -3,6 +3,8 @@ meta:
   endian: be
   license: CC0-1.0
 doc: |
+  Direction: client-to-server
+
   NetMatchmakingMemberSetData - client -> server, over the Session Manager
   connection (port 7314). Not one of the 11 opcodes the client's own
   receive-dispatch has a case for (client-to-server only).
