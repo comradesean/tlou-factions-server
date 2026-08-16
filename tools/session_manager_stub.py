@@ -158,6 +158,17 @@ waiting_player = None
 rooms_lock = threading.Lock()
 active_rooms = {}
 
+# Per-member data blob cache (2026-08-17). Each client pushes its own 32-byte
+# member blob via 0x13a (SetPartyData) - the blob carries the values the
+# lobby UI reads for a REMOTE player: title/rank stats and the 4 loadout ids
+# (getter FUN_00ad2650 hands member_slot+0xFC to the UI only if its length is
+# exactly 32). We cache the latest per (room_id, member_id) so we can both
+# relay live updates (0x13b) AND seed it into the Member roster for anyone
+# who joins later (0x131 entry offset 39=len, 40..=blob). Guarded by
+# rooms_lock. See research/notes/2026-08-17-member-data-blob-rank-and-0x142-
+# hostrank.md.
+member_blobs = {}   # (room_id_bytes, member_id) -> bytes (exactly 32)
+
 
 def build_room_joined(npid, name, room_id, id_gate=0, map_id=b"\x00\x00\x00\x00"):
     """Build a guessed NetMatchmakingRoomJoined (opcode 0x132) reply to a
@@ -290,7 +301,7 @@ JOINER_MEMBER_ID = 2
 
 
 def build_member(members, room_id, max_players, owner_ref_id, local_ref_id, team=None,
-                 room_ptr=ROOM_PTR, populate_self_npid=False):
+                 room_ptr=ROOM_PTR, populate_self_npid=False, blobs=None):
     """Build a NetMatchmakingMember (opcode 0x131) room-roster broadcast.
 
     Field layout from docs/protocol/0x131_member.md / protos/0x131_member.ksy
@@ -461,8 +472,18 @@ def build_member(members, room_id, max_players, owner_ref_id, local_ref_id, team
         if team is not None:
             struct.pack_into(">H", entry, 16, team)
         struct.pack_into(">H", entry, 36, member_id)
-        npid_field = npid[:64]
-        entry[40:40 + len(npid_field)] = npid_field
+        # CORRECTED 2026-08-17 (member-blob rank note): entry[39] is the
+        # per-member DATA-BLOB length and entry[40:] is the blob - the Member
+        # dispatch (0xad79b8/0xad79c8 -> FUN_00ad33d8) memcpys entry[40:40+len]
+        # into member_slot+0xFC, which the rank/loadout UI getter FUN_00ad2650
+        # returns ONLY if the length is exactly 32. It was never a name buffer
+        # (the member's display name comes from the NpId at entry[0:16]).
+        # Seeding the blob here makes a late-joiner see incumbents' ranks
+        # immediately; live 0x13a->0x13b relays keep it current after.
+        blob = (blobs or {}).get(member_id)
+        if blob:
+            entry[39] = len(blob) & 0xff
+            entry[40:40 + len(blob)] = blob[:64]
         entries += entry
 
     return bytes(header) + bytes(entries)
@@ -919,6 +940,21 @@ def handle(conn, addr, log_lock, log):
                                      f"2-member roster + OwnerMember(1)")
                     except OSError as e:
                         emit(f"   [join] host push failed: {e}")
+                    # Replay any already-cached member blobs both ways so the
+                    # late joiner sees incumbents' rank/loadout immediately and
+                    # vice versa (0x13b must follow Member - same rule as 0x13f).
+                    with rooms_lock:
+                        cached = {mid: blob for (rid, mid), blob
+                                  in member_blobs.items() if rid == target_room_id}
+                    for mid, blob in cached.items():
+                        b = build_member_blob(mid, target_room_id, blob)
+                        try:
+                            if mid != JOINER_MEMBER_ID:
+                                conn.sendall(b)          # incumbent -> newcomer
+                            if mid != MEMBER_ID:
+                                host["conn"].sendall(b)  # newcomer -> incumbent
+                        except OSError:
+                            pass
                     with rooms_lock:
                         host["conns"][id(conn)] = (JOINER_MEMBER_ID, conn, emit)
                         host["members"] = [host_entry, joiner_entry]
@@ -1088,19 +1124,32 @@ def handle(conn, addr, log_lock, log):
                          f"registered room (or short packet, {len(chunk)}b), "
                          f"no relay")
                 else:
-                    blob = build_member_blob(sender_member_id, entry["room_id"],
-                                             chunk[16:80])
+                    # CORRECTED 2026-08-17: the client's own declared blob
+                    # length is the byte at wire offset 4 (live-constant 0x20
+                    # = 32). Forwarding the old fixed chunk[16:80] (64 bytes)
+                    # made every relay fail FUN_00ad2650's `length == 32` gate
+                    # - the whole feature silently no-op'd. Use the real
+                    # length so member_slot+0xF8 == 32 and the UI accepts it.
+                    blob_len = chunk[4]
+                    payload = chunk[16:16 + blob_len]
+                    with rooms_lock:
+                        member_blobs[(entry["room_id"], sender_member_id)] = payload
+                    blob = build_member_blob(sender_member_id, entry["room_id"], payload)
                     sent = 0
                     for mid, c, em in targets:
+                        # Don't echo a member's blob back to itself - the local
+                        # read path uses room_obj+0x19FC, not the member slot.
+                        if mid == sender_member_id:
+                            continue
                         try:
                             c.sendall(blob)
                             sent += 1
                         except OSError:
                             pass
                     emit(f"   parsed opcode={opcode:#x} (SetPartyData from "
-                         f"member_id={sender_member_id}) - relayed as 0x13b "
-                         f"blob (64b) to {sent} member connection(s) of room "
-                         f"{entry['room_id'].hex()}")
+                         f"member_id={sender_member_id}, len={blob_len}) - "
+                         f"cached + relayed as 0x13b blob to {sent} other "
+                         f"member connection(s) of room {entry['room_id'].hex()}")
             elif opcode == ROOM_SEARCH_INFO_OPCODE and len(chunk) >= 16:
                 # Echo the room_id straight back at the same wire offset (8),
                 # matching the general "echo the client's own correlation
