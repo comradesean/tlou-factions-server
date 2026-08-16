@@ -39,7 +39,7 @@ seq:
     doc: "Offset 7:8. Not read by the traced portion of the 0x13b dispatch case - unconfirmed."
   - id: room_id
     type: u8
-    doc: "Offset 8:16. Compared against the session's own tracked room id - same room_id-echo pattern used throughout this opcode family."
+    doc: "Offset 8:16. Compared against `*(s64*)(room_obj+0x10)` for each of the connection's 4 room slots (slot i's room-object pointer is at `this + i*0x9000 + 0x50`; verified by raw disasm this pass, the `addis r11,r11,1 / addi r11,r11,-28672` idiom is a 0x9000 stride). Silently dropped if no slot matches - and room_obj+0x10 is set ONLY by Member's (0x131) handler, so this message must follow a Member. Same room_id-echo pattern used throughout this opcode family."
   - id: blob
     size: 64
     doc: "Offset 16:80. Copied (blob_length bytes of it) into the matched member's struct at +0xfc. Semantics unconfirmed - the packet is always 80 bytes regardless of blob_length, so bytes past blob_length within this region go unused by the traced code path."

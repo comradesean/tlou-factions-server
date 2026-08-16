@@ -152,6 +152,34 @@ confirmed.
 Full 28-entry table (now with a per-opcode Direction column), evidence, and
 the live-capture root-cause trail: `docs/protocol/session_manager_and_matchmaking.md`.
 
+**2026-08-16 audit — read the correction banner at the top of that doc before
+using the table.** A full instruction-level pass over the receive-dispatch
+(`FUN_00ad7604`) and every sender it pairs with produced five corrections and one
+headline gap; full evidence in
+`research/notes/2026-08-16-sessmgr-dispatch-audit-and-unsent-opcodes.md`:
+
+- The dispatch chain is **exactly 11 cases and exhaustive** (no jump table, no
+  second dispatcher), and its **default branch returns without advancing the
+  receive cursor** — so any opcode outside those 11 permanently wedges the
+  SessionManager connection.
+- The declared name/size table has **two phantom entries** (indices 22-23);
+  everything from index 24 on is shifted by two, making **`0x143` =
+  `SetRoomName`** and **`0x144` = `UpdatedRoomName`** (the payload is a
+  NUL-terminated room-name string `strcpy`'d into `room_obj+0x18`, not a
+  128-byte "host rank" table), and explaining the previously-unexplained
+  `Ping`=`0x145` / `ClientHello2`=`0x146` corrections as the same single shift.
+- `RoomCreate` (`0x12f`) has **no `create_id`** (offset 4 is uninitialised
+  stack), its offset **8 is the client's own room-object pointer** (which
+  retires the "room_ptr hazard" — no debugger needed any more), and
+  **max_players lives at 0x24, not 0x1e**.
+- `0x140`/`0x141` carry a **u16 at offset 4**, not a 4-byte bitmask; offset 6 is
+  uninitialised stack, which fully explains the phantom "packed settings"
+  bitmask.
+- **`0x13f`/OwnerChanged is a real server→client message the stub has never
+  sent**, and `RoomCreate`'s own sender clears the `room_obj+0x19f4` "I am the
+  host" flag it is the only writer of — so a solo-hosting client currently never
+  learns it is the host. Ranked first in that note's unsent-opcode list.
+
 ## RPCN/PSN `CommandType`/`NotificationType` family (fourth family, source-derived not decompiled)
 
 Not reverse-engineered from `EBOOT.elf` like the other three - this is

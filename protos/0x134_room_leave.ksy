@@ -31,7 +31,7 @@ seq:
     doc: "Offset 4:8. Not read by the traced portion of the 0x134 dispatch case - unconfirmed."
   - id: room_id
     type: u8
-    doc: "Offset 8:16. Compared against the session's own tracked room id (*(longlong*)(param_1+0x24060)) to find the matching room slot - same room_id-echo pattern used throughout this opcode family."
+    doc: "Offset 8:16. Compared against `*(s64*)(room_obj+0x10)` for each of the connection's 4 room slots (slot i's room-object pointer is at `this + i*0x9000 + 0x50`; verified by raw disasm this pass, the `addis r11,r11,1 / addi r11,r11,-28672` idiom is a 0x9000 stride). Silently dropped if no slot matches - and room_obj+0x10 is set ONLY by Member's (0x131) handler, so this message must follow a Member. Same room_id-echo pattern used throughout this opcode family."
   - id: member_id
     type: u2
     doc: "Offset 16:18. Passed directly to the member-lookup helper (_opd_FUN_00ad0d4c) to find the member being removed."
