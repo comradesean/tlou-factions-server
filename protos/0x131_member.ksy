@@ -14,10 +14,14 @@ doc: |
 
   STATUS: variable-length total size (0xa0 header + 0x68 per roster entry)
   and the header/entry field offsets below are confirmed mechanically from
-  the decompile's own byte-swap helper (_opd_FUN_00ad6e34, which touches
-  exactly these offsets) and buffer-size-check arithmetic. The per-entry
-  "attribute" block and the header's offset-4 field are unconfirmed, same
-  caveat as RoomJoined's equivalent regions.
+  the decompile's own field-touching helper (_opd_FUN_00ad6e34, which
+  touches exactly these offsets) and buffer-size-check arithmetic. That
+  helper was previously described as a byte-swap - now decompiled and
+  confirmed to be composed entirely of calls to the no-op FUN_00a0e324/
+  FUN_00a0e320 (research/notes/2026-08-15-byteswap-helper-is-a-noop.md), so
+  every field it touches is plain big-endian, not runtime-swapped. The
+  per-entry "attribute" block and the header's offset-4 field are
+  unconfirmed, same caveat as RoomJoined's equivalent regions.
 
   DANGER - NOT IMPLEMENTED IN tools/session_manager_stub.py THIS PASS: the
   header's offset 8 (room_ptr field, see below) is read straight off the
@@ -49,7 +53,7 @@ seq:
     doc: "Fixed 0x131 (305 decimal)."
   - id: unknown_field
     type: u4
-    doc: "Offset 4. Byte-swapped by _opd_FUN_00ad6e34 but not read anywhere in the traced 0x131 case body. Unconfirmed."
+    doc: "Offset 4. Touched (not swapped - see doc-level note) by _opd_FUN_00ad6e34 but not read anywhere in the traced 0x131 case body. Unconfirmed."
   - id: room_ptr
     type: u4
     doc: "Offset 8. DANGEROUS - see doc-level warning above. Read as a raw client-side object pointer and immediately dereferenced through its own vtable with no validity check. Do not guess this value; requires a live debugger read of the client's own room-slot address for the specific test session."
@@ -70,7 +74,7 @@ seq:
     doc: "Offset 26. Number of member_entry records that follow the 160-byte header. Confirmed - directly used as the dispatch loop's own iteration bound and as the multiplier in the message's total-size check (`0x68 * roster_count + 0xa0`)."
   - id: unknown_field2
     type: u2
-    doc: "Offset 28. Byte-swapped by _opd_FUN_00ad6e34 but not read in the traced case body. Unconfirmed."
+    doc: "Offset 28. Touched (not swapped - see doc-level note) by _opd_FUN_00ad6e34 but not read in the traced case body. Unconfirmed."
   - id: header_padding
     size: 130
     doc: "Offset 30-159. Not read by the traced code at all in this pass - padding to reach the confirmed 160-byte (0xa0) header size implied by the buffer-size-check arithmetic. Send zero."

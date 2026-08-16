@@ -97,7 +97,7 @@ confirmed.
 |---|---|---|---|---|
 | 0 | `NetMatchmakingClientHello` | 0x12d | 48 | `protos/netmatchmaking_client_hello.ksy` |
 | 1 | `NetMatchmakingServerHello` | 0x12e | 16 | `protos/netmatchmaking_server_hello.ksy` |
-| 2-27 | `NetMatchmakingRoomCreate` ... `NetMatchmakingClientHello2` | 0x12f-0x148 | see doc | opcode ID + size confirmed, full field-level `.ksy` not yet written (11 of 26 already have their receive-handler decompiled - see doc) |
+| 2-27 | `NetMatchmakingRoomCreate` ... `NetMatchmakingClientHello2` | 0x12f-0x148 | see doc | **All 26 have opcode ID + size confirmed AND a full field-level `.ksy`** as of 2026-08-15 - the 11 with a decompiled receive-handler, plus the 5 client-to-server-only opcodes (`RoomJoin`/0x130, `MemberSetData`/0x13c, `Promote`/0x13e, `SetRoomFlags`/0x142, `UpdatedRoomFlags`/0x143) found by extending the vtable dump and disassembling their senders at the instruction level, plus the rest from earlier live/decompile work. Remaining open work is depth, not coverage: several payloads have unconfirmed internal sub-field layouts (see doc) |
 
 Full 28-entry table, evidence, and the live-capture root-cause trail:
 `docs/protocol/session_manager_and_matchmaking.md`.

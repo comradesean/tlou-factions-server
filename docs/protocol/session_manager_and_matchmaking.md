@@ -245,27 +245,27 @@ used below; the two matched exactly wherever compared).
 | 0 | 0x12d | 301 | `NetMatchmakingClientHello` | 48 |
 | 1 | 0x12e | 302 | `NetMatchmakingServerHello` | 16 |
 | 2 | 0x12f | 303 | `NetMatchmakingRoomCreate` | 232 |
-| 3 | 0x130 | 304 | `NetMatchmakingRoomJoin` | 88 |
+| 3 | 0x130 | 304 | `NetMatchmakingRoomJoin` — **sender disassembled 2026-08-15** (`FUN_00ad6718`, vtable+0x18): confirmed 88 bytes. Offset 8 is NOT this family's usual 8-byte room_id - it's a raw 4-byte copy of the client's own in-process room-object pointer (an opaque local correlation value, not wire-meaningful). Offset 12 is a 1-byte room-object field; offset 16 is a raw 8-byte copy of the caller's 3rd argument (source untraced); offset 24-87 is a verbatim 64-byte copy of the room object's own bytes 0x0-0x3f. `.ksy`: `protos/0x130_room_join.ksy` | 88 |
 | 4 | 0x131 | 305 | `NetMatchmakingMember` | 104 |
 | 5 | 0x132 | 306 | `NetMatchmakingRoomJoined` | 160 |
 | 6 | 0x133 | 307 | ~~`NetMatchmakingMemberJoined`~~ **CONFIRMED WRONG NAME — real behavior is room abandon/teardown**: fires when the client gives up on and tears down a room it's tracking, walking every member slot through the same removal path `RoomLeave` uses; not a join event. Fire-and-forget, no reply expected (a same-opcode echo was tried live, zero effect). See `research/notes/2026-08-15-room-teardown-and-flag-chain.md`. `.ksy`: `protos/0x133_room_leaving.ksy` | 120 (declared) / 16 (actual, live-confirmed) |
-| 7 | 0x134 | 308 | `NetMatchmakingRoomLeave` | 16 |
+| 7 | 0x134 | 308 | `NetMatchmakingRoomLeave` — **decompiled 2026-08-15**: declared 16 bytes CONFIRMED WRONG, dispatch case consumes exactly 24. Looks up one member by id (offset 16) via the same `_opd_FUN_00ad0d4c` helper and removes them via `_opd_FUN_00ad3190` - the same per-member removal path 0x133's room-abandon uses, but targeting a single member rather than the whole room. Name fits. `.ksy`: `protos/0x134_room_leave.ksy` | 16 (declared) / 24 (actual, decompile-confirmed) |
 | 8 | 0x135 | 309 | `NetMatchmakingRoomLeft` (declared) — **live-tested 2026-08-15**: two real clients both sitting in Find Match each broadcast this opcode unprompted every ~5s (same cadence as `Ping`), actual size 36 bytes not the declared 24, payload carries a locale field (`"us"`), a repeated `0x03e8` pair, and a small mode-shaped field — shaped like a periodic find-match search-criteria advertisement/heartbeat, not a one-off "I left a room" event. Treated as the find-match broadcast trigger in `tools/session_manager_stub.py` (`FIND_MATCH_OPCODE`) until proven otherwise; the stub pairs the first two distinct searchers it sees and pushes both a real 2-member `Member`+`RoomJoined`. `.ksy`: `protos/0x135_find_match.ksy` | 24 (declared) / 36 (actual, live-confirmed) |
-| 9 | 0x136 | 310 | `NetMatchmakingRoomSearch` | 36 |
+| 9 | 0x136 | 310 | `NetMatchmakingRoomSearch` — **decompiled 2026-08-15**: declared fixed 36 bytes CONFIRMED WRONG, this is a variable-length message (16-byte header + `num_entries` × 56-byte entries, count at offset 12). Per-entry field layout not reversed (nontrivial byte-reordering shuffle). The offset-8 field also doesn't fit this family's usual room_id-echo pattern - read and used as a raw pointer rather than compared, unresolved without a live capture. `.ksy`: `protos/0x136_room_search.ksy` | 36 (declared, fixed) / 16 + `num_entries`×56 (actual, decompile-confirmed) |
 | 10 | 0x137 | 311 | `NetMatchmakingRoomSearchInfo` — **live-tested 2026-08-15**: client sends this unprompted after `Member`/`RoomJoined`; actual size 16 bytes not the declared 56, tail 8 bytes exactly match the room_id assigned via `Member`. The stub echoes that room_id back as `RoomSearchResult` (0x138), but a room_id-echo reply was tried live and had zero effect on the "Searching for Optimal Game"/"Starting Game" hang — `0x133`'s room-abandon (row 6 above) is the more likely actual cause of that hang, not a missing reply here. `.ksy`: `protos/0x137_room_search_info.ksy` | 56 (declared) / 16 (actual, live-confirmed) |
 | 11 | 0x138 | 312 | `NetMatchmakingRoomSearchResult` — IS one of the 11 opcodes the client's own receive-dispatch (`FUN_00ad7604`) has a case for; its handler searches a 4-slot local array by an 8-byte key at wire offset 8, matching the room_id-echo shape the stub sends. `.ksy`: `protos/0x138_room_search_result.ksy` | 16 |
-| 12 | 0x139 | 313 | `NetMatchmakingKickout` | 16 |
+| 12 | 0x139 | 313 | `NetMatchmakingKickout` — **decompiled 2026-08-15**: confirmed 16 bytes, matching declared size. Room lookup by room_id (offset 8), then calls the room's vtable+0x2c callback, zeroes the room's own id fields, and runs the same full room-teardown (`_opd_FUN_00ad32c4`) 0x133's abandon path uses. Name fits ("you're kicked, tear down"). `.ksy`: `protos/0x139_kickout.ksy` | 16 |
 | 13 | 0x13a | 314 | `NetMatchmakingKickedout` (declared) — **CONFIRMED WRONG, real purpose still unnamed but is NOT party/kick-related**: originally nicknamed "CreateParty" after appearing to correlate with the in-game party-invite action, but a live breakpoint trace of the actual sender (`_opd_FUN_00ad6148`, called from `0x003B17CC`/`0x003B17E0`) proved it fires on a periodic UI-transition tick from the main menu onward, independent of party or room state — the caller's own register context holds a literal Google Analytics beacon URL string (`"GET /__utm.gif?..."`). This is periodic analytics telemetry, not party creation or a kick notice; the original correlation was timing coincidence. Fire-and-forget, no reply behavior ever demonstrated to matter. See `research/notes/2026-08-15-createparty-trace.md`. `.ksy`: `protos/0x13a_periodic_telemetry.ksy` | 16 |
-| 14 | 0x13b | 315 | `NetMatchmakingRoomDestroyed` | 16 |
-| 15 | 0x13c | 316 | `NetMatchmakingMemberSetData` | 80 |
-| 16 | 0x13d | 317 | `NetMatchmakingMemberUpdatedData` | 80 |
-| 17 | 0x13e | 318 | `NetMatchmakingPromote` | 16 |
-| 18 | 0x13f | 319 | `NetMatchmakingOwnerChanged` | 16 |
+| 14 | 0x13b | 315 | ~~`NetMatchmakingRoomDestroyed`~~ **NAME QUESTIONABLE, decompiled 2026-08-15**: declared 16 bytes CONFIRMED WRONG, dispatch case consumes exactly 80. Looks up ONE member by id (offset 4, via the same `_opd_FUN_00ad0d4c` helper 0x134/RoomLeave uses), then stashes a length-prefixed blob (length byte at offset 6, payload at offset 16+) onto that member's own struct - per-member data delivery, not room-wide destruction. No confirmed alternate name. `.ksy`: `protos/0x13b_room_destroyed.ksy` | 16 (declared) / 80 (actual, decompile-confirmed) |
+| 15 | 0x13c | 316 | ~~`NetMatchmakingMemberSetData`~~ **declared size CONFIRMED WRONG, sender disassembled 2026-08-15** (`FUN_00ad6408`, vtable+0x28): confirmed 16 bytes, not 80. Sends a caller-supplied u16 "value" (offset 4) plus the room's own room_id (offset 8, raw/unswapped) - no per-member id anywhere in this payload, so despite the declared name this is room-scoped, not member-scoped (same class of naming mismatch as 0x13b/0x13d). `.ksy`: `protos/0x13c_member_set_data.ksy` | 80 (declared) / 16 (actual, disassembly-confirmed) |
+| 16 | 0x13d | 317 | ~~`NetMatchmakingMemberUpdatedData`~~ **NAME QUESTIONABLE, decompiled 2026-08-15**: declared 80 bytes CONFIRMED WRONG, dispatch case consumes exactly 16. Room lookup here matches by ROOM id (not via the member-lookup helper), and the one payload field (offset 4) is written into the matched ROOM struct at +0x19f0 - four bytes before 0x13f/OwnerChanged's +0x19f4 flag. Looks like a room-level attribute next to ownership state, not a per-member update. No confirmed alternate name. `.ksy`: `protos/0x13d_member_updated_data.ksy` | 80 (declared) / 16 (actual, decompile-confirmed) |
+| 17 | 0x13e | 318 | `NetMatchmakingPromote` — **two senders disassembled 2026-08-15** (`FUN_00ad6a34`/vtable+0x20, `FUN_00ad7024`/vtable+0x34): confirmed 16 bytes, matching declared size, from both call sites. A flag byte (offset 4, promote/demote-shaped) and a fixed per-call-site tag byte (offset 5: 3 vs. 4) precede the usual room_id (offset 8). `FUN_00ad6a34`'s variant also toggles the room's own +0x19f4 "is owner" flag (the same flag 0x13f/OwnerChanged sets) locally before sending. Name fits. `.ksy`: `protos/0x13e_promote.ksy` | 16 |
+| 18 | 0x13f | 319 | `NetMatchmakingOwnerChanged` — **decompiled 2026-08-15**: confirmed 16 bytes, matching declared size. Room lookup by room_id (offset 8), writes the low bit of offset-4's byte into the matched room's +0x19f4 "is owner" flag - the same flag already referenced by this doc's own dispatch-table cross-check further below. Name and behavior agree cleanly. `.ksy`: `protos/0x13f_owner_changed.ksy` | 16 |
 | 19 | 0x140 | 320 | `NetMatchmakingSetAttrFlags` — **live-captured 2026-08-15 for the first time this whole project**, only reachable once a room survives long enough to actually load into a match. Arrived matching the declared 16 bytes: opcode(4) + a 4-byte flags value + echoed room_id(8) (e.g. `00 01 2f 78` observed as the flags). The stub now replies with `UpdatedAttrFlags` (0x141) echoing the flags value and room_id straight back, matching the room_id-echo pattern already used for `RoomSearchInfo`/`RoomSearchResult` — implemented but not yet confirmed to unblock anything downstream. `.ksy`: `protos/0x140_set_attr_flags.ksy` | 16 |
 | 20 | 0x141 | 321 | `NetMatchmakingUpdatedAttrFlags` — IS one of the 11 opcodes the client's own receive-dispatch already has a case for (unlike 0x140/0x142/0x143) — a classic "client sets X, server confirms updated X" pair; see row 19. `.ksy`: `protos/0x141_updated_attr_flags.ksy` | 16 |
-| 21 | 0x142 | 322 | `NetMatchmakingSetRoomFlags` | 16 |
-| 22 | 0x143 | 323 | `NetMatchmakingUpdatedRoomFlags` | 16 |
-| 23 | 0x144 | 324 | `NetMatchmakingHostRank` | 16 |
+| 21 | 0x142 | 322 | ~~`NetMatchmakingSetRoomFlags`~~ **declared fixed size CONFIRMED WRONG, sender disassembled 2026-08-15** (`FUN_00ad5ffc`, vtable+0x38): variable-length, a 16-byte header (opcode, a u16 `num_entries` at offset 4, room_id at offset 8) plus `num_entries*2` bytes of raw caller-supplied payload, copied via a plain memcpy-shaped helper. Per-entry semantics unconfirmed. `.ksy`: `protos/0x142_set_room_flags.ksy` | 16 (declared, fixed) / 16 + `num_entries`×2 (actual, disassembly-confirmed) |
+| 22 | 0x143 | 323 | ~~`NetMatchmakingUpdatedRoomFlags`~~ **declared size CONFIRMED WRONG, two senders disassembled 2026-08-15** (`FUN_00ad6f28`/vtable+0x3c, `FUN_00ad54e0`/vtable+0x40): confirmed 144 bytes, not 16. Header is opcode + room_id (offset 8); the trailing 128 bytes (offset 16-143) are a verbatim copy of the room object's own +0x18 region - the SAME region 0x144/HostRank writes into on receipt, suggesting these two opcodes are a matched send/receive pair for the same rank/host-priority table, not independent boolean "room flags". Despite the declared name implying a server->client confirmation, this is client->server. `.ksy`: `protos/0x143_updated_room_flags.ksy` | 16 (declared) / 144 (actual, disassembly-confirmed) |
+| 23 | 0x144 | 324 | `NetMatchmakingHostRank` — **decompiled 2026-08-15**: declared 16 bytes CONFIRMED WRONG, dispatch case consumes exactly 144. Room lookup by room_id (offset 8), then copies a 128-byte block (offset 16 onward) into the matched room's struct at +0x18 - internal layout not reversed, but declared name is plausible for a 128-byte per-member rank/host-priority table. `.ksy`: `protos/0x144_host_rank.ksy` | 16 (declared) / 144 (actual, decompile-confirmed) |
 | 24 | 0x145 | 325 | ~~`NetMatchmakingSetRoomName`~~ **wire opcode reassigned**: this table index's declared opcode (`0x145`) is not used by SetRoomName on the wire — it's the real, live-confirmed opcode for `Ping` (see the 2026-08-14 correction above and row 26). `.ksy`: `protos/0x145_ping.ksy` documents the wire-confirmed version — a bare 4-byte opcode-only fire-and-forget keepalive, client-side-timer-driven, no reply sent (`tools/session_manager_stub.py`) | 144 (declared, unused) / 4 (actual `Ping`, live-confirmed) |
 | 25 | 0x146 | 326 | ~~`NetMatchmakingUpdatedRoomName`~~ **wire opcode reassigned**: this table index's declared opcode (`0x146`) is not used by UpdatedRoomName on the wire — it's the real, live-confirmed opcode for `ClientHello2` (see the 2026-08-14 correction above and row 27). `.ksy`: `protos/0x146_client_hello2.ksy` documents the wire-confirmed version — an 8-byte message, fire-and-forget (`Init()` sends it and moves on without waiting for a reply) | 144 (declared, unused) / 8 (actual `ClientHello2`, live-confirmed) |
 | 26 | 0x147 | 327 | `NetMatchmakingPing` (declared) — declared opcode doesn't match the wire; the real `Ping` opcode is `0x145` (row 24), confirmed via live capture | 4 |
@@ -337,8 +337,8 @@ stw r5,0xb8(r1)    ; offset 32
 stw r4,0xbc(r1)    ; offset 36
 stw r29,0xc0(r1)   ; offset 40
 stw r25,0x9c(r1)   ; offset 4  (r25's own load site not in this excerpt)
-bl 0x00a0e324 ; r3 = byteswap(0x12d) -> re-store to offset 0
-bl 0x00a0e324 ; r3 = byteswap(r25's value) -> re-store to offset 4
+bl 0x00a0e324 ; r3 = FUN_00a0e324(0x12d) -> re-store to offset 0 (confirmed no-op, see byte-order note below - r3 comes back unchanged)
+bl 0x00a0e324 ; r3 = FUN_00a0e324(r25's value) -> re-store to offset 4 (same no-op)
 ```
 
 `r31 == param_1` (this function's own `this`, confirmed at function entry:
@@ -365,23 +365,27 @@ literally the game's own already-solved NpId plumbing.
 
 | offset | size | field | confidence |
 |---|---|---|---|
-| 0 | 4 | `opcode` = `0x12d` (301), byte-order-flipped via `FUN_00a0e324` before the final store | high (literal + explicit store) |
-| 4 | 4 | `local_field` - some other `Init()`-local u32, also byte-swapped; source not traced this pass | unconfirmed |
+| 0 | 4 | `opcode` = `0x12d` (301), passed through `FUN_00a0e324` before the final store | high (literal + explicit store) |
+| 4 | 4 | `local_field` - some other `Init()`-local u32, also passed through `FUN_00a0e324`; source not traced this pass | unconfirmed |
 | 8-43 | 36 | `np_id` - verbatim copy of this object's own NpId-derived fields (see above) | high (structural - same fields as the already-solved NpId copy in `FUN_003557a8`); Sony's internal `SceNpId` sub-field layout not independently re-derived here |
 | 44-47 | 4 | not captured in this pass's disassembly window | unconfirmed |
 
-**Byte order caveat**: `FUN_00a0e324` visibly byte-swaps at least the `opcode`
-and offset-4 fields before the final store - this project's other `.ksy` files
-use `endian: be` throughout (matching PPC's native byte order and every other
-protocol mapped so far), but this specific family may genuinely put some fields
-on the wire in the opposite order. Not resolved without a live capture of a real
-ClientHello to check empirically - flagged in the `.ksy` itself.
+**Byte order caveat: RESOLVED 2026-08-15, see
+`research/notes/2026-08-15-byteswap-helper-is-a-noop.md`.** `FUN_00a0e324`
+was previously assumed to byte-swap the `opcode` and offset-4 fields before
+the final store, purely from the load-call-store pattern. It's now been
+decompiled and disassembled at the instruction level: the entire function
+body is a single `blr` (unconditional return, no-op) - it never touches the
+return register at all. Every field in this message, and every other field
+in this whole opcode family processed through this function or any of its
+per-opcode wrapper helpers, is plain big-endian, matching this project's
+`endian: be` convention with no exceptions.
 
 ## `NetMatchmakingServerHello` (16 bytes) - field layout
 
 ```c
 _opd_FUN_00acbd98(iVar7, local_a8, 0x10, 1);   // recv 16 bytes into local_a8
-_opd_FUN_00ad55d8(local_a8);                    // byte-order fixup (not decompiled this pass)
+_opd_FUN_00ad55d8(local_a8);                    // previously assumed byte-order fixup; decompiled 2026-08-15 and confirmed to be composed entirely of calls to the no-op FUN_00a0e324 - does nothing, see research/notes/2026-08-15-byteswap-helper-is-a-noop.md
 if (local_a8[0] == 0x12e) {                     // offset 0: magic check
   ...
   _opd_FUN_00db5ec0(uVar3, local_a0, &local_98);  // local_a0 = offset 8, used as the counter/seed
@@ -425,9 +429,13 @@ next step). See `docs/known-keys.md` for the updated key entry.
    off" list, `tools/ticket_server_stub.py` and the other live-testing files
    were explicitly not touched this pass - this is a note for whoever picks up
    the implementation work next, not a change made here.)
-2. **Decompile `FUN_00ad55d8`** (the ServerHello byte-order-fixup function) and
-   the remaining bytes of `ClientHello` (offsets 4 and 44-47) to fully close
-   out those two schemas.
+2. ~~Decompile `FUN_00ad55d8`~~ **DONE 2026-08-15**: `FUN_00ad55d8` (the
+   assumed ServerHello byte-order-fixup) is composed entirely of calls to
+   the no-op `FUN_00a0e324` - it does nothing; see
+   `research/notes/2026-08-15-byteswap-helper-is-a-noop.md`. Still open: the
+   remaining unread bytes of `ClientHello` (offsets 4 and 44-47) and
+   `ServerHello` (offsets 4 and 12) - unconfirmed content, not unconfirmed
+   byte order.
 3. **Determine whether post-ServerHello frames on this connection use the same
    20-byte-header encrypt-then-MAC frame as ticket-server's messages C/D**, or
    send `NetMatchmakingClientHello2`/subsequent messages some other way -
@@ -435,15 +443,47 @@ next step). See `docs/known-keys.md` for the updated key entry.
    `ClientHello2` looks like a RAW send (same low-level helper as ClientHello
    itself), not a call through the `FUN_00acb6fc` frame-builder ticket-server
    uses - worth confirming explicitly rather than assuming either way.
-4. **Full field-level payload schemas for the other 26 `NetMatchmaking*`
-   opcodes** - `FUN_00ad7604` (vtable `+0x4`) already has 11 of them
-   decompiled in `research/ghidra/sessmgr_vtable_dump.txt`
-   (`0x131/0x132/0x134/0x136/0x138/0x139/0x13b/0x13d/0x13f/0x141/0x144`); the
-   other 4 vtable slots (`+0xc/+0x10/+0x14/+0x18/+0x1c`, outbound builders) are
-   also already decompiled there. This is a large, tractable next pass -
-   prioritize `RoomCreate`/`RoomJoin`/`RoomJoined`/`Member` first since those
-   are the actual matchmaking-room-formation opcodes most directly needed for
-   a working matchmaking backend.
+4. ~~Full field-level payload schemas for the other 26 `NetMatchmaking*`
+   opcodes~~ **DONE for all 28 opcodes as of 2026-08-15.** All 11 opcodes
+   `FUN_00ad7604` (vtable `+0x4`) has decompiled receive-dispatch cases for
+   now have `.ksy` files, and so do the remaining 5 that never appear in
+   that dispatcher (`RoomJoin`/0x130, `MemberSetData`/0x13c, `Promote`/0x13e,
+   `SetRoomFlags`/0x142, `UpdatedRoomFlags`/0x143) - these turned out to be
+   client-to-server-only sends, found by extending the vtable dump from 8 to
+   24 slots (`research/ghidra/sessmgr_vtable_extended.txt` - the real
+   vtable ends at `+0x40`; slots `+0x44` onward read into unrelated memory,
+   same class of dead end as the 2026-08-15 address-probe note below) and
+   disassembling each candidate sender at the instruction level
+   (`research/ghidra/sender_disasm.txt`, `research/ghidra/room_flags_disasm.txt`)
+   to confirm exact field offsets rather than relying on size/name
+   coincidence alone. This closed out RoomCreate's/RoomSearch's/RoomJoin's
+   sibling outbound builders too and found two more size corrections
+   (0x13c: declared 80 actually 16; 0x142/0x143: both declared-wrong) plus
+   one more likely name mismatch (0x13c, room-scoped not member-scoped) and
+   one cross-opcode pairing worth a live capture to confirm (0x143's 128-byte
+   payload is the exact same room+0x18 region 0x144/HostRank populates).
+
+   Genuinely still open: only the 4 remaining non-networking vtable slots
+   this session's dump also decompiled by accident (`+0x50` onward -
+   Havok-shaped interpolation/sorting code, unrelated to this class, not
+   investigated). The internal byte-order question this item used to flag
+   is now CLOSED - see the dedicated entry immediately below.
+
+   **Byte-order question, RESOLVED 2026-08-15**: every doc in this family
+   (including this one, until now) took "`_opd_FUN_00a0e324` is the
+   per-field byteswap helper" on faith from call-pattern consistency alone,
+   without ever decompiling it. It's now been decompiled AND disassembled at
+   the instruction level, along with its sibling `_opd_FUN_00a0e320` and
+   every per-opcode wrapper helper built on top of them
+   (`_opd_FUN_00ad6e34`/Member, `_opd_FUN_00ad58c8`/RoomLeave,
+   `_opd_FUN_00ad5920`/RoomJoined, `_opd_FUN_00ad5730`/RoomSearch,
+   `_opd_FUN_00ad55d8`/ServerHello): all of them are confirmed no-ops (the
+   two base functions are each a single `blr` instruction; every wrapper is
+   composed entirely of calls to them and nothing else). **No runtime
+   byte-swapping happens anywhere in this opcode family, ever** - every
+   field is plain big-endian, exactly matching this project's `endian: be`
+   convention with no exceptions. Full evidence:
+   `research/notes/2026-08-15-byteswap-helper-is-a-noop.md`.
 5. **Resolve the service-descriptor `+0x5c` slot's exact IP/port encoding** in
    `net1.bin`'s binary layout (the way ticket-server's `+0x7c` slot was never
    directly decoded either - both were only confirmed via live capture of the

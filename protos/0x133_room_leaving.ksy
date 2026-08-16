@@ -26,4 +26,4 @@ seq:
     doc: "STATUS: confirmed garbage. Instruction-level trace (objdump) shows this 4 bytes is read from a stack slot the sending function never writes - genuinely uninitialized stack content at send time, not meaningful data. Matches live captures showing an arbitrary, non-repeating stack-address-shaped value here."
   - id: room_id
     type: u8
-    doc: "STATUS: confirmed. The room object's own +0x10 id field, read and sent (unswapped, unlike the opcode field) immediately before the client zeroes that same +0x10 field locally. Matches the room_id this server assigns via Member's header."
+    doc: "STATUS: confirmed. The room object's own +0x10 id field, read and sent immediately before the client zeroes that same +0x10 field locally. Matches the room_id this server assigns via Member's header. Sent as a raw copy with no processing call around it at all, unlike the opcode field which is passed through FUN_00a0e324 first - though that call is itself a confirmed no-op (research/notes/2026-08-15-byteswap-helper-is-a-noop.md), so both fields end up plain big-endian regardless."

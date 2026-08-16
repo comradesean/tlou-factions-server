@@ -41,22 +41,28 @@ is the owner."
 
 ## Header layout (160 bytes / 0xa0)
 
-Confirmed via `_opd_FUN_00ad6e34` (the byte-swap-in-place helper called
-before this case's own logic runs - see `research/ghidra/member_decomp.txt`)
-plus the buffer-size-check arithmetic (`0xa0 + roster_count * 0x68`,
-`research/ghidra/dispatch_raw2.txt` lines ~100-113):
+Confirmed via `_opd_FUN_00ad6e34` (a field-touching helper called before
+this case's own logic runs - see `research/ghidra/member_decomp.txt`; this
+project previously called it a byte-swap-in-place helper, but it's now
+decompiled and confirmed to be composed entirely of calls to the no-op
+`FUN_00a0e324`/`FUN_00a0e320` - see
+`research/notes/2026-08-15-byteswap-helper-is-a-noop.md` - so it marks
+exactly which offsets are real fields without actually swapping anything;
+every field below is plain big-endian) plus the buffer-size-check
+arithmetic (`0xa0 + roster_count * 0x68`, `research/ghidra/dispatch_raw2.txt`
+lines ~100-113):
 
 | offset | size | field | confidence |
 |---|---|---|---|
 | 0 | 4 | opcode = 0x131 | high |
-| 4 | 4 | unknown - swapped but unread in the traced case body | low |
+| 4 | 4 | unknown - touched by the field helper but unread in the traced case body | low |
 | 8 | 4 | **`room_ptr`** - see hazard section below | high (mechanism), none (value) |
 | 12 | 2 | `owner_ref_id` - XOR-compared against each entry's own id | high |
 | 14 | 2 | `local_ref_id` - same mechanism, marks the local player's entry | high |
 | 16 | 8 | overwrites the target room object's own id field (`room_obj+0x10`) - the SAME field `RoomJoined`'s `create_id` gate-checks against | high (mechanism) |
 | 24 | 2 | `capacity` - see "The `capacity` field" below | high (mechanism + value, live-confirmed) |
 | 26 | 2 | `roster_count` - confirmed, drives both the loop bound and the size check | high |
-| 28 | 2 | unknown - swapped but unread | low |
+| 28 | 2 | unknown - touched by the field helper but unread | low |
 | 30 | 130 | not read by the traced code at all - padding out to the confirmed 160-byte header | unconfirmed (assumed zero-safe) |
 
 ## Per-entry layout (104 bytes / 0x68, x `roster_count`)
@@ -80,7 +86,7 @@ Raw disassembly of the `0x131` case (`research/ghidra/dispatch_raw2.txt`
 lines 118-127) shows the header's offset-8 field is:
 
 ```
-lwz r24,0x8(r28)     ; r24 = wire bytes [8:12], already byte-swapped
+lwz r24,0x8(r28)     ; r24 = wire bytes [8:12], plain big-endian (the field helper touches this offset but is a confirmed no-op)
 rldicl r29,r24,0x0,0x20
 or r3,r29,r29
 lwz r9,0x0(r29)      ; r9 = *(r29+0)          <- vtable pointer of the OBJECT AT r29
@@ -140,8 +146,10 @@ max-player count, which is the obvious source of truth for a room-object
 
 ## Confidence
 
-Header/entry offsets: high (mechanically confirmed via the byte-swap helper
-and size-check arithmetic touching exactly these locations). `room_ptr` and
+Header/entry offsets: high (mechanically confirmed via the field-touching
+helper - a confirmed no-op, not a byte-swap, see
+`research/notes/2026-08-15-byteswap-helper-is-a-noop.md` - and size-check
+arithmetic touching exactly these locations). `room_ptr` and
 `capacity`: high, both live-confirmed (the former via direct memory read,
 the latter via a crash that named the exact required invariant). Field
 semantics beyond `roster_count`/`member_id`/`owner_ref_id`/`local_ref_id`/

@@ -22,7 +22,7 @@ doc-ref: ../docs/protocol/session_manager_and_matchmaking.md
 seq:
   - id: opcode
     type: u4
-    doc: "MUST equal 0x12e (302 decimal) = NetMatchmakingServerHello's own numeric ID, or Init() treats this as a fatal handshake failure (closes the connection, Init() returns -1) - confirmed via `if (local_a8[0] == 0x12e) {...} else { close; fail }` in FUN_00ad71a0's decompile. Passed through a byte-order-fixup function (FUN_00ad55d8, not decompiled this pass) before this check - same on-wire-endianness caveat as netmatchmaking_client_hello's opcode field applies here too."
+    doc: "MUST equal 0x12e (302 decimal) = NetMatchmakingServerHello's own numeric ID, or Init() treats this as a fatal handshake failure (closes the connection, Init() returns -1) - confirmed via `if (local_a8[0] == 0x12e) {...} else { close; fail }` in FUN_00ad71a0's decompile. Passed through FUN_00ad55d8 before this check, which this project previously described as a byte-order-fixup - now decompiled and confirmed to be composed entirely of calls to the no-op FUN_00a0e324, so this and every other field in this message is plain big-endian, no runtime swap involved. See research/notes/2026-08-15-byteswap-helper-is-a-noop.md."
   - id: unknown1
     type: u4
     doc: "Declared/received but not read by any branch this pass traced in Init(). Do not assume a meaning."
