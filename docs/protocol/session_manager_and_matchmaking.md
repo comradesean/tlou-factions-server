@@ -130,12 +130,34 @@ supersedes several rows in the table below (noted inline); the headline changes:
   party member", a signaling/P2P-layer issue, not a room opcode); and an
   intermittent, unexplained "Host quit for cheating" match teardown.
 
-**Naming caveat:** the 2026-08-17 note argues the declared name/size table is
-shifted 2 slots from 0x13a onward (making 0x13a=MemberSetData, 0x13c=Promote,
-0x13d=OwnerChanged, 0x13e=SetAttrFlags, …, 0x142=HostRank). The functional
-behavior above is confirmed; the *name* reassignment is a plausible
-reinterpretation not yet reconciled with the stub's working names, so the row
-names below are left as-is and only the confirmed behavior is called out.
+**Naming RESOLVED 2026-08-17** — see `research/notes/2026-08-17-opcode-naming-shift-resolved.md`.
+The declared name/size table (recovered as ground truth from the 28 registration
+calls in `Init()`, strings at `0x00ed80a8`–`0x00ed8430`) IS shifted +2 slots from
+0x13a: declared idx 13 (`Kickedout`) and 14 (`RoomDestroyed`) are PHANTOM (no wire
+opcode), and `wire = 0x12d + declared_idx − 2` for 0x13a–0x146. Decisive evidence:
+the two 80-byte messages 0x13a/0x13b line up with declared sizes 80/80 only under
+the shift; all 13 tail entries match exactly; anchored by Ping=0x145/ClientHello2=0x146.
+**This is a documentation/naming fix only — no functional bug.** The stub keys off
+wire opcode numbers and behaviors (all correct); only its constant NAMES are
+mislabeled. The correct wire→name mapping:
+
+| wire | correct declared name | real size | stub's (mislabeled) name |
+|---|---|---|---|
+| 0x13a | `MemberSetData` (client→server, the member data blob) | 80 | (file "periodic_telemetry") |
+| 0x13b | `MemberUpdatedData` (server→client blob delivery) | 80 | (file "room_destroyed") |
+| 0x13c | `Promote` | 16 | (file "member_set_data") |
+| 0x13d | `OwnerChanged` (writes owner member id `+0x19f0`) | 16 | `build_owner_member` |
+| 0x13e | `SetAttrFlags` | 16 | (file "promote") |
+| 0x13f | `UpdatedAttrFlags` (writes attr flag `+0x19f4`) | 16 | `OWNER_CHANGED_OPCODE` |
+| 0x140 | `SetRoomFlags` | 16 | `SET_ATTR_FLAGS_OPCODE` |
+| 0x141 | `UpdatedRoomFlags` | 16 | `UPDATED_ATTR_FLAGS_OPCODE` |
+| 0x142 | `HostRank` (fire-and-forget, base 16 + n×2) | 16+ | `SET_ROOM_FLAGS`(unsent) |
+| 0x143 | `SetRoomName` | 144 | (file "updated_room_flags") |
+| 0x144 | `UpdatedRoomName` | 144 | `HOST_RANK_OPCODE` |
+
+The inline row NAMES below (and the `.ksy` filename suffixes, which are shifted by
+2) are being reconciled to this mapping; where a row's name disagrees with this
+table, this table is correct. The behaviors described are unaffected.
 
 **status: ROOT CAUSE FOUND AND LIVE-CONFIRMED for the `g_pSessionManager->Init()()
 failed` blocker.** The `NetMatchmaking*` opcode/size table (28 entries) is fully
