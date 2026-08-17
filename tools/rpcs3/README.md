@@ -15,6 +15,13 @@ a full lobby.
   string `Searching Game with Criteria %i` → `CANARY OK - Patch is Applied %i`.
   Use it to prove a machine's custom-patch plumbing works (right file location,
   right hash, patch enabled) before trusting any real patch on that machine.
+- `minplayers_patch.yml` — TESTING ONLY. Lowers the find-match lobby start
+  minimum from the shipped 6 to 2 (one `be32` at VMA `0x003b7ab8`: the sole
+  `bl` to the playlist min-players getter becomes `li r3,2`). Install on BOTH
+  test machines — either client can be elected host. Full derivation and
+  alternative levers (live debugger poke at `0x01385D40`, the game's own
+  "Force Matchmaking Min Players" dev setting): see
+  `research/notes/2026-08-17-min-players-client-patch.md`.
 
 ## Installing on a machine (works for the remote client too)
 

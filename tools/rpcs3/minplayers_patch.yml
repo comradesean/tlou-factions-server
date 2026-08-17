@@ -1,0 +1,12 @@
+Version: 1.2
+
+PPU-9df60dc1aa5005a0c80e9066e4951dc0471553e6:
+  "TLOU Factions - Find Match min players = 2 (TESTING ONLY)":
+    Games:
+      "The Last of Us":
+        BCUS98174: [ 01.00 ]
+    Author: "tlou_factions"
+    Notes: "TESTING patch: lowers the find-match lobby start minimum from the shipped 6 to 2 so two-client dev testing can start a matchmade game. Replaces the bl to the playlist min-players getter (FUN_0039f1e0, sole call site binary-wide) with li r3,2 at the SERVER_LOBBY start gate; the shipped playlist records (dc1/net.bin *playlists*) carry min=6 for Supply Raid/deathmatch and Survivors/elimination. No downstream min checks exist (cfg+0x54==0 routes straight to the vote screen). Not for the final product. Original bytes at 0x003b7ab8: 4b fe 77 29."
+    Patch Version: "1.0"
+    Patch:
+      - [ be32, 0x003b7ab8, 0x38600002 ]  # bl FUN_0039f1e0 -> li r3,2 (min players = 2)
