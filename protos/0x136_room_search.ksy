@@ -16,12 +16,17 @@ doc: |
   to that entry's host (NET_SM_CLIENT_CONNECT_TO_HOST, via the host NpId in the
   entry - see below), NOT via a 0x130 to us.
 
-  Implemented in tools/session_manager_stub.py (build_room_search): the stub
-  replies to every 0x135 with the current public-game list. LIVE STATUS: the
-  search->list->pick->CONNECT_TO_HOST chain works and the joiner reaches
-  NET_SM_CLIENT_RESERVE with the host NpId fix; the remaining blocker is the
-  two-client host/joiner coordination (both clients self-elect host), NOT this
-  message's format. See the handoff note.
+  Implemented in tools/session_manager_stub.py (build_room_search). LIVE STATUS
+  2026-08-17: the FULL loop works end-to-end - the stub's serialized election
+  (see protos/0x135_find_match.ksy) replies with an EMPTY list to the elected
+  host through its whole search burst, PARKS the other searcher (sends no
+  0x136 at all) until the host's 0x12f RoomCreate lands, then releases it with
+  a 1-entry list whose host_npid points at the elected host. The joiner picks,
+  P2P-connects, reserves, and sends a real 0x130; the host counts it and holds
+  its lobby. This produced the project's first counted, credited matchmade
+  game. The former "both clients self-elect host" blocker is SOLVED by the
+  election - do NOT reintroduce the roster-push band-aid. See
+  research/notes/2026-08-17-find-match-coordination-root-cause.md.
 
   STATUS: declared size in the Init() size table is a fixed 36 bytes - CONFIRMED
   WRONG. Real minimum size is `num_entries * 0x38 + 0x10` (16-byte header +
@@ -60,7 +65,14 @@ types:
     seq:
       - id: room_id
         size: 8
-        doc: "Offset 0:8. The join key. The client feeds this into its subsequent flow; the stub advertises the host room's id here. (Note the game-room id collides on 0x01383bd8-derived values across clients - see the handoff's open items.)"
+        doc: |
+          Offset 0:8. The join key. RESOLVED 2026-08-17: both clients send the
+          SAME client-local pointer (0x01383bd8) as their room "id" on
+          RoomCreate/Join, so the stub must NOT key its registry on the raw
+          value. It mints a unique server-side id per elected host (live form
+          0x5000000N01383bd8) and advertises THAT here; a 0x130 carrying an
+          unrecognised id still resolves via the per-connection election
+          mapping. See the coordination root-cause note."
       - id: unknown_a
         size: 4
         doc: "Offset 8:12. Unconfirmed; stub sends 0."
@@ -85,8 +97,9 @@ types:
           host peer BY NPID (there is no 0x130 to the server at this step).
           With this zeroed the joiner resolved no peer and CONNECT_TO_HOST
           timed out ~30s -> force-leave. Filling it advanced the joiner to
-          NET_SM_CLIENT_RESERVE. (Exact sub-offset of the NpId within the
-          0x14:0x38 block is the best current guess; verify live.)
+          NET_SM_CLIENT_RESERVE, and (2026-08-17) all the way to a real 0x130
+          join and a counted match. The NpId at exactly 0x14:0x24 is now
+          live-confirmed load-bearing, not a guess.
       - id: attr_tail
         size: 20
         doc: "Offset 0x24:0x38. Remainder of the 36-byte attribute block (map/mode/etc.) - not field-mapped; stub sends zero."

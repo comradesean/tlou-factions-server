@@ -91,11 +91,29 @@ only find-match (public matchmaking) can advance the metagame. (2) **`0x136`
 RoomSearch is the SERVER->CLIENT find-match GAME LIST** the client's
 `NET_SM_CLIENT_GAME_LIST_WAIT` blocks on (server must push it in reply to the
 `0x135` search); the join is then pure P2P (`CONNECT_TO_HOST` by the host NpId
-carried in the `0x136` entry at `[0x14:0x24]`), NOT a `0x130`. Find-match is
-implemented in the stub and works up through pick+connect; the open blocker is
-two-client host/joiner coordination (both self-host). See
-`protos/0x136_room_search.ksy`, `2026-08-17-find-match-flow.md`,
-`2026-08-17-match-counts-latch.md`, `2026-08-17-mode-min-players.md`.
+carried in the `0x136` entry at `[0x14:0x24]`), NOT a `0x130`.
+
+**★ SOLVED / CREDITED (2026-08-17 PM) — the full loop works end-to-end.** The
+two-client host/joiner coordination is fixed by a SERIALIZED ELECTION in the
+stub: elect the first criteria-0 (`0x135` burst-marker==5) searcher as host and
+feed it empty `0x136` lists so it self-hosts; PARK every other searcher (send it
+NO `0x136` — it blocks silently in `GAME_LIST_WAIT`, 60s hard cap) until the
+host's `0x12f` RoomCreate arrives, then release it with a 1-entry list pointing
+at the host. Exactly one host + one joiner, every time. Two supporting fixes: a
+pre-join `[punch]` roster push (host dials the joiner's P2P handle at release
+time, killing a 6s reserve stall), and harvesting each player's 32-byte
+rank/faction/loadout blob straight from their `0x12f`/`0x130` wire (`0x12f` wire
+0xa8 / len 0x26; `0x130` wire 0x18 / len 0x0c) and replaying it via `0x131`+
+`0x13b` — the matchmade lobby never sends `0x13a`, so this is the only blob
+supplier, and without it the remote rank card is blank. With a client-side
+min-players=2 patch (`tools/rpcs3/minplayers_patch.yml`; the shipped playlist
+minimum is 6) this drove the project's FIRST counted, credited matchmade game:
+`task-manager-online.cpp:1236 GOTO NET_SM_RESULTS` ("Leaving Game Normally") →
+latch armed → `OnMatchEnd` → supplies/rank and clan population credited live
+(clan grew 5 → 19 survivors on screen). See
+`research/notes/2026-08-17-find-match-coordination-root-cause.md` (§5b live
+outcome), `protos/0x135_find_match.ksy`, `protos/0x136_room_search.ksy`,
+`2026-08-17-match-counts-latch.md`, `2026-08-17-min-players-client-patch.md`.
 
 **2026-08-16/17 — LIVE-CONFIRMED WORKING. Solo-host, party invite + join, and
 2-player matches all run end-to-end against `tools/session_manager_stub.py`.**

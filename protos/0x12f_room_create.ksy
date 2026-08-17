@@ -90,9 +90,20 @@ seq:
   - id: max_players
     type: u2
     doc: "Offset 36:38. Max players / room capacity. `sth r23,180(r1)`, and the SAME r23 is written to `room_obj+0x1f8` at 0x00ad5f80 - the field `_opd_FUN_00ad33d8`'s `if (room_obj+0x1f8 == 0) trap` assert reads and the field Member's (0x131) offset 24 overwrites. Live-constant 8 across every capture. This is the field a server should echo into Member's capacity slot."
-  - id: room_field_19f8
+  - id: member_blob_length
     type: u1
-    doc: "Offset 38:39. `*(u8*)(room_obj + 0x19f8)` (`stb r11,182(r1)`). Live value 0x20."
+    doc: |
+      Offset 38:39 (wire 0x26). CORRECTED 2026-08-17: this is the LENGTH of
+      the local player's 32-byte member-data blob carried at wire offset 0xa8
+      (see member_blob in room_tail_block below), sourced from
+      `*(u8*)(room_obj + 0x19f8)` (`stb r11,182(r1)`). Live value 0x20 (=32),
+      the exact length the rank/loadout UI getter (_opd_FUN_00ad2650) demands.
+      tools/session_manager_stub.py HARVESTS the 32 bytes at wire 0xa8 keyed
+      by this length and replays them into its 0x131 Member roster + 0x13b so
+      the host's lobby shows the joiner's rank/faction card - the matchmade
+      lobby never sends a 0x13a request, so this (and 0x130's equivalent) is
+      the ONLY blob supplier on the find-match path. See
+      research/notes/2026-08-17-member-data-blob-rank-and-0x142-hostrank.md.
   - id: flag_27
     type: u1
     doc: "Offset 39:40. 0 normally, 4 on one conditional branch (`stb r0,183(r1)` @ 0x00ad5cbc). Live values 0x00 and 0x04."
@@ -101,4 +112,17 @@ seq:
     doc: "Offset 40:168. NUL-terminated room name, produced by `_opd_FUN_00e45b10(r1+184, room_obj+0x18)` @ 0x00ad5f74 - i.e. a plain strcpy of `room_obj+0x18`. Format is `<npid>.<unix-timestamp>` (e.g. `comradesean.1786863559`), built by the 0x143 sender's own sprintf-like call. room_obj+0x18 is the SAME 128-byte region 0x143 sends and 0x144 strcpy's into on receipt - see protos/0x143_set_room_name.ksy."
   - id: room_tail_block
     size: 64
-    doc: "Offset 168:232. Verbatim byte-by-byte copy of `room_obj+0x19fc .. +0x1a3b` (copy loop 0x00ad5d30-0x00ad5f2c into r1+312). The live-confirmed team-selection field at wire offset 0xb0 (0=unset, 1=Blue, 2=Red - see research/notes/2026-08-16-team-selection-field-confirmed.md) is the u16 at relative offset 8 within this block, i.e. `room_obj+0x1a04`."
+    doc: |
+      Offset 168:232 (wire 0xa8:0xe8). Verbatim byte-by-byte copy of
+      `room_obj+0x19fc .. +0x1a3b` (copy loop 0x00ad5d30-0x00ad5f2c into
+      r1+312). CORRECTED 2026-08-17: the FIRST 32 bytes of this block (wire
+      0xa8:0xc8) are the local player's MEMBER-DATA BLOB - byte-identical in
+      layout to the 32-byte blob in a 0x131 member_entry (byte 8 = flags,
+      byte 9 = faction/title index, bytes 10..13 = loadout item-ids, u16 at
+      byte 14 = rank value). Its length is member_blob_length above (0x20).
+      The field previously documented as "team-selection at wire 0xb0" is in
+      fact blob[8:9]; the live 0/1/2 team/faction value is blob[9]
+      (superseding research/notes/2026-08-16-team-selection-field-confirmed.md,
+      corrected in the member-data-blob note §3e). The stub harvests
+      chunk[0xa8:0xc8] on every RoomCreate and reuses it for that member's
+      rank card. Bytes beyond 0xc8 are the room's stat/settings tail."
