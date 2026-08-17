@@ -1161,40 +1161,47 @@ def handle(conn, addr, log_lock, log):
                          f"[{', '.join(rid.hex() for rid, _ in entries) or 'none'}], "
                          f"search_obj_ptr={search_obj_ptr:#x}; empty list => client "
                          f"self-hosts a public game")
-                    # PROACTIVE PAIRING (2026-08-17): the actual join is pure P2P
-                    # (the joiner reserves a slot on the host directly - there is
-                    # NO 0x130 to us), so we never learn a joiner arrived and the
-                    # host bails SERVER_LOBBY at ~12s because its SM member count
-                    # stays 1 < mode min. When we show searcher B a public host A,
-                    # push A a 2-member roster [A, B] NOW so A's count reaches 2
-                    # and it STAYS in SERVER_LOBBY (and starts, if min<=2) while B
-                    # connects P2P. Register B as A's joiner so departures/blobs
-                    # stay consistent. Single-host case only (the 2-player target).
-                    if len(entries) == 1:
-                        host_rid, host = entries[0]
-                        host_entry = (MEMBER_ID, host["npid"])
-                        joiner_entry = (JOINER_MEMBER_ID, own_npid)
-                        with rooms_lock:
-                            already = id(conn) in host.get("conns", {})
-                        if not already:
-                            host_member = build_member(
-                                [host_entry, joiner_entry], host_rid,
-                                host["max_players"], owner_ref_id=MEMBER_ID,
-                                local_ref_id=MEMBER_ID, room_ptr=host["room_ptr"],
-                                populate_self_npid=True)
-                            try:
-                                host["conn"].sendall(
-                                    host_member + build_owner_member(host_rid, MEMBER_ID))
-                                with rooms_lock:
-                                    host["conns"][id(conn)] = (JOINER_MEMBER_ID, conn, emit)
-                                    host["members"] = [host_entry, joiner_entry]
-                                    host.pop("abandon_ts", None)
-                                host["emit"](
-                                    f"   [pair] pushed host {host['npid']!r} a 2-member "
-                                    f"roster (joiner {own_npid!r}) to hold SERVER_LOBBY "
-                                    f"while the joiner connects P2P")
-                            except OSError:
-                                pass
+                # PROACTIVE PAIRING (2026-08-17): the actual join is pure P2P (the
+                # joiner reserves a slot on the host directly - there is NO 0x130
+                # to us), so we never learn a joiner arrived and a host bails
+                # SERVER_LOBBY at ~12s because its SM member count stays 1 < mode
+                # min. This fires REGARDLESS of self_hosting - in the 2-player
+                # symmetric case BOTH clients self-host, so neither is ever a
+                # plain searcher; gating on !self_hosting meant this never ran.
+                # Whenever this searcher's 0x135 sees a public host A on another
+                # connection, push A a 2-member roster [A, this] so A's count
+                # reaches 2 and it holds SERVER_LOBBY while the peers connect P2P.
+                # Pick the OLDEST public host on another conn (stable choice so
+                # both clients converge on the same designated host).
+                with rooms_lock:
+                    hosts = [(rid, info) for rid, info in
+                             ((i["room_id"], i) for i in active_rooms.values())
+                             if info.get("public") and info["conn"] is not conn]
+                if hosts:
+                    host_rid, host = hosts[0]
+                    host_entry = (MEMBER_ID, host["npid"])
+                    joiner_entry = (JOINER_MEMBER_ID, own_npid)
+                    with rooms_lock:
+                        already = id(conn) in host.get("conns", {})
+                    if not already:
+                        host_member = build_member(
+                            [host_entry, joiner_entry], host_rid,
+                            host["max_players"], owner_ref_id=MEMBER_ID,
+                            local_ref_id=MEMBER_ID, room_ptr=host["room_ptr"],
+                            populate_self_npid=True)
+                        try:
+                            host["conn"].sendall(
+                                host_member + build_owner_member(host_rid, MEMBER_ID))
+                            with rooms_lock:
+                                host["conns"][id(conn)] = (JOINER_MEMBER_ID, conn, emit)
+                                host["members"] = [host_entry, joiner_entry]
+                                host.pop("abandon_ts", None)
+                            host["emit"](
+                                f"   [pair] pushed host {host['npid']!r} a 2-member "
+                                f"roster (joiner {own_npid!r}) to hold SERVER_LOBBY "
+                                f"while the joiner connects P2P")
+                        except OSError:
+                            pass
             elif opcode == ROOM_LEAVING_OPCODE and len(chunk) >= 16:
                 # No reply - confirmed fire-and-forget, see the constant's
                 # docstring. This firing means the client just gave up on
