@@ -206,6 +206,32 @@ member_blobs = {}   # (room_id_bytes, member_id) -> bytes (exactly 32)
 #     election - roles may swap, which is fine.
 #
 # Timings below are all from the disassembly table in §3 of that note.
+#
+# ---- 2026-08-17 LIVE RESULT: the election + roster push WORK. ----
+# The remaining teardown is NOT a stub bug. Measured off TTY.log with the
+# local client hosting (so the whole cycle is visible in one log):
+#   613.5267  net-matchmaking.cpp:725  CREATE_GAME_WAIT   (the 0x12f)
+#   613.7900  "comradesean joined match" + :874 SERVER_LOBBY
+#   614.0600  SCE_NP_SIGNALING_EVENT_EXT_MUTUAL_ACTIVATED mgnomad2
+#   614.8567  "mgnomad2 joined match"        <- our 2-member roster applied
+#   629.5600  net-matchmaking.cpp:1039 GOTO NET_SM_LEAVE_GAME
+# 629.56 - 613.53 = 16.03 s = 8.0 + lobbyWaitTable[2]. The very next cycle,
+# with nobody joining, held 12.03 s = 8.0 + lobbyWaitTable[1]. The deadline
+# therefore proves FUN_003b19c4 counted exactly TWO members: the host's own
+# record is recognised (FUN_00ad0e40 matches member+0xE8 against
+# room_obj+0x19EC, which our Member's local_ref_id sets via 0x00ad37c8) AND
+# the joiner's P2P handle at member+0xF0 reported state 2. The three remote-
+# host cycles show the same 16 s (543.9/570.4/595.5 -> teardown ~559.7/586.2/
+# 611.5). Nothing about the roster push is broken.
+# What fails is the NEXT check, FUN_003b7a78 @0x003b7ac0:
+#   cmplw cr7, r29(count=2), r3(min = FUN_0039f1e0() = DC cfg+0x14)
+#   bge -> start-gate;  else if obj2[0x64]==0 or count<obj2[0x64] -> TEAR DOWN
+# i.e. the mode's minimum-players-to-start. That value is client-side runtime
+# DC data (research/notes/2026-08-17-mode-min-players.md) - NO server message
+# can change it. The levers are: read it live (BP 0x003b7ac0: r3=min,
+# r29=count; BP 0x003b7ac8 for the obj2[0x64] runtime floor), or the
+# 1-instruction client patch FUN_0039f1e0 -> `li r3,2; blr`
+# (38 60 00 02 4e 80 00 20). Do not chase this in the stub.
 
 # Client's GAME_LIST_WAIT hard timeout is 60.0 s -> error dialog + LEAVE_GAME.
 # Never hold a 0x136 anywhere near that long.
@@ -942,6 +968,26 @@ def start_member_refresher(conn, emit, members, room_id, max_players,
     t.start()
 
 
+def _ts():
+    """Wall-clock stamp for every log line: [HH:MM:SS.mmm].
+
+    Added 2026-08-17. The find-match election is a timing problem end to end
+    (host lobby deadline = t(RoomCreate) + 8.0 + lobbyWaitTable[count]; 6.0 s
+    P2P reserve timeout; 60.0 s GAME_LIST_WAIT cap), and this log had NO
+    per-line timestamps at all - correlating it against RPCS3's TTY game clock
+    was impossible and blocked a whole debugging round. Every physical line is
+    stamped (hexdump rows included) so any grep/tail of a subset is still
+    timeable.
+    """
+    return datetime.datetime.now().strftime("[%H:%M:%S.%f")[:-3] + "]"
+
+
+def stamp(text):
+    """Prefix every physical line of `text` with _ts()."""
+    t = _ts()
+    return "\n".join(f"{t} {line}" for line in text.split("\n"))
+
+
 def hexdump(data):
     lines = []
     for i in range(0, len(data), 16):
@@ -973,9 +1019,10 @@ def handle(conn, addr, log_lock, log):
         # below), so waiting for close to log anything left us blind to
         # mid-connection activity while debugging "Lobby Server Error" live
         # on 2026-08-14.
+        stamped = stamp(text)
         with log_lock:
-            print(text, flush=True)
-            log.write(text + "\n")
+            print(stamped, flush=True)
+            log.write(stamped + "\n")
             log.flush()
 
     emit(f"==== {ts} SESSION MANAGER connection from {addr[0]}:{addr[1]} ====")
@@ -1242,6 +1289,85 @@ def handle(conn, addr, log_lock, log):
                             j, j["search_obj_ptr"], [(room_id, entry_info)],
                             "release",
                             f"host {npid!r} room {room_id.hex()} - PICK this")
+                    # ---- PRE-JOIN NAT PUNCH (2026-08-17) ----
+                    # MEASURED, not guessed. TTY.log 543.9-611.5 (three
+                    # consecutive cycles with the REMOTE host mgnomad2):
+                    #   543.9567 CONNECT_TO_HOST -> 544.1600 Ping = 0 ms ->
+                    #   1327 RESERVE_SLOTS_WAIT -> 550.1934 line 1400 (= the
+                    #   6.00 s reserve timeout) -> back to GAME_LIST_PICK.
+                    #   Same at 570.62->576.66 and 595.66->601.69. Only the
+                    #   SECOND attempt logs SCE_NP_SIGNALING_EVENT_EXT_
+                    #   MUTUAL_ACTIVATED and gets a reserve reply. When the
+                    #   LOCAL client hosted instead (613.53 RoomCreate) the
+                    #   remote joiner was in at 614.86 - 1.3 s, no timeout.
+                    # So the stall is one-sided NAT/signaling: the joiner
+                    # dials the host at CONNECT_TO_HOST, but the host only
+                    # ever dials BACK when a roster naming the joiner reaches
+                    # it - and today that roster is only sent after the 0x130,
+                    # which itself needs the reserve to have succeeded. The
+                    # first reserve datagram therefore dies in the host's NAT
+                    # and ~8.4 s of the host's 16.0 s lobby budget is burned
+                    # every cycle.
+                    # Fix: the moment the host is LIVE in SERVER_LOBBY and we
+                    # hand a parked searcher the 0x136 naming it, also push the
+                    # host the 2-member roster. FUN_00ad33d8 @0x00ad34b0 turns
+                    # each non-local entry into mgr->vtable[0x10](npid) (the
+                    # P2P connect) with the handle stored at member+0xF0
+                    # (0x00ad34e0), so the host starts punching outward in
+                    # parallel with the joiner instead of ~8 s later.
+                    # SAFE TO REPEAT: the identical roster is pushed again on
+                    # the 0x130, and FUN_00ad33d8's first loop de-dupes by
+                    # NpId (bl 0xe459bc @0x00ad3458) and returns early at
+                    # 0x00ad3474 for an already-registered member - no
+                    # reconnect, no churn.
+                    # NOT the discarded `[pair]` push: that one fabricated a
+                    # roster for a client that was not a host and not in
+                    # SERVER_LOBBY. This fires only for a host whose 0x12f we
+                    # just answered, naming a searcher we are simultaneously
+                    # pointing at that exact room.
+                    # Restricted to the single-joiner case because the 0x130
+                    # handler's roster is likewise (MEMBER_ID, JOINER_MEMBER_ID)
+                    # - inventing ids for a 3rd+ searcher here would disagree
+                    # with what that handler later re-pushes.
+                    if len(to_release) == 1:
+                        j0 = to_release[0]
+                        pre_members = [(MEMBER_ID, npid),
+                                       (JOINER_MEMBER_ID, j0["npid"])]
+                        try:
+                            conn.sendall(build_member(
+                                pre_members, room_id, max_players,
+                                owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID,
+                                room_ptr=room_ptr, populate_self_npid=True))
+                            emit(f"   [punch] pushed host {npid!r} a 2-member "
+                                 f"roster naming {j0['npid']!r} BEFORE its "
+                                 f"0x130 so the host dials the peer now "
+                                 f"(kills the 6.0s first-reserve timeout); "
+                                 f"re-pushed identically on the 0x130 and "
+                                 f"de-duped by NpId client-side")
+                            with rooms_lock:
+                                room_entry = active_rooms.get(id(conn))
+                                if room_entry is not None:
+                                    room_entry["members"] = pre_members
+                            # The solo refresher would re-push a 1-member
+                            # roster 10 s from now, which OMITS the joiner and
+                            # tears its P2P handle down (FUN_00ad3190 ->
+                            # vtable[0x1c] @0x00ad3268). Retire it: restarting
+                            # with a >1-member roster is the established
+                            # "multi-member rooms are P2P-maintained" skip.
+                            if active_room_stop is not None:
+                                active_room_stop.set()
+                            active_room_stop = threading.Event()
+                            start_member_refresher(
+                                conn, emit, pre_members, room_id, max_players,
+                                MEMBER_ID, MEMBER_ID, active_room_stop,
+                                room_ptr=room_ptr, populate_self_npid=True)
+                            with rooms_lock:
+                                room_entry = active_rooms.get(id(conn))
+                                if room_entry is not None:
+                                    room_entry["stop_event"] = active_room_stop
+                        except OSError as ex:
+                            emit(f"   [punch] pre-join roster push to host "
+                                 f"{npid!r} failed: {ex}")
             elif opcode == 0x130 and len(chunk) >= 0x18:
                 # RoomJoin - see active_rooms' comment for the wire evidence.
                 join_room_ptr = struct.unpack(">I", chunk[8:12])[0]
@@ -1754,7 +1880,8 @@ def main():
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("0.0.0.0", PORT))
     srv.listen(5)
-    print(f"Session Manager stub listening on 0.0.0.0:{PORT}, logging to {LOG_PATH}", flush=True)
+    print(f"{_ts()} Session Manager stub listening on 0.0.0.0:{PORT}, "
+          f"logging to {LOG_PATH}", flush=True)
 
     log_lock = threading.Lock()
     with open(LOG_PATH, "a", buffering=1) as log:
