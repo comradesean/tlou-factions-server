@@ -952,16 +952,16 @@ def start_member_refresher(conn, emit, members, room_id, max_players,
     ROOM_PTR+0x10 never stays zero long enough for anything reading it to
     lose.
     """
-    # *** RE-REVIEW AFTER FULL 2-PLAYER FLOW WORKS (flagged 2026-08-16) ***
-    # This multi-member skip fixed a CONFIRMED live bug (see below) but rests on
-    # a single live observation. Open question: does a multi-member room's
-    # room_obj+0x10 stay alive without our periodic re-assertion, or will it go
-    # stale (the original reason the refresher existed for solo)? P2P
-    # MUTUAL_ACTIVATED suggests the party self-maintains, but that was not
-    # verified over a long-lived multi-member session. Re-validate once the full
-    # flow is stable; if multi-member rooms DO go stale, the right fix is a
-    # much longer interval or a room_obj+0x10-only keepalive, not full-roster
-    # re-broadcast. Do not treat this skip as settled.
+    # *** VALIDATED 2026-08-17 (was: RE-REVIEW AFTER FULL 2-PLAYER FLOW WORKS) ***
+    # The multi-member skip is now confirmed correct over a long session: a full
+    # ~25-minute matchmade game (RPCS3.log 11:17:58 -> 11:42:36) held its
+    # 2-member room via P2P alone with the refresher skipping it the whole time,
+    # and ZERO party-churn events (no "kicked"/"You were"/PEER_DEACTIVATED) in
+    # that window - the room did NOT go stale without our re-assertion. So the
+    # open question below is answered: for >1 member the established P2P link
+    # (MUTUAL_ACTIVATED on join) self-maintains room_obj+0x10; our periodic
+    # re-broadcast is unnecessary there and was actively harmful (the churn bug
+    # below). The refresher correctly serves ONLY the solo-host case.
     #
     # 2026-08-16 REGRESSION FIX: only refresh SOLO rooms. Live TTY showed the
     # host joining and LEAVING its own party every 10s - exactly this
