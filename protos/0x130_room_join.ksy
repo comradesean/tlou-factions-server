@@ -2,6 +2,8 @@ meta:
   id: room_join
   endian: be
   license: CC0-1.0
+  imports:
+    - common/member_data
 doc: |
   Direction: client-to-server
 
@@ -39,14 +41,14 @@ seq:
   - id: local_room_ptr
     type: u4
     doc: "Offset 8:12. The sending client's own raw in-process room-object pointer at the time of the call (`stw r31,0x78(r1)` in FUN_00ad6718), passed through the same no-op helper as the opcode. An opaque client-local value, not a room_id."
-  - id: member_blob_length
+  - id: member_data_length
     type: u1
     doc: |
       Offset 12:13 (wire 0x0c). CORRECTED 2026-08-17 (was "unknown_flag"):
-      the LENGTH of the joiner's 32-byte member-data blob carried at wire
-      offset 0x18 (see member_blob below), copied from the room object's own
-      +0x19f8 byte (same source as RoomCreate's member_blob_length). Live
-      0x20 (=32). tools/session_manager_stub.py harvests the blob keyed by
+      the LENGTH of the joiner's 32-byte member_data card carried at wire
+      offset 0x18 (see member_data below), copied from the room object's own
+      +0x19f8 byte (same source as RoomCreate's member_data_length). Live
+      0x20 (=32). tools/session_manager_stub.py harvests the card keyed by
       this length on every 0x130 and replays it (0x131 roster + 0x13b) so the
       HOST's lobby shows the joiner's rank/faction card - the decisive fix,
       since the matchmade lobby never sends 0x13a and the host would otherwise
@@ -58,14 +60,18 @@ seq:
   - id: param3_value
     size: 8
     doc: "Offset 16:24. Raw (unswapped) 8-byte copy of the function's third argument (`std r29,0x80(r1)`). This argument's own source/meaning at RoomJoin's call site was not traced this pass."
-  - id: member_blob
-    size: 64
+  - id: member_data
+    type: member_data
     doc: |
-      Offset 24:88 (wire 0x18:0x58). Byte-for-byte copy of the room object's
-      own bytes 0x0-0x3f (64x single-byte lbz/stb copy loop). CORRECTED
-      2026-08-17 (was "room_snapshot"): the FIRST 32 bytes (wire 0x18:0x38)
-      are the joiner's MEMBER-DATA BLOB, same layout as the 0x131 member_entry
-      blob and RoomCreate's (byte 9 = faction/title, bytes 10..13 = loadout,
-      u16 at byte 14 = rank). member_blob_length (wire 0x0c) is its length.
-      The stub reads chunk[0x18:0x38] to populate the joiner's rank card in
-      the host's roster. Remaining bytes are the room-object tail."
+      Offset 24:56 (wire 0x18:0x38). The joiner's lobby card - the first 32
+      bytes of a 64x single-byte lbz/stb copy of the room object's own bytes
+      0x0-0x3f. CORRECTED 2026-08-17 (was "room_snapshot"). Each field is
+      decoded in common/member_data.ksy; member_data_length (wire 0x0c) is its
+      length. The stub reads chunk[0x18:0x38] to populate the joiner's card in
+      the host's roster."
+  - id: room_object_tail
+    size: 32
+    doc: |
+      Offset 56:88 (wire 0x38:0x58). The remaining 32 bytes of the room
+      object's 0x0-0x3f copy (room bookkeeping, not per-player card data). Not
+      field-mapped this pass."
