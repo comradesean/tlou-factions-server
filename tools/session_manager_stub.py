@@ -45,6 +45,7 @@ OWNER_CHANGED_OPCODE = 0x13f
 # advertisement, not a one-off "I left a room" event. Treating it as the
 # find-match heartbeat/broadcast until proven otherwise.
 FIND_MATCH_OPCODE = 0x135
+ROOM_SEARCH_OPCODE = 0x136  # server->client game LIST (reply to the 0x135 search)
 # RESOLVED 2026-08-15 (see research/notes/2026-08-15-room-teardown-and-flag-
 # chain.md and protos/0x133_room_leaving.ksy for the full decompiled trace):
 # despite the declared table calling this NetMatchmakingMemberJoined, it is
@@ -516,6 +517,39 @@ def build_owner_member(room_id, owner_member_id=MEMBER_ID):
     return bytes(body)
 
 
+def build_room_search(search_obj_ptr, entries):
+    """Build a 0x136 RoomSearch reply - the server->client PUBLIC GAME LIST that
+    NET_SM_CLIENT_GAME_LIST_WAIT is blocked on (research/notes/2026-08-17-find-
+    match-flow.md). This is what find-match actually needs: the stub previously
+    answered the 0x135 search with a party-style Member, the wrong layer, so the
+    client parked forever.
+
+    Header (16 bytes): opcode(4) | 0(4) | search_obj_ptr(4) | num_entries(4).
+    The search_obj_ptr MUST echo the searcher's own object pointer from its
+    0x135 wire offset 8 (0x01383bd8 live) - the 0x136 handler dereferences and
+    writes through it. Then num_entries x 56-byte entries: room_id at [0:8]
+    (the join key the client feeds into its subsequent 0x130 RoomJoin), two u16
+    counts at [0xc]/[0x10] (current players / capacity - semantics unconfirmed),
+    and a 36-byte attribute block at [0x14:0x38] (map/mode/name - byte layout
+    unconfirmed, sent zero for the first cut per the note's recommendation).
+    An empty list (num_entries=0, 16 bytes) is valid and lets a lone searcher
+    fall through to hosting a public game itself.
+    """
+    header = bytearray(16)
+    struct.pack_into(">I", header, 0, ROOM_SEARCH_OPCODE)
+    struct.pack_into(">I", header, 8, search_obj_ptr & 0xffffffff)
+    struct.pack_into(">I", header, 12, len(entries))
+    body = bytearray()
+    for room_id, info in entries:
+        e = bytearray(56)
+        e[0:8] = room_id
+        struct.pack_into(">H", e, 0xc, len(info.get("members", [])) or 1)
+        struct.pack_into(">H", e, 0x10, info.get("max_players", 8))
+        # attribute block [0x14:0x38] left zero for the first live test.
+        body += bytes(e)
+    return bytes(header) + bytes(body)
+
+
 def build_room_leave(room_id, member_id):
     """Build a 0x134 RoomLeave (24 bytes) - "member X left the room".
 
@@ -749,6 +783,11 @@ def handle(conn, addr, log_lock, log):
         emit(f"   np_id (36 bytes, likely SceNpId incl. online ID): {np_id!r}")
         own_npid = np_id.split(b"\x00", 1)[0]
         matched = False
+        # Set when this connection sends a find-match search (0x135); its NEXT
+        # RoomCreate is then a PUBLIC (matchmade) game that belongs in the
+        # find-match pool. A RoomCreate WITHOUT a preceding 0x135 is a private/
+        # custom game and must never be listed (one-shot: reset on create).
+        find_match_searching = False
         stop_event = threading.Event()
         # Per-room refresher lifecycle (2026-08-16): start_member_refresher's
         # background thread only stops on a socket error - nothing ever set
@@ -936,7 +975,15 @@ def handle(conn, addr, log_lock, log):
                         # (0x13a -> 0x13b relay); joiners get added by 0x130.
                         "conns": {id(conn): (MEMBER_ID, conn, emit)},
                         "members": [(MEMBER_ID, npid)],
+                        # PUBLIC iff this client reached RoomCreate via find-match
+                        # (0x135 preceded it). Only public rooms enter the
+                        # find-match list; private/custom games never do.
+                        "public": find_match_searching,
                     }
+                if find_match_searching:
+                    emit(f"   (this RoomCreate follows a find-match search - "
+                         f"room {room_id.hex()} registered as PUBLIC/matchmade)")
+                    find_match_searching = False  # one-shot
             elif opcode == 0x130 and len(chunk) >= 0x18:
                 # RoomJoin - see active_rooms' comment for the wire evidence.
                 join_room_ptr = struct.unpack(">I", chunk[8:12])[0]
@@ -1050,93 +1097,35 @@ def handle(conn, addr, log_lock, log):
                                            active_room_stop,
                                            room_ptr=join_room_ptr,
                                            populate_self_npid=True)
-            elif opcode == FIND_MATCH_OPCODE and not matched:
-                matched = True
-                # 0x135's header shares RoomCreate's shape: wire offset 8 is
-                # the searcher's own room-object pointer (live capture
-                # 2026-08-16: both clients broadcast 01 38 3b d8 - the game
-                # room object). This is what unblocks per-recipient room_ptr
-                # on this path (the audit note flagged it as the open
-                # problem: find-match has no RoomCreate to parse it from).
-                own_room_ptr = (struct.unpack(">I", chunk[8:12])[0]
-                                if len(chunk) >= 12 else ROOM_PTR)
-                with waiting_lock:
-                    peer = waiting_player
-                    if peer is not None and peer["npid"] != own_npid:
-                        waiting_player = None
-                    else:
-                        peer = None
-                        waiting_player = {"npid": own_npid, "conn": conn, "emit": emit,
-                                           "stop_event": stop_event,
-                                           "room_ptr": own_room_ptr}
-                if peer is None:
-                    emit(f"   parsed opcode={opcode:#x} (find-match search broadcast) - "
-                         f"no other player waiting, registered npid={own_npid!r} and waiting")
-                else:
-                    room_id = os.urandom(8)
-                    max_players = 10
-                    host_entry = (MEMBER_ID, peer["npid"])
-                    joiner_entry = (JOINER_MEMBER_ID, own_npid)
-                    room_name = peer["npid"] + b".matched"
-
-                    # 2026-08-16: same surgery as the (now live-confirmed
-                    # working) solo-host path, for the same audit-evidenced
-                    # reasons: NO RoomJoined (its is_local=0 registration is
-                    # the phantom-member / self-signaling source - the
-                    # 3-slot lobby with a nameless rank entry seen live on
-                    # this path today IS that phantom), self npids populated
-                    # (blank local identity starves the team-assignment
-                    # lookup -> net-game-manager.cpp:1358 boot), 0x13f
-                    # OwnerChanged so the host recipient actually becomes
-                    # host (explicit 0 for the joiner - only RoomCreate's
-                    # sender clears the flag client-side, and these clients
-                    # never ran it in this flow), and each recipient's own
-                    # room_ptr parsed from their own 0x135 broadcast.
-                    # Roster order stays per-recipient own-entry-FIRST
-                    # (live-confirmed 2026-08-15: index 0 is treated as "me"
-                    # positionally).
-                    peer_member = build_member([host_entry, joiner_entry], room_id, max_players,
-                                                owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID,
-                                                room_ptr=peer["room_ptr"],
-                                                populate_self_npid=True)
-                    peer["conn"].sendall(peer_member + build_owner_changed(room_id, 1)
-                                         + build_owner_member(room_id, MEMBER_ID))
-                    peer["emit"](f"   MATCHED with {own_npid!r} (find-match pairing) - sent "
-                                  f"Member+OwnerChanged(1) as one write, NO RoomJoined, as host "
-                                  f"(member_id={MEMBER_ID}, room_ptr={peer['room_ptr']:#x}) "
-                                  f"room_id={room_id.hex()}")
-                    start_member_refresher(peer["conn"], peer["emit"], [host_entry, joiner_entry],
-                                            room_id, max_players, MEMBER_ID, MEMBER_ID,
-                                            peer["stop_event"],
-                                            room_ptr=peer["room_ptr"],
-                                            populate_self_npid=True)
-                    with rooms_lock:
-                        active_rooms[id(peer["conn"])] = {
-                            "npid": peer["npid"], "conn": peer["conn"],
-                            "emit": peer["emit"], "room_id": room_id,
-                            "room_ptr": peer["room_ptr"],
-                            "max_players": max_players,
-                            "stop_event": peer["stop_event"],
-                            "conns": {id(peer["conn"]): (MEMBER_ID, peer["conn"], peer["emit"]),
-                                      id(conn): (JOINER_MEMBER_ID, conn, emit)},
-                            "members": [host_entry, joiner_entry],
-                        }
-
-                    self_member = build_member([joiner_entry, host_entry], room_id, max_players,
-                                                owner_ref_id=MEMBER_ID, local_ref_id=JOINER_MEMBER_ID,
-                                                room_ptr=own_room_ptr,
-                                                populate_self_npid=True)
-                    conn.sendall(self_member + build_owner_changed(room_id, 0)
-                                 + build_owner_member(room_id, MEMBER_ID))
-                    emit(f"   parsed opcode={opcode:#x} (find-match search broadcast) - "
-                         f"MATCHED with {peer['npid']!r} - sent Member+OwnerChanged(0) "
-                         f"as one write, NO RoomJoined, as joiner "
-                         f"(member_id={JOINER_MEMBER_ID}, room_ptr={own_room_ptr:#x}) "
-                         f"room_id={room_id.hex()}")
-                    start_member_refresher(conn, emit, [joiner_entry, host_entry], room_id,
-                                            max_players, MEMBER_ID, JOINER_MEMBER_ID, stop_event,
-                                            room_ptr=own_room_ptr,
-                                            populate_self_npid=True)
+            elif opcode == FIND_MATCH_OPCODE:
+                # REWORKED 2026-08-17 (research/notes/2026-08-17-find-match-flow.md):
+                # find-match is search -> LIST -> (join existing | create+host),
+                # NOT a direct party-style pairing. NET_SM_CLIENT_GAME_LIST_WAIT
+                # blocks until it receives a 0x136 RoomSearch (server->client
+                # game list); the old Member-injection was the wrong layer and
+                # the client parked forever. We now answer every 0x135 with the
+                # current PUBLIC game list (rooms other connections hosted via
+                # find-match). If the list is empty, the client falls through to
+                # hosting a public game itself (its own RoomCreate), which we
+                # mark public via find_match_searching so the NEXT searcher's
+                # list includes it. The join reuses the existing 0x130 handler.
+                # This is also the ONLY path to a COUNTED game (custom/invite
+                # games never credit progression) - see
+                # research/notes/2026-08-17-match-counts-latch.md.
+                find_match_searching = True
+                search_obj_ptr = (struct.unpack(">I", chunk[8:12])[0]
+                                  if len(chunk) >= 12 else ROOM_PTR)
+                with rooms_lock:
+                    entries = [(info["room_id"], info) for info in active_rooms.values()
+                               if info.get("public") and info["conn"] is not conn
+                               and len(info.get("members", [])) < info.get("max_players", 8)]
+                reply = build_room_search(search_obj_ptr, entries)
+                conn.sendall(reply)
+                emit(f"   parsed opcode={opcode:#x} (find-match search) - sent "
+                     f"RoomSearch (0x136) listing {len(entries)} public game(s) "
+                     f"[{', '.join(rid.hex() for rid, _ in entries) or 'none'}], "
+                     f"search_obj_ptr={search_obj_ptr:#x}; empty list => client "
+                     f"self-hosts a public game")
             elif opcode == ROOM_LEAVING_OPCODE and len(chunk) >= 16:
                 # No reply - confirmed fire-and-forget, see the constant's
                 # docstring. This firing means the client just gave up on
