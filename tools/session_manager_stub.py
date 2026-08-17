@@ -1702,115 +1702,40 @@ def handle(conn, addr, log_lock, log):
                 # is hosting a room on. A PARTY host (room_ptr 0x01387f58)
                 # searching on the GAME object (0x01383bd8) is not affected and
                 # must still get an answer.
+                # REAL-SERVER BEHAVIOR (2026-08-17, replaces the serialized
+                # election). We do NOT park, elect, withhold, or fabricate
+                # anything: we answer every search with the ACTUAL list of live
+                # public games and let the client's own matchmaking code decide
+                # whether to join one or self-host. Two symmetric searchers that
+                # both self-host are not a deadlock we must engineer around - the
+                # client's own search cadence uses a randomized 1+2*rand()
+                # backoff, so the two rotations drift apart and one will be
+                # hosting (in SERVER_LOBBY) while the other is searching, at
+                # which point the searcher sees the host in this list and joins.
+                # This is exactly how the real matchmaking server behaved.
+                #
+                # The ONLY thing we withhold is a 0x136 to a connection that is
+                # ITSELF a live host: a 0x136 is written through the searcher's
+                # search object, which for a host IS its own room object
+                # (0x01383bd8), so answering it would corrupt the host's room. A
+                # live host is in SERVER_LOBBY and is not searching anyway; this
+                # only guards the edge where a party host (room_ptr 0x01387f58)
+                # searches on the game object.
                 with rooms_lock:
                     hosted = active_rooms.get(conn_key)
                     live_host = (hosted is not None
                                  and hosted.get("room_ptr") == search_obj_ptr)
-                action = None
-                elected_host_npid = None
-                with election_lock:
-                    e = election
-                    if live_host:
-                        action = "livehost"
-                    elif e is None:
-                        _election_gen[0] += 1
-                        gen = _election_gen[0]
-                        to = threading.Timer(ELECTION_CREATE_TIMEOUT_SECONDS,
-                                             _election_create_timeout, args=(gen,))
-                        to.daemon = True
-                        election = {
-                            "gen": gen, "state": "electing",
-                            "host_key": conn_key, "host_conn": conn,
-                            "host_emit": emit, "host_npid": own_npid,
-                            "start_ts": time.time(), "joiners": {},
-                            "timers": [to],
-                        }
-                        to.start()
-                        action = "elect"
-                    elif e["host_key"] == conn_key:
-                        action = "hostelect"
-                    elif e["state"] == "joined":
-                        # The elected pair is already together; a third searcher
-                        # gets the ordinary public list (their room, if it has
-                        # room left) rather than being parked.
-                        action = "list"
-                    else:
-                        j = e["joiners"].get(conn_key)
-                        if j is not None and j.get("released"):
-                            # Already released once (it got its one-entry list
-                            # and came back, e.g. the connect failed). Answer
-                            # normally instead of re-parking it.
-                            action = "list"
-                        elif j is not None:
-                            j["search_obj_ptr"] = search_obj_ptr
-                            action = "reparked"
-                        else:
-                            cap = threading.Timer(ELECTION_HOLD_CAP_SECONDS,
-                                                  _election_park_cap,
-                                                  args=(e["gen"], conn_key))
-                            cap.daemon = True
-                            me["released"] = False
-                            me["park_ts"] = time.time()
-                            me["cap_timer"] = cap
-                            e["joiners"][conn_key] = me
-                            cap.start()
-                            action = "park"
-                        elected_host_npid = e["host_npid"]
-                        if action in ("park", "reparked") and e["state"] == "hosting":
-                            # Race: the host created its room in the window
-                            # between our two lock acquisitions. Release now.
-                            action = "late-release"
-
-                if action == "livehost":
+                    entries = [(info["room_id"], info)
+                               for info in active_rooms.values()
+                               if info.get("public") and info["conn"] is not conn
+                               and len(info.get("members", []))
+                               < info.get("max_players", 8)]
+                if live_host:
                     emit(f"   parsed opcode={opcode:#x} (find-match search, "
                          f"marker={marker}) - this connection is a LIVE HOST "
                          f"(between its own 0x12f and 0x133); NOT sending a "
                          f"0x136 (its search object is its room object)")
-                elif action in ("elect", "hostelect"):
-                    if action == "elect":
-                        emit(f"   [elect] host={own_npid!r} (marker={marker}) - "
-                             f"HOST-ELECT: answering every search in this burst "
-                             f"with an EMPTY 0x136 so it exhausts its 5 searches "
-                             f"and self-hosts (~10s)")
-                    conn.sendall(build_room_search(search_obj_ptr, []))
-                    emit(f"   parsed opcode={opcode:#x} (find-match search, "
-                         f"marker={marker}) - HOST-ELECT {own_npid!r} <- EMPTY "
-                         f"0x136 (search_obj_ptr={search_obj_ptr:#x})")
-                elif action in ("park", "reparked"):
-                    emit(f"   [park] {own_npid!r} (marker={marker}) - election "
-                         f"pending for host {elected_host_npid!r}; sending "
-                         f"NOTHING. Client blocks in GAME_LIST_WAIT and stops "
-                         f"searching; hard cap "
-                         f"{ELECTION_HOLD_CAP_SECONDS:.0f}s (client timeout is "
-                         f"60s)" + ("" if action == "park" else " [re-park]"))
-                elif action == "late-release":
-                    hinfo = None
-                    with election_lock:
-                        e = election
-                        if e is not None and e["state"] in ("hosting", "joined"):
-                            with rooms_lock:
-                                hinfo = active_rooms.get(e["host_key"])
-                            jj = e["joiners"].get(conn_key)
-                            if jj is not None and not jj.get("released"):
-                                jj["released"] = True
-                                if jj.get("cap_timer") is not None:
-                                    jj["cap_timer"].cancel()
-                    if hinfo is not None:
-                        _send_room_search(
-                            me, search_obj_ptr,
-                            [(hinfo["room_id"], hinfo)], "release",
-                            f"host {hinfo['npid']!r} already live - PICK this")
-                    else:
-                        conn.sendall(build_room_search(search_obj_ptr, []))
-                        emit(f"   [release] {own_npid!r} <- EMPTY 0x136 (elected "
-                             f"host vanished between locks)")
-                else:  # "list"
-                    with rooms_lock:
-                        entries = [(info["room_id"], info)
-                                   for info in active_rooms.values()
-                                   if info.get("public") and info["conn"] is not conn
-                                   and len(info.get("members", []))
-                                   < info.get("max_players", 8)]
+                else:
                     conn.sendall(build_room_search(search_obj_ptr, entries))
                     emit(f"   parsed opcode={opcode:#x} (find-match search, "
                          f"marker={marker}) - sent RoomSearch (0x136) listing "
