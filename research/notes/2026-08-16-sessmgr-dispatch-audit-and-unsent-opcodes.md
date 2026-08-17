@@ -648,3 +648,11 @@ Recommended as **one change at a time**, in the order 1 → 2 → 5 → 4, so ea
 individually attributable. (1) and (2) are strictly-correct fixes with live
 evidence; (5) is the headline experiment; (4) is the riskiest because it removes
 a message that has been in the flow since the first successful room create.
+
+---
+**CORRECTION (2026-08-17):** the `0x138`/`RoomSearchResult` and `0x139`/`Kickout`
+names above are stale — live Kick/Promote testing this session settled the
+0x137-0x144 tail as: `0x137` Kickout (C->S), `0x138` Kickedout (S->C), `0x139`
+RoomClosed (S->C, not "kickout"). Sending `0x138` as a generic reply to `0x137`
+was the root cause of the Join Party collapse; see
+2026-08-17-party-system-working-and-opcode-corrections.md.

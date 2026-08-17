@@ -147,7 +147,7 @@ confirmed.
 |---|---|---|---|---|---|
 | 0 | `NetMatchmakingClientHello` | 0x12d | client→server | 48 | `protos/netmatchmaking_client_hello.ksy` |
 | 1 | `NetMatchmakingServerHello` | 0x12e | server→client | 16 | `protos/netmatchmaking_server_hello.ksy` |
-| 2-27 | `NetMatchmakingRoomCreate` ... `NetMatchmakingClientHello2` | 0x12f-0x148 | mixed - 24 confirmed single-direction (11 server→client via the client's own receive-dispatch, 13 client→server via disassembled senders, including the 5 client-to-server-only opcodes below) + 2 confirmed bidirectional (`RoomLeave`/0x134, `RoomSearch`/0x136 - each has both a disassembled sender AND a receive-dispatch case; see each opcode's own `.ksy` `doc:` block and the full table below) | see doc | **All 26 have opcode ID + size confirmed AND a full field-level `.ksy`** as of 2026-08-15 - the 11 with a decompiled receive-handler, plus the 5 client-to-server-only opcodes (`RoomJoin`/0x130, `MemberSetData`/0x13c, `Promote`/0x13e, `SetRoomFlags`/0x142, `UpdatedRoomFlags`/0x143) found by extending the vtable dump and disassembling their senders at the instruction level, plus the rest from earlier live/decompile work. Remaining open work is depth, not coverage: several payloads have unconfirmed internal sub-field layouts (see doc) |
+| 2-27 | `NetMatchmakingRoomCreate` ... `NetMatchmakingClientHello2` | 0x12f-0x148 | mixed - 24 confirmed single-direction (11 server→client via the client's own receive-dispatch, 13 client→server via disassembled senders, including the 5 client-to-server-only opcodes below) + 2 confirmed bidirectional (`RoomLeave`/0x134, `RoomSearch`/0x136 - each has both a disassembled sender AND a receive-dispatch case; see each opcode's own `.ksy` `doc:` block and the full table below) | see doc | **All 26 have opcode ID + size confirmed AND a full field-level `.ksy`** as of 2026-08-15 - the 11 with a decompiled receive-handler, plus the 5 client-to-server-only opcodes (`RoomJoin`/0x130, `Promote`/0x13c, `SetHostFlag`/0x13e, `RoomU16ListUpload`/0x142, `SetRoomDataBlock`/0x143) found by extending the vtable dump and disassembling their senders at the instruction level, plus the rest from earlier live/decompile work. Remaining open work is depth, not coverage: several payloads have unconfirmed internal sub-field layouts (see doc). **2026-08-17 correction:** the opcode-to-name mapping for the 0x137-0x144 tail was further revised after live Kick/Promote testing — see the banner below and `research/notes/2026-08-17-party-system-working-and-opcode-corrections.md`. |
 
 Full 28-entry table (now with a per-opcode Direction column), evidence, and
 the live-capture root-cause trail: `docs/protocol/session_manager_and_matchmaking.md`.
@@ -163,11 +163,9 @@ headline gap; full evidence in
   receive cursor** — so any opcode outside those 11 permanently wedges the
   SessionManager connection.
 - The declared name/size table has **two phantom entries** (indices 22-23);
-  everything from index 24 on is shifted by two, making **`0x143` =
-  `SetRoomName`** and **`0x144` = `UpdatedRoomName`** (the payload is a
-  NUL-terminated room-name string `strcpy`'d into `room_obj+0x18`, not a
-  128-byte "host rank" table), and explaining the previously-unexplained
-  `Ping`=`0x145` / `ClientHello2`=`0x146` corrections as the same single shift.
+  everything from index 24 on is shifted by two, which explains the
+  previously-unexplained `Ping`=`0x145` / `ClientHello2`=`0x146` corrections
+  as the same single shift.
 - `RoomCreate` (`0x12f`) has **no `create_id`** (offset 4 is uninitialised
   stack), its offset **8 is the client's own room-object pointer** (which
   retires the "room_ptr hazard" — no debugger needed any more), and
@@ -175,10 +173,34 @@ headline gap; full evidence in
 - `0x140`/`0x141` carry a **u16 at offset 4**, not a 4-byte bitmask; offset 6 is
   uninitialised stack, which fully explains the phantom "packed settings"
   bitmask.
-- **`0x13f`/OwnerChanged is a real server→client message the stub has never
-  sent**, and `RoomCreate`'s own sender clears the `room_obj+0x19f4` "I am the
-  host" flag it is the only writer of — so a solo-hosting client currently never
-  learns it is the host. Ranked first in that note's unsent-opcode list.
+- **`0x13f`/OwnerChanged is a real server→client message** — as of 2026-08-17
+  the stub sends it (paired with `0x13d`) on every Promote, and `RoomCreate`'s
+  own sender clears the `room_obj+0x19f4` "I am the host" flag it is the only
+  writer of. Ranked first in the earlier unsent-opcode list; now closed.
+
+**2026-08-17 correction — the 0x137-0x144 tail, live-verified via working
+Kick/Promote and the Join Party root-cause fix** (full detail:
+`research/notes/2026-08-17-party-system-working-and-opcode-corrections.md`;
+protos renamed accordingly). This supersedes the `0x143`/`0x144` "room name"
+identification above and the `SetRoomFlags`/`UpdatedRoomFlags`/`Promote`/`MemberSetData`
+names used for 0x142/0x143/0x13e/0x13c elsewhere on this page:
+
+| Opcode | Name | Direction | Notes | `.ksy` |
+|---|---|---|---|---|
+| 0x137 | `Kickout` | client→server | `{target@4, requester@6, room_id@8}`; must gate on `requester != 0` (the friends-list Join flow auto-emits a `requester=0` self-kick that must NOT be routed as a real kick) | `protos/0x137_kickout.ksy` |
+| 0x138 | `Kickedout` | server→client | **Root cause of the Join Party collapse when misused as a generic reply** — client dispatcher matches `room_id`@wire+8 to a local room and tears the party down via `sceNpSignalingTerminateConnection`. Only send it to the actual kick target. | `protos/0x138_kickedout.ksy` |
+| 0x139 | `RoomClosed` / forced teardown | server→client | Not "kickout" | `protos/0x139_room_closed.ksy` |
+| 0x13c | `Promote` | client→server | `{new_owner@4, room_id@8}` | (existing `.ksy`) |
+| 0x13d | `OwnerMemberChanged` | server→client | writes `room+0x19f0` | (existing `.ksy`) |
+| 0x13e | `SetHostFlag` | client→server | constant kind byte `3`@offset 5 | `protos/0x13e_set_host_flag.ksy` |
+| 0x13f | `HostFlagUpdated` | server→client | writes `room+0x19f4` | `protos/0x13f_host_flag_updated.ksy` |
+| 0x140 / 0x141 | `SetRoomAttr` / `RoomAttrUpdated` | client→server / server→client | writes `room+0x1f0`; meaning still unknown | (existing `.ksy`) |
+| 0x142 | `RoomU16ListUpload` | client→server | `16 + 2*count` bytes; NOT "host_rank" or `SetRoomFlags` — purpose unknown | `protos/0x142_room_u16_list_upload.ksy` |
+| 0x143 | `SetRoomDataBlock` | client→server | 128-byte opaque block written to `room+0x18`; NOT a room "name" string | `protos/0x143_set_room_data_block.ksy` |
+| 0x144 | `RoomDataBlockUpdated` | server→client | broadcasts the same 128-byte block | `protos/0x144_room_data_block_updated.ksy` |
+
+Every opcode above is either received (a dispatcher arm) or sent (an `li`
+builder) — never both.
 
 ## RPCN/PSN `CommandType`/`NotificationType` family (fourth family, source-derived not decompiled)
 

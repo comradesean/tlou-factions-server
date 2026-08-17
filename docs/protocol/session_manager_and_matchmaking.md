@@ -194,6 +194,65 @@ The inline row NAMES below (and the `.ksy` filename suffixes, which are shifted 
 2) are being reconciled to this mapping; where a row's name disagrees with this
 table, this table is correct. The behaviors described are unaffected.
 
+**Superseded 2026-08-17 for rows `0x13e`-`0x144` — see the "FINAL CORRECTION"
+banner directly below.** `SetAttrFlags`/`UpdatedAttrFlags` are renamed
+`SetHostFlag`/`HostFlagUpdated` (same fields, same targets `+0x19f4`);
+`SetRoomFlags`/`UpdatedRoomFlags` are renamed `SetRoomAttr`/`RoomAttrUpdated`
+(same fields, target `+0x1f0`, meaning still UNKNOWN); and — the actual
+correction, not just a rename — **`HostRank` (0x142) and `SetRoomName`/
+`UpdatedRoomName` (0x143/0x144) are wrong readings, not just wrong names**:
+0x142's u16 list has no confirmed purpose (do not call it host rank), and
+0x143/0x144's 128-byte `room_obj+0x18` block is not confirmed to be a name
+string (do not call it set/updated room name). Also superseded: rows `0x137`-
+`0x139` below, which this table didn't touch but which turned out to be the
+single biggest naming error in the whole family (see the banner).
+
+**2026-08-17 FINAL CORRECTION — 0x137-0x144 tail fully re-verified against the
+receive dispatcher (`FUN_00ad7604` @ `0x00ad7604`) and the client-side
+builders (`0xad4c00`-`0xad7604`), triggered by root-causing the friends-list
+Join Party bug live (see the new "Party lifecycle" section below and
+`research/notes/2026-08-17-session-handoff.md`). This is the decisive,
+disassembly-verified map — where any earlier row in this document disagrees,
+this map wins:**
+
+SERVER->CLIENT (dispatcher @`0x00ad7604`): `0x131` Member (160+104N); `0x132`
+RoomJoined (120); `0x134` MemberLeft (24, member_id@16); `0x136`
+RoomSearchResult/GameList (16+56N); `0x138` **Kickedout** (16, room_id@8 —
+recipient leaves the room); `0x139` **RoomClosed/ForcedTeardown** (16,
+server-initiated, harder teardown: RequestLeave + zeroes slot+0x10); `0x13b`
+MemberDataUpdated (80); `0x13d` OwnerMemberChanged (16, new_owner_member_id@4
+-> room+0x19f0); `0x13f` **HostFlagUpdated** (16, flag@4 -> room+0x19f4);
+`0x141` RoomAttrUpdated (16, value@4 -> room+0x1f0, meaning UNKNOWN); `0x144`
+RoomDataBlockUpdated (144, 128-byte block@16 -> room+0x18).
+
+CLIENT->SERVER (builders in `0xad4c00`-`0xad7604`): `0x12d` ClientHello;
+`0x12f` RoomCreate; `0x130` RoomJoin (88); `0x133` RoomLeaving (client
+abandons); `0x135` FindMatch (36); `0x137` **Kickout** (16,
+target_member_id@4, requester_member_id@6, room_id@8); `0x13a` SetMemberData
+(80); `0x13c` **Promote** (16, new_owner_member_id@4, room_id@8); `0x13e`
+**SetHostFlag** (16, flag@4, const kind byte 3@5, room_id@8); `0x140`
+SetRoomAttr (16, value@4 -> room+0x1f0, UNKNOWN meaning); `0x142`
+**RoomU16ListUpload** (16+2*count, count@4, u16[count]@16, purpose UNKNOWN —
+**NOT** "host_rank"); `0x143` **SetRoomDataBlock** (144, 128-byte block@16
+from room+0x18 — **NOT** "set_room_name"); `0x145` Ping (4); `0x146`
+ClientHello2.
+
+Request/response pairs: `0x137`->`0x138`, `0x13a`->`0x13b`, `0x13c`->`0x13d`,
+`0x13e`->`0x13f`, `0x140`->`0x141`, `0x143`->`0x144`. Two singletons: `0x139`
+(server-initiated RoomClosed, no client-sent request) and `0x142` (client u16-
+list upload, still fire-and-forget with no dispatch case, unchanged from the
+2026-08-15 finding). The headline rename is `0x137`/`0x138`/`0x139`: earlier
+passes (rows 10-12 below) read `0x137` as `RoomSearchInfo` and `0x138` as
+`RoomSearchResult` purely from the room_id-echo shape, and separately read
+`0x139` as `Kickout`. All three field layouts were correct; only the naming
+and the true request/response pairing were wrong. **This wrong naming is what
+built the Join Party bug** — see below. The proto files were renamed to
+match: `protos/0x137_kickout.ksy`, `protos/0x138_kickedout.ksy`,
+`protos/0x139_room_closed.ksy`, `protos/0x13e_set_host_flag.ksy`,
+`protos/0x13f_host_flag_updated.ksy`, `protos/0x142_room_u16_list_upload.ksy`,
+`protos/0x143_set_room_data_block.ksy`,
+`protos/0x144_room_data_block_updated.ksy`.
+
 **status: ROOT CAUSE FOUND AND LIVE-CONFIRMED for the `g_pSessionManager->Init()()
 failed` blocker.** The `NetMatchmaking*` opcode/size table (28 entries) is fully
 mapped at high confidence. Full field-level payload schemas for the 26 opcodes
@@ -415,20 +474,20 @@ identical `Direction:` line.
 | 7 | 0x134 | 308 | `NetMatchmakingRoomLeave` — **decompiled 2026-08-15**: declared 16 bytes CONFIRMED WRONG, dispatch case consumes exactly 24. Looks up one member by id (offset 16) via the same `_opd_FUN_00ad0d4c` helper and removes them via `_opd_FUN_00ad3190` - the same per-member removal path 0x133's room-abandon uses, but targeting a single member rather than the whole room. Name fits. `.ksy`: `protos/0x134_room_leave.ksy` | **bidirectional** (sender disassembled AND a confirmed receive-dispatch case - see this row) | 16 (declared) / 24 (actual, decompile-confirmed) |
 | 8 | 0x135 | 309 | `NetMatchmakingRoomLeft` (declared) — **live-tested 2026-08-15**: two real clients both sitting in Find Match each broadcast this opcode unprompted every ~5s (same cadence as `Ping`), actual size 36 bytes not the declared 24, payload carries a locale field (`"us"`), a repeated `0x03e8` pair, and a small mode-shaped field — shaped like a periodic find-match search-criteria advertisement/heartbeat, not a one-off "I left a room" event. Treated as the find-match broadcast trigger in `tools/session_manager_stub.py` (`FIND_MATCH_OPCODE`) until proven otherwise; the stub pairs the first two distinct searchers it sees and pushes both a real 2-member `Member`+`RoomJoined`. `.ksy`: `protos/0x135_find_match.ksy` | client→server | 24 (declared) / 36 (actual, live-confirmed) |
 | 9 | 0x136 | 310 | `NetMatchmakingRoomSearch` — **decompiled 2026-08-15**: declared fixed 36 bytes CONFIRMED WRONG, this is a variable-length message (16-byte header + `num_entries` × 56-byte entries, count at offset 12). Per-entry field layout not reversed (nontrivial byte-reordering shuffle). The offset-8 field also doesn't fit this family's usual room_id-echo pattern - read and used as a raw pointer rather than compared, unresolved without a live capture. `.ksy`: `protos/0x136_room_search.ksy` | **bidirectional** (primary framing client-sent AND a confirmed receive-dispatch case - see this row) | 36 (declared, fixed) / 16 + `num_entries`×56 (actual, decompile-confirmed) |
-| 10 | 0x137 | 311 | `NetMatchmakingRoomSearchInfo` — **live-tested 2026-08-15**: client sends this unprompted after `Member`/`RoomJoined`; actual size 16 bytes not the declared 56, tail 8 bytes exactly match the room_id assigned via `Member`. The stub echoes that room_id back as `RoomSearchResult` (0x138), but a room_id-echo reply was tried live and had zero effect on the "Searching for Optimal Game"/"Starting Game" hang — `0x133`'s room-abandon (row 6 above) is the more likely actual cause of that hang, not a missing reply here. **Sender confirmed 2026-08-16** as a byproduct of decompiling 0x140's sender (`_opd_FUN_00ad64f4`, vtable+0x24, adjacent slot). `.ksy`: `protos/0x137_room_search_info.ksy` | client→server | 56 (declared) / 16 (actual, live-confirmed) |
-| 11 | 0x138 | 312 | `NetMatchmakingRoomSearchResult` — IS one of the 11 opcodes the client's own receive-dispatch (`FUN_00ad7604`) has a case for; its handler searches a 4-slot local array by an 8-byte key at wire offset 8, matching the room_id-echo shape the stub sends. `.ksy`: `protos/0x138_room_search_result.ksy` | server→client | 16 |
-| 12 | 0x139 | 313 | `NetMatchmakingKickout` — **decompiled 2026-08-15**: confirmed 16 bytes, matching declared size. Room lookup by room_id (offset 8), then calls the room's vtable+0x2c callback, zeroes the room's own id fields, and runs the same full room-teardown (`_opd_FUN_00ad32c4`) 0x133's abandon path uses. Name fits ("you're kicked, tear down"). `.ksy`: `protos/0x139_kickout.ksy` | server→client | 16 |
+| 10 | 0x137 | 311 | ~~`NetMatchmakingRoomSearchInfo`~~ **RENAMED 2026-08-17 — this is `Kickout`, not a search-info message**: `target_member_id@4`, `requester_member_id@6`, `room_id@8` (matching the size-16 and room_id-at-offset-8 shape already found on 2026-08-15). Server's correct reply is `Kickedout` (`0x138`) to the TARGET's connection only, gated on `requester_member_id != 0` — see "Party lifecycle" section above. **GOTCHA**: the friends-list Join flow self-fires this opcode right after `RoomJoin` with `requester_member_id=0` (a self/status message, not a real kick request); an unconditional echo-reply is the exact bug that caused the Join Party collapse (see below). This also closes the 2026-08-15 open thread noting an echo reply "had zero effect on the hang" — it had a real effect (self-kick), just not one that session's test conditions surfaced. `.ksy`: `protos/0x137_kickout.ksy` | client→server | 56 (declared) / 16 (actual, live-confirmed) |
+| 11 | 0x138 | 312 | ~~`NetMatchmakingRoomSearchResult`~~ **RENAMED 2026-08-17 — this is `Kickedout`, not a search result.** IS one of the 11 opcodes the client's own receive-dispatch (`FUN_00ad7604`) has a case for; its handler (`0x00ad7f28`) reads `room_id@8`, finds the matching local room, and calls `RequestLeave` — which tears down the P2P link via `sceNpSignalingTerminate` (host: `SCE_NP_SIGNALING_ERROR_TERMINATED_BY_MYSELF` 0x8002a818; joiner: `..._TERMINATED_BY_PEER` 0x8002a810). Sending this unconditionally in reply to every `0x137` (the old "echo the room_id back" behavior, believing this was `RoomSearchResult`) is the confirmed root cause of the Join Party collapse — see "Party lifecycle" section above. `.ksy`: `protos/0x138_kickedout.ksy` | server→client | 16 |
+| 12 | 0x139 | 313 | ~~`NetMatchmakingKickout`~~ **RENAMED 2026-08-17 — this is `RoomClosed`/`ForcedTeardown`, not `Kickout`** (the real `Kickout` is `0x137`, row 10). **Decompiled 2026-08-15**: confirmed 16 bytes, matching declared size. Room lookup by room_id (offset 8), then calls the room's vtable+0x2c callback, zeroes the room's own id fields, and runs the same full room-teardown (`_opd_FUN_00ad32c4`) 0x133's abandon path uses — a harder, server-initiated teardown (RequestLeave + zeroing slot+0x10) than a single-member kick. Server-initiated only; no client-sent request pairs with it. `.ksy`: `protos/0x139_room_closed.ksy` | server→client | 16 |
 | 13 | 0x13a | 314 | **UPDATED 2026-08-17 — this is `SetPartyData`: the client publishing its own 32-byte per-member data blob (rank/title/loadout card), 80 bytes on the wire (byte 4 = blob length 0x20, bytes 16:48 = the blob).** The earlier "periodic analytics telemetry" reading conflated the message content with an unrelated caller loop (the Google-Analytics-beacon register context was in `_opd_FUN_00ad6148`'s caller, not this payload). The stub relays it per-member as `0x13b`; live-confirmed the remote member slot +0xFC is populated. See the 2026-08-16/17 banner above, `research/notes/2026-08-17-member-data-blob-rank-and-0x142-hostrank.md`, and `research/notes/2026-08-15-createparty-trace.md` (caller-loop trace). `.ksy`: `protos/0x13a_member_set_data.ksy` (filename now a misnomer) | client→server | 80 (actual, live-confirmed) |
 | 14 | 0x13b | 315 | ~~`NetMatchmakingRoomDestroyed`~~ **UPDATED 2026-08-17 — this is per-member DATA DELIVERY (the server→client counterpart of `0x13a`/SetPartyData), NOT room destruction.** 80 bytes; looks up one member by id (offset 4), writes a length-prefixed blob (length at offset 6, payload at offset 16) into that member's `+0xFC` (length into `+0xF8`). `+0xFC` is exactly what the lobby rank/loadout UI getter `_opd_FUN_00ad2650` reads for a REMOTE player (accepted only at length 32) — so this is the message that makes another player's rank/title/loadout render. Must follow Member (0x131), which sets the room-id lookup key. The stub sends it by relaying each client's `0x13a`. See the banner above and `research/notes/2026-08-17-member-data-blob-rank-and-0x142-hostrank.md`. `.ksy`: `protos/0x13b_member_updated_data.ksy` (filename now a misnomer) | server→client | 80 (actual, decompile + live confirmed) |
-| 15 | 0x13c | 316 | ~~`NetMatchmakingMemberSetData`~~ **declared size CONFIRMED WRONG, sender disassembled 2026-08-15** (`FUN_00ad6408`, vtable+0x28): confirmed 16 bytes, not 80. Sends a caller-supplied u16 "value" (offset 4) plus the room's own room_id (offset 8, raw/unswapped) - no per-member id anywhere in this payload, so despite the declared name this is room-scoped, not member-scoped (same class of naming mismatch as 0x13b/0x13d). `.ksy`: `protos/0x13c_promote.ksy` | client→server | 80 (declared) / 16 (actual, disassembly-confirmed) |
-| 16 | 0x13d | 317 | ~~`NetMatchmakingMemberUpdatedData`~~ **NAME QUESTIONABLE, decompiled 2026-08-15**: declared 80 bytes CONFIRMED WRONG, dispatch case consumes exactly 16. Room lookup here matches by ROOM id (not via the member-lookup helper), and the one payload field (offset 4) is written into the matched ROOM struct at +0x19f0 - four bytes before 0x13f/OwnerChanged's +0x19f4 flag. Looks like a room-level attribute next to ownership state, not a per-member update. No confirmed alternate name. `.ksy`: `protos/0x13d_owner_changed.ksy` | server→client | 80 (declared) / 16 (actual, decompile-confirmed) |
-| 17 | 0x13e | 318 | `NetMatchmakingPromote` — **two senders disassembled 2026-08-15** (`FUN_00ad6a34`/vtable+0x20, `FUN_00ad7024`/vtable+0x34): confirmed 16 bytes, matching declared size, from both call sites. A flag byte (offset 4, promote/demote-shaped) and a fixed per-call-site tag byte (offset 5: 3 vs. 4) precede the usual room_id (offset 8). `FUN_00ad6a34`'s variant also toggles the room's own +0x19f4 "is owner" flag (the same flag 0x13f/OwnerChanged sets) locally before sending. Name fits. `.ksy`: `protos/0x13e_set_attr_flags.ksy` | client→server | 16 |
-| 18 | 0x13f | 319 | `NetMatchmakingOwnerChanged` — **decompiled 2026-08-15**: confirmed 16 bytes, matching declared size. Room lookup by room_id (offset 8), writes the low bit of offset-4's byte into the matched room's +0x19f4 "is owner" flag - the same flag already referenced by this doc's own dispatch-table cross-check further below. Name and behavior agree cleanly. `.ksy`: `protos/0x13f_updated_attr_flags.ksy` | server→client | 16 |
-| 19 | 0x140 | 320 | `NetMatchmakingSetAttrFlags` — **live-captured 2026-08-15**, only reachable once a room survives long enough to actually load into a match. Arrived matching the declared 16 bytes: opcode(4) + a 4-byte flags value + echoed room_id(8) (four distinct real values captured across sessions: `0x00012f78`, `0x0000197c`, `0x0001fbe0`, `0x0001fba0` — the last two differ by exactly one bit (`0x40`), consistent with one UI setting toggled once, but not confirmed as a single clean field; the full 20-bit spread across all four looks like several settings packed into one bitmask). **Sender decompiled 2026-08-16** (`_opd_FUN_00ad62dc`, vtable+0x2c, confirmed live via vtable dump at `0x1243b38+0x2c`): gated on the SAME `room_obj+0x10` id-gate field this whole session's staleness investigation has centered on — if `room_obj+0x10 == 0` (room not yet "finalized" from the client's own perspective), the triggering UI action only writes locally (`room_obj+0x1f0 = value`, dirty flag `room_obj+0xe0 = 1`) and the message **never reaches the wire at all**; only once `room_obj+0x10` is nonzero does the same action actually transmit `0x140`. Practical implication: a stale/never-finalized room can silently swallow whatever this flags value represents (plausibly team-select) before it ever becomes a network event, independent of anything the stub replies. The stub currently replies with `UpdatedAttrFlags` (0x141) echoing the flags value and room_id straight back, matching the room_id-echo pattern already used for `RoomSearchInfo`/`RoomSearchResult` — implemented but not yet confirmed to unblock anything downstream. Which bit(s), if any, correspond to team selection is still unconfirmed — no static caller of `_opd_FUN_00ad62dc` found (purely vtable-dispatched); needs a live breakpoint at `0xad62dc` to resolve. Also unconfirmed: whether `room_obj+0x1f0` (a SessionManager room-slot field) feeds the same per-member team array `net-game-manager.cpp:1358`'s `team >= 0 && team < NetInfo::kMaxNetTeams` assert reads (different object family, no bridging evidence found yet — see `research/notes/2026-08-16-net-sm-server-lobby-dispatch.md` and follow-ups). `.ksy`: `protos/0x140_set_room_flags.ksy` | client→server | 16 |
-| 20 | 0x141 | 321 | `NetMatchmakingUpdatedAttrFlags` — IS one of the 11 opcodes the client's own receive-dispatch already has a case for (unlike 0x140/0x142/0x143) — a classic "client sets X, server confirms updated X" pair; see row 19. `.ksy`: `protos/0x141_updated_room_flags.ksy` | server→client | 16 |
-| 21 | 0x142 | 322 | ~~`NetMatchmakingSetRoomFlags`~~ **declared fixed size CONFIRMED WRONG, sender disassembled 2026-08-15** (`FUN_00ad5ffc`, vtable+0x38): variable-length, a 16-byte header (opcode, a u16 `num_entries` at offset 4, room_id at offset 8) plus `num_entries*2` bytes of raw caller-supplied payload, copied via a plain memcpy-shaped helper. Per-entry semantics unconfirmed. `.ksy`: `protos/0x142_host_rank.ksy` | client→server | 16 (declared, fixed) / 16 + `num_entries`×2 (actual, disassembly-confirmed) |
-| 22 | 0x143 | 323 | **REAL NAME: `NetMatchmakingSetRoomName`** (declared index 24; indices 22-23 are phantom, see the correction banner at the top of this file) — ~~`NetMatchmakingUpdatedRoomFlags`~~ **declared size CONFIRMED WRONG, two senders disassembled 2026-08-15** (`FUN_00ad6f28`/vtable+0x3c, `FUN_00ad54e0`/vtable+0x40): confirmed 144 bytes, not 16. Header is opcode + room_id (offset 8); the trailing 128 bytes (offset 16-143) are a verbatim copy of the room object's own +0x18 region - the SAME region 0x144/HostRank writes into on receipt, suggesting these two opcodes are a matched send/receive pair for the same rank/host-priority table, not independent boolean "room flags". Despite the declared name implying a server->client confirmation, this is client->server. `.ksy`: `protos/0x143_set_room_name.ksy` | client→server | 16 (declared) / 144 (actual, disassembly-confirmed) |
-| 23 | 0x144 | 324 | **REAL NAME: `NetMatchmakingUpdatedRoomName`** (declared index 25). The handler `strcpy`s the payload into `room_obj+0x18` (the room name) — `_opd_FUN_00e45b10` is confirmed to be a two-argument `strcpy`, there is no length argument, so the payload MUST be NUL-terminated within 128 bytes. Not a rank table. ~~`NetMatchmakingHostRank`~~ — **decompiled 2026-08-15**: declared 16 bytes CONFIRMED WRONG, dispatch case consumes exactly 144. Room lookup by room_id (offset 8), then copies a 128-byte block (offset 16 onward) into the matched room's struct at +0x18 - internal layout not reversed, but declared name is plausible for a 128-byte per-member rank/host-priority table. **Never sent by this project's stub before 2026-08-16** - a confirmed-real message the original server would have sent that ours simply never implemented. Now sent (`tools/session_manager_stub.py`), echoing the client's own `0x143` 128-byte payload straight back, matching this family's established "echo the client's own data" pattern (`0x137`/`0x138`, `0x140`/`0x141`) - EXPERIMENTAL, not yet live-tested; a live Ghidra trace found no link between this payload's destination (`room_obj+0x18`, SessionManager's own room-slot object) and the separate object the client-side team-assignment array lives on, so this is not expected to fix the team-assert boot specifically, but it's still a real protocol gap worth closing on its own. `.ksy`: `protos/0x144_updated_room_name.ksy` | server→client | 16 (declared) / 144 (actual, decompile-confirmed) |
+| 15 | 0x13c | 316 | ~~`NetMatchmakingMemberSetData`~~ **NAME CONFIRMED 2026-08-17: `Promote`.** **Declared size CONFIRMED WRONG, sender disassembled 2026-08-15** (`FUN_00ad6408`, vtable+0x28): confirmed 16 bytes, not 80. The offset-4 field previously described only as a "caller-supplied u16 value" is confirmed by this session's dispatcher/builder audit as `new_owner_member_id` (i.e. there IS a member id in this payload, correcting the 2026-08-15 note below that read it as room-scoped-only); `room_id@8`. Paired with the server's `OwnerMemberChanged` (`0x13d`) reply. `.ksy`: `protos/0x13c_promote.ksy` | client→server | 80 (declared) / 16 (actual, disassembly-confirmed) |
+| 16 | 0x13d | 317 | ~~`NetMatchmakingMemberUpdatedData`~~ **NAME CONFIRMED 2026-08-17: `OwnerMemberChanged`.** **Decompiled 2026-08-15**: declared 80 bytes CONFIRMED WRONG, dispatch case consumes exactly 16. Room lookup here matches by ROOM id (not via the member-lookup helper), and the one payload field (offset 4, `new_owner_member_id`) is written into the matched ROOM struct at `+0x19f0` — four bytes before `0x13f`/`HostFlagUpdated`'s `+0x19f4` flag. Broadcast by the server as the reply half of `Promote`/`0x13c`, alongside `HostFlagUpdated`/`0x13f`. `.ksy`: `protos/0x13d_owner_changed.ksy` | server→client | 80 (declared) / 16 (actual, decompile-confirmed) |
+| 17 | 0x13e | 318 | ~~`NetMatchmakingPromote`~~ **RENAMED 2026-08-17 — this is `SetHostFlag`** (the real `Promote` is `0x13c`, which carries `new_owner_member_id@4`+`room_id@8`; that identifies `0x13e` as a distinct flag-setter, not a second promote opcode). **Two senders disassembled 2026-08-15** (`FUN_00ad6a34`/vtable+0x20, `FUN_00ad7024`/vtable+0x34): confirmed 16 bytes. `flag@4`, a const per-call-site kind byte at offset 5 (3 vs. 4), then `room_id@8`. `FUN_00ad6a34`'s variant also toggles the room's own +0x19f4 "is owner" flag locally before sending, matching what `0x13f`/`HostFlagUpdated` writes on receipt at the server side. `.ksy`: `protos/0x13e_set_host_flag.ksy` | client→server | 16 |
+| 18 | 0x13f | 319 | ~~`NetMatchmakingOwnerChanged`~~ **RENAMED 2026-08-17 — this is `HostFlagUpdated`** (the real `OwnerChanged` is `0x13d`, which writes `+0x19f0`; `0x13f` writes the adjacent-but-distinct `+0x19f4` "is host" flag). **Decompiled 2026-08-15**: confirmed 16 bytes, matching declared size. Room lookup by room_id (offset 8), writes the low bit of offset-4's byte (`flag@4`) into the matched room's `+0x19f4` flag. Sent by the server as the reply to `SetHostFlag`/`0x13e` and as the broadcast half of `Promote`/`0x13c` (new leader gets flag=1, everyone else flag=0). `.ksy`: `protos/0x13f_host_flag_updated.ksy` | server→client | 16 |
+| 19 | 0x140 | 320 | ~~`NetMatchmakingSetAttrFlags`~~ **RENAMED 2026-08-17 — this is `SetRoomAttr`** (`value@4` -> `room_obj+0x1f0`; meaning of the value still UNKNOWN — do not read the earlier "several settings packed into one bitmask" framing below as confirmed). **Live-captured 2026-08-15**, only reachable once a room survives long enough to actually load into a match. Arrived matching the declared 16 bytes: opcode(4) + a 4-byte value + echoed room_id(8) (four distinct real values captured across sessions: `0x00012f78`, `0x0000197c`, `0x0001fbe0`, `0x0001fba0` — the last two differ by exactly one bit (`0x40`), consistent with one UI setting toggled once, but not confirmed as a single clean field). **Sender decompiled 2026-08-16** (`_opd_FUN_00ad62dc`, vtable+0x2c, confirmed live via vtable dump at `0x1243b38+0x2c`): gated on the SAME `room_obj+0x10` id-gate field this whole session's staleness investigation has centered on — if `room_obj+0x10 == 0` (room not yet "finalized" from the client's own perspective), the triggering UI action only writes locally (`room_obj+0x1f0 = value`, dirty flag `room_obj+0xe0 = 1`) and the message **never reaches the wire at all**; only once `room_obj+0x10` is nonzero does the same action actually transmit `0x140`. The stub replies with `RoomAttrUpdated` (`0x141`) echoing the value and room_id straight back. Which bit(s), if any, correspond to team selection is still unconfirmed and remains UNKNOWN — no static caller of `_opd_FUN_00ad62dc` found (purely vtable-dispatched); needs a live breakpoint at `0xad62dc` to resolve. Also unconfirmed: whether `room_obj+0x1f0` feeds the same per-member team array `net-game-manager.cpp:1358`'s `team >= 0 && team < NetInfo::kMaxNetTeams` assert reads (different object family, no bridging evidence found — see `research/notes/2026-08-16-net-sm-server-lobby-dispatch.md` and follow-ups). `.ksy`: `protos/0x140_set_room_attr.ksy` | client→server | 16 |
+| 20 | 0x141 | 321 | ~~`NetMatchmakingUpdatedAttrFlags`~~ **RENAMED 2026-08-17 — this is `RoomAttrUpdated`** (paired with `SetRoomAttr`/`0x140`; `value@4` -> `room+0x1f0`, meaning still UNKNOWN). IS one of the 11 opcodes the client's own receive-dispatch already has a case for (unlike 0x140/0x142/0x143) — a classic "client sets X, server confirms updated X" pair; see row 19. `.ksy`: `protos/0x141_room_attr_updated.ksy` | server→client | 16 |
+| 21 | 0x142 | 322 | ~~`NetMatchmakingSetRoomFlags`~~ / ~~`HostRank`~~ **RENAMED AND RE-SCOPED 2026-08-17 — this is `RoomU16ListUpload`; "HostRank" was never confirmed and should not have been used as the name.** **Declared fixed size CONFIRMED WRONG, sender disassembled 2026-08-15** (`FUN_00ad5ffc`, vtable+0x38): variable-length, a 16-byte header (opcode, a u16 `count` at offset 4, room_id at offset 8) plus `count*2` bytes of raw caller-supplied `u16[count]` payload starting at offset 16, copied via a plain memcpy-shaped helper. **Purpose of the list is UNKNOWN** — per-entry semantics were never confirmed; treat any "host rank" reading of this opcode as retracted. Fire-and-forget, no receive-dispatch case (replying would wedge the cursor — keep ignoring it). `.ksy`: `protos/0x142_room_u16_list_upload.ksy` | client→server | 16 (declared, fixed) / 16 + `count`×2 (actual, disassembly-confirmed) |
+| 22 | 0x143 | 323 | ~~`NetMatchmakingSetRoomName`~~ **RENAMED AND RE-SCOPED 2026-08-17 — this is `SetRoomDataBlock`; the 128-byte payload is NOT confirmed to be a room name.** (declared index 24; indices 22-23 are phantom, see the correction banner at the top of this file.) ~~`NetMatchmakingUpdatedRoomFlags`~~ **declared size CONFIRMED WRONG, two senders disassembled 2026-08-15** (`FUN_00ad6f28`/vtable+0x3c, `FUN_00ad54e0`/vtable+0x40): confirmed 144 bytes, not 16. Header is opcode + room_id (offset 8); the trailing 128 bytes (offset 16-143) are a verbatim copy of the room object's own `+0x18` region — the SAME region `0x144`/`RoomDataBlockUpdated` writes on receipt, i.e. `0x143`/`0x144` are a matched upload/broadcast pair for an opaque per-room 128-byte data block, not independent boolean "room flags", and not confirmed to be the display-name string despite the earlier `strcpy`-into-`+0x18` reading noted in the 2026-08-16 banner above — treat the block's content as UNKNOWN until decoded. Despite the old declared name implying a server->client confirmation, this direction is client->server. `.ksy`: `protos/0x143_set_room_data_block.ksy` | client→server | 16 (declared) / 144 (actual, disassembly-confirmed) |
+| 23 | 0x144 | 324 | ~~`NetMatchmakingUpdatedRoomName`~~ **RENAMED AND RE-SCOPED 2026-08-17 — this is `RoomDataBlockUpdated`; not confirmed to be a room name.** (declared index 25.) The handler copies the 128-byte payload into `room_obj+0x18`; the earlier claim that `_opd_FUN_00e45b10` is a plain `strcpy` (making `+0x18` "the room NAME") is NOT reconfirmed by this pass's dispatcher/builder audit and should be treated as open again — the block is opaque, general per-room data, paired with `SetRoomDataBlock`/`0x143` as the request half. Room lookup by room_id (offset 8), then copies a 128-byte block (offset 16 onward) into the matched room's struct at `+0x18` — internal layout not reversed. Sent by `tools/session_manager_stub.py`, echoing the client's own `0x143` 128-byte payload straight back (the established "echo the client's own data" pattern also used for `0x137`/`0x138` and `0x140`/`0x141` — note `0x137`/`0x138` echoing was later found to be the Join Party bug, so treat any remaining un-live-tested echo pairing in this family with appropriate caution). A live Ghidra trace found no link between this payload's destination (`room_obj+0x18`) and the separate object the client-side team-assignment array lives on, so this is not expected to bear on the team-assert boot. `.ksy`: `protos/0x144_room_data_block_updated.ksy` | server→client | 16 (declared) / 144 (actual, decompile-confirmed) |
 | 24 | 0x145 | 325 | ~~`NetMatchmakingSetRoomName`~~ **wire opcode reassigned**: this table index's declared opcode (`0x145`) is not used by SetRoomName on the wire — it's the real, live-confirmed opcode for `Ping` (see the 2026-08-14 correction above and row 26). `.ksy`: `protos/0x145_ping.ksy` documents the wire-confirmed version — a bare 4-byte opcode-only fire-and-forget keepalive, client-side-timer-driven, no reply sent (`tools/session_manager_stub.py`) | client→server | 144 (declared, unused) / 4 (actual `Ping`, live-confirmed) |
 | 25 | 0x146 | 326 | ~~`NetMatchmakingUpdatedRoomName`~~ **wire opcode reassigned**: this table index's declared opcode (`0x146`) is not used by UpdatedRoomName on the wire — it's the real, live-confirmed opcode for `ClientHello2` (see the 2026-08-14 correction above and row 27). `.ksy`: `protos/0x146_client_hello2.ksy` documents the wire-confirmed version — an 8-byte message, fire-and-forget (`Init()` sends it and moves on without waiting for a reply) | client→server | 144 (declared, unused) / 8 (actual `ClientHello2`, live-confirmed) |
 | 26 | 0x147 | 327 | `NetMatchmakingPing` (declared) — declared opcode doesn't match the wire; the real `Ping` opcode is `0x145` (row 24), confirmed via live capture | client→server (declared opcode unused on the wire; real `Ping` is 0x145, row 24) | 4 |
@@ -476,6 +535,72 @@ each would need its own decompile+disasm pass the way ClientHello/ServerHello
 got here; `FUN_00ad7604`'s handler bodies for the 11 cases above are already
 decompiled in `research/ghidra/sessmgr_vtable_dump.txt` if a future pass wants
 to start there instead of from scratch.
+
+## Party lifecycle, Kick/Promote, and the Join Party root cause (2026-08-17)
+
+**Flow:** `RoomCreate` (`0x12f`) -> server mints a UNIQUE party `room_id`
+(high word `0x60000000`, replacing the old shared static `0x01387f58` value,
+which made cross-connection room lookup ambiguous whenever more than one
+party existed at once) -> server pushes a `Member` roster (`0x131`) with
+per-entry ownership recovered via XOR of `member_id` against header
+`+0x0c`/`+0x0e` -> joiner sends `RoomJoin` (`0x130`) -> server pushes a fresh
+2-member roster plus `OwnerMemberChanged` (`0x13d`).
+
+**Kick:** client sends `Kickout` (`0x137`) with `target_member_id@4`,
+`requester_member_id@6`, `room_id@8`; server sends `Kickedout` (`0x138`) to
+the TARGET's own connection only, plus `MemberLeft` (`0x134`) to every other
+member of the room.
+
+**GOTCHA — the friends-list Join flow self-fires a `0x137`.** The client's
+own Join-Party code path auto-emits a `Kickout` (`0x137`) right after
+`RoomJoin`, with `requester_member_id`(+6) `= 0` and `target_member_id`(+4)
+`=` the joiner's own member id — this is a self/status message, not an actual
+kick request. **The server MUST gate on `requester_member_id != 0`** before
+acting on a `0x137`; a naive implementation that always replies to `0x137`
+with a `0x138` kicks the joiner immediately, surfacing as "Unable to join
+party" / "You were kicked."
+
+**Promote:** client sends `Promote` (`0x13c`) with `new_owner_member_id@4`;
+server broadcasts `OwnerMemberChanged` (`0x13d`) plus `HostFlagUpdated`
+(`0x13f`, flag `1` to the new leader, flag `0` to everyone else).
+
+### The Join Party collapse — root cause found and fixed
+
+The live symptom: every friends-list "Join Party" attempt collapsed roughly
+15ms after the join completed, tearing the party back down. Root-caused via
+RPCS3 PPU breakpoints (breakpoint at `0x3cb174` fired with `LR=0xad7fb0`,
+inside the message's `0x138` handling arm) to a single, precise cause: **the
+stub was replying to the client's `0x137` with a `0x138`, and `0x138` is
+`Kickedout`, not a search result.**
+
+The client's `Kickedout` handler (`0x00ad7f28`) reads `room_id@8`, finds the
+matching local room object, and calls `RequestLeave` (sets
+`m_leaveRequested=1`). The party state machine (state 6 at `0x3cad3c`) then
+calls `LeaveRoom` (`0x3caf94`), which tears down the P2P link via
+`sceNpSignalingTerminate` — the host observes
+`SCE_NP_SIGNALING_ERROR_TERMINATED_BY_MYSELF` (`0x8002a818`) and the joiner
+observes `SCE_NP_SIGNALING_ERROR_TERMINATED_BY_PEER` (`0x8002a810`). In
+plain terms: **the server was telling the host "you've been kicked from your
+own party,"** roughly 15ms after every successful join, because the old
+naming (`0x137`=`RoomSearchInfo`, `0x138`=`RoomSearchResult`, see rows 10-11
+below) made an unconditional room_id-echo reply look correct. It closes the
+open thread in row 10 below, which noted a room_id-echo reply on `0x137` "had
+zero effect on the hang" back on 2026-08-15 — it had an effect, just not the
+intended one, and not one visible in that session's test conditions.
+
+**Fix:** never send `0x138` except to deliberately kick a specific member
+(and even then, gated on `requester_member_id != 0` per the GOTCHA above).
+
+### Status (2026-08-17)
+
+Live-confirmed working end-to-end against `tools/session_manager_stub.py` as
+of this pass: **friends-list Join Party, Invite-to-Party, Promote, and Kick**
+all work. Invite-to-Party uses the exact same `RoomCreate`/`RoomJoin` room
+protocol as friends-list Join — it is NOT a separate PSN-only signaling path.
+**View Profile and Mute produce NO session-manager traffic at all**: Profile
+is served elsewhere (likely a client no-op under RPCS3, or served from the
+profile pipeline noted in the 2026-08-16/17 banner above) and Mute is
+client-local only.
 
 ## `NetMatchmakingClientHello` (48 bytes) - field layout
 

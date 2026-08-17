@@ -296,3 +296,11 @@ currently carries the naive name = declared idx N; correct name = declared idx N
 Note these are pure label changes: each `.ksy`'s actual field layout was
 reversed from the opcode's own handler/sender and remains valid; only the
 human-readable name attached to it moves by the +2 shift.
+
+---
+**CORRECTION (2026-08-17):** the `0x137`/`RoomSearchInfo`, `0x138`/
+`RoomSearchResult`, and `0x139`/`Kickout` names above are superseded by live
+Kick/Promote testing: `0x137` Kickout (C->S), `0x138` Kickedout (S->C), `0x139`
+RoomClosed (S->C). None are room-search related. Sending `0x138` as a reply to
+`0x137` was the root cause of the Join Party collapse; see
+2026-08-17-party-system-working-and-opcode-corrections.md.

@@ -140,3 +140,11 @@ mode-min-players, member-data-blob-rank-and-0x142-hostrank, opcode-naming-shift-
 resolved, team-assignment-consistency, character-customization-sync, join-party-
 p2p-collapse-signaling-deactivation, join-party-presence-discovery}.md`, plus
 the 2026-08-16 solo-host / two-player / profile / party-invite / metagame notes.
+
+---
+**CORRECTION (2026-08-17):** the "Join Party (friends-list): UNRELIABLE, OPEN —
+QUARANTINED" line above is superseded — the root cause was found and fixed this
+session (the stub was replying to `0x137` with `0x138` Kickedout, telling the
+host it had been kicked from its own party ~15ms after every join); friends-list
+Join Party, Invite-to-Party, Kick, and Promote are all now live-confirmed
+working, see 2026-08-17-party-system-working-and-opcode-corrections.md.

@@ -7,7 +7,9 @@ doc: |
 
   NetMatchmakingMemberUpdatedData (declared name) - server -> client, over
   the Session Manager connection (port 7314). One of the 11 opcodes the
-  client's own receive-dispatch (FUN_00ad7604) has a case for.
+  client's own receive-dispatch (FUN_00ad7604) has a case for; handler
+  confirmed at 0x00ad817c. Pairs with 0x13c/Promote, the client's request
+  for the same ownership change.
 
   STATUS: declared size in the Init() size table is 80 bytes - CONFIRMED
   WRONG. The dispatch case requires >15 buffered bytes and consumes exactly
@@ -39,8 +41,8 @@ doc: |
   room-scoped, and its payload names a member.
 
   This is a DIFFERENT and complementary piece of ownership state from
-  0x13f/OwnerChanged, which writes the boolean `room_obj+0x19f4` ("am I the
-  host"). Neither is currently sent by tools/session_manager_stub.py.
+  0x13f/HostFlagUpdated, which writes the boolean `room_obj+0x19f4` ("am I
+  the host"). Neither is currently sent by tools/session_manager_stub.py.
 
   SIDE EFFECT worth noting: unlike Member's silent write of the same field,
   this handler also fires `room_obj->vtable[0x34]()` after the store
@@ -55,12 +57,12 @@ seq:
   - id: opcode
     type: u4
     doc: "Fixed 0x13d (317 decimal), passed through FUN_00a0e324 in place before dispatch - a confirmed no-op (research/notes/2026-08-15-byteswap-helper-is-a-noop.md), so this stays plain big-endian."
-  - id: owner_member_id
+  - id: new_owner_member_id
     type: u2
-    doc: "Offset 4:6. `lhz r3,4(r29)` @ 0x00ad81e0. Zero-extended and stored into the matched room's +0x19f0 = the member id of the room's owner. Must match a member_id already registered via Member (0x131) for `_opd_FUN_00ad0d98`'s lookup to resolve it."
+    doc: "Offset 4:6. `lhz r3,4(r29)` @ 0x00ad81e0. Zero-extended and stored into the matched room's +0x19f0 = the member id of the room's owner. Must match a member_id already registered via Member (0x131) for `_opd_FUN_00ad0d98`'s lookup to resolve it. Pairs with 0x13c/Promote's own new_owner_member_id field."
   - id: unknown_2
     size: 2
     doc: "Offset 6:8. Not read by the traced portion of the 0x13d dispatch case - unconfirmed."
   - id: room_id
     type: u8
-    doc: "Offset 8:16. Compared against `*(s64*)(room_obj+0x10)` for each of the connection's 4 room slots (slot i's room-object pointer is at `this + i*0x9000 + 0x50`; verified by raw disasm this pass, the `addis r11,r11,1 / addi r11,r11,-28672` idiom is a 0x9000 stride). Silently dropped if no slot matches - and room_obj+0x10 is set ONLY by Member's (0x131) handler, so this message must follow a Member. Same room_id-echo pattern used throughout this opcode family."
+    doc: "Offset 8:16. Compared against `*(s64*)(room_obj+0x10)` for each of the connection's 4 room slots (slot i's room-object pointer is at `this + i*0x9000 + 0x50`; the `addis r11,r11,1 / addi r11,r11,-28672` idiom is a 0x9000 stride). Silently dropped if no slot matches - and room_obj+0x10 is set ONLY by Member's (0x131) handler, so this message must follow a Member. Same room_id-echo pattern used throughout this opcode family."

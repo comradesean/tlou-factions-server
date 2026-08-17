@@ -733,3 +733,10 @@ it isn't needed for the flow.
   expected host-election operands), `FUN_0035cde0` (custom-vs-server-lobby fork),
   `FUN_003f208c` (the `IsHost()` outer driver).
 - `captures/tcp_catch.log` — the live 36-byte `0x135` packet.
+
+---
+**CORRECTION (2026-08-17):** the "`0x137` RoomSearchInfo / `0x138`
+RoomSearchResult" labels above are stale — live-verified this session as
+`0x137` Kickout (C->S) and `0x138` Kickedout (S->C), unrelated to room search.
+Sending `0x138` as a reply to `0x137` was the root cause of the Join Party
+collapse; see 2026-08-17-party-system-working-and-opcode-corrections.md.

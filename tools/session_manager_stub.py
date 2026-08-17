@@ -72,6 +72,14 @@ ROOM_LEAVING_OPCODE = 0x133
 # likely actual cause of that hang, not a missing reply to this opcode.
 ROOM_SEARCH_INFO_OPCODE = 0x137
 ROOM_SEARCH_RESULT_OPCODE = 0x138
+# CORRECTED 2026-08-17 (live PPU breakpoint + disasm): 0x137/0x138 are NOT
+# search info/result - they are the party KICK mechanism, and 0x13c is PROMOTE:
+#   0x137 Kickout   C->S "kick member X"   {u16 target@+4; u16 requester@+6; u64 room_id@+8}
+#   0x138 Kickedout S->C recipient leaves the room named at wire+8 (handler @0x00ad7f28)
+#   0x13c Promote   C->S "make member X party leader" {u16 target@+4; u64 room_id@+8}
+KICKOUT_OPCODE = 0x137
+KICKEDOUT_OPCODE = 0x138
+PROMOTE_OPCODE = 0x13c
 # NetMatchmakingSetAttrFlags (0x140) / NetMatchmakingUpdatedAttrFlags (0x141).
 # Live-captured 2026-08-15 for the first time ever this session - only
 # reachable once a room survives long enough to actually load into a match
@@ -247,6 +255,41 @@ def synth_public_room_id(room_ptr):
         _public_room_seq[0] += 1
         seq = _public_room_seq[0]
     return struct.pack(">II", 0x50000000 | (seq & 0x0fffffff), room_ptr & 0xffffffff)
+
+
+def synth_party_room_id(room_ptr):
+    """Mint a globally-unique 8-byte room id for a PARTY room (invite / direct
+    Join Party), 2026-08-17.
+
+    ROOT CAUSE this addresses: every party reuses the one static room-object
+    pointer 0x01387f58, so its historical room_id (chunk[4:12] == 000000000
+    1387f58) is byte-identical on ALL clients. The RoomJoin (0x130) host lookup
+    then can only match on that shared id and has to guess "the most recent
+    entry" among colliding parties - a stale entry from a just-abandoned or
+    racing party (the failing direct-join lands 100-200ms after the target
+    improvises its party) routes the join to the wrong/dead connection and the
+    session collapses.
+
+    Why a mint here propagates end-to-end (triple-verified in EBOOT.elf):
+      - The client stores the 0x131 roster's wire[16:24] into room_obj+0x10
+        (std @0x00ad780c).
+      - The party state machine fills its NP 268 join-reply from that same
+        m_roomId (room_obj+0x10) the instant its create completes, so the
+        joiner learns the MINTED id over NP immediately - no presence-throttle
+        dependency on the critical path.
+      - Presence (sceNpBasicSetPresenceDetails path @0x00397d74) also re-reads
+        *(room_obj+0x10) every tick while advertising, so the minted id reaches
+        the friends list on the secondary channel too.
+
+    Distinct high-word tag (0x60000000) from the public mint so the two are
+    told apart in logs; shares the same sequence/lock so uniqueness is global
+    across both pools. Low word keeps the room_ptr so the value stays nonzero
+    (the client asserts m_roomId != 0, net-event-player.cpp:560).
+    """
+    with _public_room_lock:
+        _public_room_seq[0] += 1
+        seq = _public_room_seq[0]
+    return struct.pack(">II", 0x60000000 | (seq & 0x0fffffff), room_ptr & 0xffffffff)
 
 
 def build_room_joined(npid, name, room_id, id_gate=0, map_id=b"\x00\x00\x00\x00"):
@@ -646,6 +689,21 @@ def build_room_leave(room_id, member_id):
     return bytes(body)
 
 
+def build_kickedout(room_id):
+    """Build a 0x138 Kickedout (16 bytes) telling ONE recipient to leave a room.
+
+    VERIFIED 2026-08-17: the client's dispatcher arm @0x00ad7f28 reads the
+    8-byte room id at wire+8, finds the local room slot whose +0x10 matches,
+    and calls that session's RequestLeave (-> m_leaveRequested=1 -> LeaveRoom).
+    So this MUST be sent ONLY to the member being kicked - sending it to the
+    room owner is the self-kick bug that collapsed every party.
+    """
+    body = bytearray(16)
+    struct.pack_into(">I", body, 0, KICKEDOUT_OPCODE)
+    body[8:16] = room_id
+    return bytes(body)
+
+
 def broadcast_member_departure(departing_key, room_id=None):
     """A joined connection left (0x133 or socket close): remove it from any
     room it was a member of, tell the remaining members via 0x134, and
@@ -1011,11 +1069,29 @@ def handle(conn, addr, log_lock, log):
                 # so two find-match hosts collide byte-for-byte and the
                 # cross-connection registry cannot tell them apart (and the
                 # 0x136 game list would advertise an ambiguous join key). Mint
-                # our own for public rooms only - private/custom and party
-                # rooms keep the historical value so the live-confirmed
-                # solo-host and invite-to-party paths are untouched.
+                # our own for public rooms.
+                #
+                # UNIQUE PARTY ROOM ID (2026-08-17, Join Party fix): the party
+                # object is the fixed global 0x01387f58 on EVERY client, so its
+                # historical id (00000000 01387f58) collides byte-for-byte too -
+                # exactly the ambiguity behind the failing direct Join Party
+                # (the RoomJoin host lookup has to guess among colliding-id
+                # entries and a stale/racing one wins). Mint a unique id for the
+                # party room as well; it reaches the joiner over NP 268 (from
+                # room_obj+0x10) and via presence, both triple-verified in the
+                # EBOOT - see synth_party_room_id. The SOLO GAME host / custom
+                # game path (GAME_ROOM_PTR, no find-match) still keeps the
+                # historical static id: it is single-console with no cross-conn
+                # join, so its collision is harmless and the live-confirmed
+                # solo-host path stays byte-for-byte untouched.
                 if find_match_searching:
                     room_id = synth_public_room_id(room_ptr)
+                elif room_ptr == PARTY_ROOM_PTR:
+                    room_id = synth_party_room_id(room_ptr)
+                    emit(f"   [party-id] minted unique party room_id "
+                         f"{room_id.hex()} for {npid!r} (was shared static "
+                         f"{PARTY_ROOM_PTR:#010x}; disambiguates the RoomJoin "
+                         f"host lookup for direct Join Party)")
                 # RoomCreate's own wire offset 0xc:0x10 (4 bytes) - live-
                 # evidenced 2026-08-15 as a likely map/level identifier, see
                 # build_room_joined's docstring. Echo it straight back.
@@ -1508,15 +1584,99 @@ def handle(conn, addr, log_lock, log):
                          f"member_id={sender_member_id}, len={blob_len}) - "
                          f"cached + relayed as 0x13b blob to {sent} other "
                          f"member connection(s) of room {entry['room_id'].hex()}")
-            elif opcode == ROOM_SEARCH_INFO_OPCODE and len(chunk) >= 16:
-                # Echo the room_id straight back at the same wire offset (8),
-                # matching the general "echo the client's own correlation
-                # value" pattern used throughout this protocol.
+            elif opcode == KICKOUT_OPCODE and len(chunk) >= 16:
+                # KICK FROM PARTY - wired up 2026-08-17 (was log-only after the
+                # self-kick root-cause fix; see build_kickedout). The client
+                # that clicks "Kick from Party" sends this Kickout. 0x138
+                # (Kickedout) is what actually removes someone - route it to the
+                # TARGET member's connection ONLY, NEVER echo to the sender
+                # (that was the collapse bug). Payload: opcode(4) | target
+                # member_id u16 @+4 | requester u16 @+6 | room_id(8) @+8.
+                target_member_id = struct.unpack(">H", chunk[4:6])[0]
+                requester_member_id = struct.unpack(">H", chunk[6:8])[0]
                 room_id_tail = chunk[8:16]
-                reply = struct.pack(">I", ROOM_SEARCH_RESULT_OPCODE) + b"\x00\x00\x00\x00" + room_id_tail
-                conn.sendall(reply)
-                emit(f"   parsed opcode={opcode:#x} (RoomSearchInfo) - sent RoomSearchResult "
-                     f"(16 bytes) echoing room_id={room_id_tail.hex()}\n{hexdump(reply)}")
+                if requester_member_id == 0:
+                    # NOT a real kick. Live-decoded 2026-08-17: the friends-list
+                    # "Join Party" flow emits its OWN 0x137 right after RoomJoin
+                    # with requester(+6)=0 and target(+4)=the joiner. Acting on
+                    # it kicked the joiner ("Unable to join party / You were
+                    # kicked"). A user "Kick from Party" carries the kicking
+                    # member's id at +6 (nonzero, e.g. 1 for the host). So gate
+                    # the kick on requester!=0; otherwise log-only (this 0x137
+                    # is a join-flow status message, fire-and-forget).
+                    emit(f"   parsed opcode={opcode:#x} (0x137 requester=0, "
+                         f"target={target_member_id}, room_id={room_id_tail.hex()}) "
+                         f"- NOT a kick (join-flow status message), no action")
+                    continue
+                room_entry, target = None, None
+                with rooms_lock:
+                    for info in active_rooms.values():
+                        if id(conn) in info.get("conns", {}) and info["room_id"] == room_id_tail:
+                            room_entry = info
+                            break
+                    if room_entry is not None:
+                        for mid, c, em in room_entry["conns"].values():
+                            if mid == target_member_id:
+                                target = (mid, c, em)
+                                break
+                if room_entry is None:
+                    emit(f"   parsed opcode={opcode:#x} (Kickout target="
+                         f"{target_member_id}, room_id={room_id_tail.hex()}) - "
+                         f"sender not in a matching room, no action")
+                elif target is None:
+                    emit(f"   parsed opcode={opcode:#x} (Kickout) - target "
+                         f"member_id={target_member_id} not in room "
+                         f"{room_entry['room_id'].hex()}, no action")
+                else:
+                    mid, tconn, tem = target
+                    try:
+                        tconn.sendall(build_kickedout(room_entry["room_id"]))
+                        tem(f"   [kick] member_id={mid} kicked - sent Kickedout "
+                            f"(0x138) to this member only")
+                    except OSError:
+                        pass
+                    emit(f"   parsed opcode={opcode:#x} (Kickout) - removed "
+                         f"member_id={target_member_id} from room "
+                         f"{room_entry['room_id'].hex()}: 0x138 to target, 0x134 "
+                         f"to the rest")
+                    broadcast_member_departure(id(tconn), room_id=room_entry["room_id"])
+            elif opcode == PROMOTE_OPCODE and len(chunk) >= 16:
+                # PROMOTE TO PARTY LEADER - wired up 2026-08-17. Payload
+                # (live-decoded): opcode(4) | new_owner member_id u16 @+4 |
+                # (u16 @+6 uninitialised) | room_id(8) @+8. Make every client
+                # agree on the new leader: OwnerMember (0x13d) sets
+                # room_obj+0x19f0 (owner member id) everywhere; OwnerChanged
+                # (0x13f) flips the "am I host" flag at room_obj+0x19f4 - 1 for
+                # the new leader, 0 for everyone else. Both opcodes are already
+                # used in the working join flow.
+                new_owner_id = struct.unpack(">H", chunk[4:6])[0]
+                room_id_tail = chunk[8:16]
+                room_entry = None
+                with rooms_lock:
+                    for info in active_rooms.values():
+                        if id(conn) in info.get("conns", {}) and info["room_id"] == room_id_tail:
+                            room_entry = info
+                            break
+                    conns = list(room_entry["conns"].values()) if room_entry else []
+                if room_entry is None:
+                    emit(f"   parsed opcode={opcode:#x} (Promote target="
+                         f"{new_owner_id}, room_id={room_id_tail.hex()}) - "
+                         f"sender not in a matching room, no action")
+                else:
+                    owner_msg = build_owner_member(room_entry["room_id"], new_owner_id)
+                    sent = 0
+                    for mid, c, em in conns:
+                        try:
+                            c.sendall(owner_msg)
+                            c.sendall(build_owner_changed(
+                                room_entry["room_id"], 1 if mid == new_owner_id else 0))
+                            sent += 1
+                        except OSError:
+                            pass
+                    emit(f"   parsed opcode={opcode:#x} (Promote) - new leader "
+                         f"member_id={new_owner_id} in room "
+                         f"{room_entry['room_id'].hex()}: OwnerMember(0x13d)+"
+                         f"OwnerChanged(0x13f) to {sent} member(s)")
             elif opcode == SET_ATTR_FLAGS_OPCODE and len(chunk) >= 16:
                 flags_value = chunk[4:8]
                 room_id_tail = chunk[8:16]
