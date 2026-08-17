@@ -513,6 +513,191 @@ and never emit `0x135`.
 
 ---
 
+## 6. Host stability + two-searcher coordination (2026-08-17 live-test follow-up)
+
+Live test: the crash is fixed (RPCN soft-fails empty-npid RequestSignalingInfos)
+and **search → 0x136 list → GAME_LIST_PICK works**. But the two searchers never
+connect: each self-hosts, the host leaves SERVER_LOBBY after ~12s with no joiner,
+both public rooms collide on the static room_id `0x01383bd8`, and the pool
+flickers so the other searcher's list is almost always empty. Root causes, all
+decompiled this pass:
+
+### Q1 — why the host LEAVES SERVER_LOBBY (net-matchmaking.cpp:1039)
+
+SERVER_LOBBY's per-frame handler is **`_opd_FUN_003b7a78`**:
+
+```c
+FUN_003b6dfc(members_obj, 1);                 // rebuild member table from the SM roster
+count = FUN_003b19c4();                         // present member count (via FUN_00ad2768)
+min   = FUN_0039f1e0();                         // = modeCfg+0x14  (min players to start)
+if (count < min && (cfg+0x64 == 0 || count < cfg+0x64)) {
+     FUN_003ca4a4(g_matchSession+0x98);          // room_id
+     FUN_00ad0ca8(sm_conn);                       // TEAR DOWN the room  (emits 0x133 - see Q2)
+     GOTO NET_SM_LEAVE_GAME;                       // line 0x40f = 1039  -> state 0x28
+}
+... if team-balanced (FUN_003b5468) and count>=min -> FUN_003b7920();   // START match, state 0x15=21
+```
+
+- **The count is the SessionManager room-member roster.** `FUN_00ad2768`
+  enumerates the 4 room slots (`sm + i*0x180 + 0x748` = slot-active flag,
+  `+0x668` = member record) — i.e. exactly the members our **`Member` (0x131)**
+  broadcasts register. `FUN_0039f1e0`/`FUN_0039f218` read the selected mode's
+  config record (`FUN_00349360`) at `+0x14` (min) / `+0x18` (expected).
+- **What makes the host STAY:** the member count reaching `min`. **When a joiner
+  arrives, the stub must push the host an updated 2-member `Member` roster** —
+  that raises `FUN_00ad2768`'s count from 1 to 2. If `min <= 2`, the host then
+  passes the check and `FUN_003b7920` starts the match (GOTO state 21) instead of
+  leaving. So a join arriving + the 2-member roster IS what resets the wait.
+- **Caveat (must verify live):** `min` = `modeCfg+0x14` is a per-playlist runtime
+  value I can't read statically. If a public playlist's `min` is > 2, a lone host
+  + one joiner will NEVER satisfy it and the host always bails. The `cfg+0x64`
+  lower-bound term suggests the game can start below the ideal count, but the
+  actual numbers need a live read (breakpoint `FUN_0039f1e0` / dump `modeCfg+0x14`
+  and `+0x64`). If they exceed 2, 2-player find-match is not viable without
+  additional real peers.
+
+### Q2 — the 0x133 right after RoomCreate
+
+The leave path calls **`FUN_00ad0ca8`**, which invokes SessionManager
+**vtable+0x1c (`FUN_00ad65e8`)** = the room-slot teardown that sends the ~16-byte
+**`0x133`** abandon (already documented as the "client abandons a room it's
+tracking" sender). So the `0x133` the stub sees is the host giving up SERVER_LOBBY
+because `count < min` — not a RoomCreate-reply defect. The RoomCreate reply itself
+is fine (the one attempt that reached SERVER_LOBBY proves the matchmaking-host
+path accepts `Member + OwnerChanged(1) + OwnerMember`).
+
+Two things nonetheless make it churn *faster/worse* and must be fixed:
+1. **room_id collision (Q4)** breaks the client's own room-slot id-gate on some
+   attempts, so the host bails before even reaching SERVER_LOBBY.
+2. **treating a host as a searcher:** once a connection has hosted, it is no
+   longer in GAME_LIST_WAIT; **do not send it any more `0x136` lists.** They write
+   into the same static object `0x01383bd8` (game room == search object) at
+   `+0xa4/+0x200/+0x208` and re-arm search behavior on an object that is now a
+   live room.
+
+### Q3 — CONNECT_TO_HOST (1194) and CHOOSE_HOST_JOIN→force-leave (1294→596)
+
+The joiner's connect handler is **`_opd_FUN_003b2a9c`**:
+
+```c
+host_rec = *(-0x7f60);                          // the selected game-list entry's host record
+if (host_rec == 0) trapWord(0x1f);              // assert a host was selected
+*(g_matchSession+0xa0) = host_rec[1];           // <- HOST ADDRESS BLOCK, copied from the
+*(g_matchSession+0xa8) = host_rec[2];           //    0x136 entry's attribute region
+*(g_matchSession+0xb0) = host_rec[3];           //    (entry src[0x14:0x38] -> struct[8:0x2c])
+*(g_matchSession+0xb8) = host_rec[4];
+*(g_matchSession+0xc0) = host_rec[5];
+*(g_matchSession+0x98) = host_rec[0];           // room_id
+p2p = (*net_obj.vtable[0x10])(net_obj, host_rec+1);   // START P2P CONNECT to the host peer
+(*net_obj.vtable[0x14])(net_obj, p2p);
+GOTO state 8;                                    // line 0x4aa = 1194
+```
+
+- **The connect is P2P signaling to the HOST PEER, not a `0x130` to us.** (The
+  `0x130 RoomJoin` already happened back at GAME_LIST_PICK.) It uses the host
+  identity carried in the **`0x136` entry's attribute block** — so that block MUST
+  contain the **host's real NpId** or the joiner resolves nothing and
+  CONNECT_TO_HOST times out (~30s) → CHOOSE_HOST_JOIN (1294) → force-leave (596),
+  exactly the observed tail. Party 2-player matches prove P2P *can* establish;
+  the two missing ingredients here are (a) the host still being present and (b)
+  the entry carrying the host NpId.
+- **Actionable:** fill the `0x136` entry attribute region (`src[0x14:0x38]`) with
+  the host's 16-byte NpId (the value the host sent in its own RoomCreate name /
+  the npid the stub already tracks for that connection). `entry[0:8]` = room_id,
+  `entry[0x14:0x24]` = host NpId is the first concrete guess to try.
+
+### Q4 — the room_id collision (both `0x01383bd8`)
+
+Both game rooms carry the static room_id `0x01383bd8` because the stub derives the
+public room_id from RoomCreate wire bytes that include the room-object pointer.
+This is genuinely harmful: (a) the stub can't tell two public rooms apart in the
+pool / when matching a `0x130` join, and (b) the client's own room-slot id-gate
+(`room_obj+0x10`) can't distinguish rooms, so a joiner's `0x130` may match the
+wrong slot. **The stub controls the room_id it advertises** (it fills `0x136`
+`entry[0:8]`, the `Member` header `[16:24]`, and matches `0x130` by it), so it
+must **synthesize a DISTINCT room_id per public host** (e.g. `os.urandom(8)` at
+RoomCreate time) and use it consistently everywhere. The `room_ptr` hazard field
+(wire offset 8) stays the client's real `0x01383bd8`; only the logical room_id
+changes.
+
+### The coordination fix (what the stub must do)
+
+The deadlock is: host A needs a joiner to stay in SERVER_LOBBY (≤~12s window),
+and searcher B needs A registered+stable to find it — but both run identical
+self-host-on-timeout logic, and A's room flickers out of the pool. Resolve it by
+making the stub the coordinator:
+
+1. **Assign a unique room_id** to each public host at RoomCreate (fixes Q4).
+2. **Register the host room immediately and keep it registered** across brief
+   host wavering — only drop it on a real socket close, not on the first `0x133`
+   (add a short grace, e.g. keep it discoverable for a few seconds after a stray
+   abandon). This stops the flicker so B's `0x136` reliably lists A.
+3. **Serve A's room to every other searcher's `0x136` at once** so B joins A
+   rather than self-hosting. Because B's self-host needs several empty retries,
+   one or two search cycles (~5-10s) is enough for B to find A first.
+4. **On B's `0x130` join, push the HOST a fresh 2-member `Member` roster
+   immediately** (before A's grace expires) so `FUN_00ad2768` reports 2 →
+   `FUN_003b7a78` passes → A starts the match. Also push B its own 2-member
+   roster (already done by the existing `0x130` handler).
+5. **Once a connection has hosted, stop sending it `0x136`** (Q2).
+6. **Put the host NpId in the `0x136` entry** so B's P2P connect resolves (Q3).
+
+### Stub sketch delta (additions to §5)
+
+```python
+import os
+# public_pool value gains a stable unique id + host npid + a grace timestamp:
+#   public_pool[uid] = {"room_id": <8 unique bytes>, "host_npid", "conn",
+#                       "cur", "max", "map", "mode", "abandon_ts": None}
+hosted_conns = set()   # connections that became a public host (stop 0x136 to them)
+
+# RoomCreate branch, when is_public (conn sent 0x135, room_ptr != PARTY_ROOM_PTR):
+uid = id(conn)
+room_id = os.urandom(8)                     # DISTINCT per host (fixes the 0x01383bd8 collision)
+# ... build Member/OwnerChanged with THIS room_id (not chunk[4:12]) ...
+hosted_conns.add(uid)
+with public_pool_lock:
+    public_pool[uid] = {"room_id": room_id, "host_npid": npid, "conn": conn,
+                        "cur": 1, "max": max_players, "map": map_id, "mode": team,
+                        "abandon_ts": None}
+
+# 0x135 find-match branch:
+if id(conn) in hosted_conns:
+    continue                                 # a host is not a searcher - never send it a 0x136
+searched_conns.add(id(conn))
+search_obj_ptr = struct.unpack(">I", chunk[8:12])[0]
+with public_pool_lock:
+    entries = [build_search_entry(r["room_id"], r["host_npid"], r["cur"], r["max"])
+               for r in public_pool.values()
+               if r["conn"] is not conn]      # advertise OTHER hosts' unique room_ids
+conn.sendall(build_room_search_list(search_obj_ptr, entries))
+
+# build_search_entry: put the host NpId in the attribute block so the joiner's
+#   CONNECT_TO_HOST P2P resolve succeeds (Q3):
+def build_search_entry(room_id, host_npid, cur, mx, ...):
+    e = bytearray(56)
+    e[0:8] = room_id
+    e[0x14:0x14+len(host_npid[:16])] = host_npid[:16]   # -> g_matchSession host-address block
+    struct.pack_into(">H", e, 0x0c, cur); struct.pack_into(">H", e, 0x10, mx)
+    return bytes(e)
+
+# 0x130 RoomJoin branch (existing cross-connection handler), match by the UNIQUE
+#   room_id, then IMMEDIATELY push the host a 2-member Member roster and bump cur.
+#   That is the single most time-critical send: it must reach the host before its
+#   SERVER_LOBBY grace (~12s from line 874) expires, or the host tears down (0x133).
+
+# Host teardown grace: on 0x133 / socket close of a host, do NOT drop public_pool[uid]
+#   instantly; set abandon_ts=now and purge only after a few seconds (or on real
+#   close), so a searcher mid-cycle still finds it.
+```
+
+**Still to verify live (highest value):**
+- `modeCfg+0x14` (min) and `+0x64` for the public playlists — the go/no-go for
+  whether 2 players can ever start a matchmade game (breakpoint `FUN_0039f1e0`).
+- That the host-address block is `entry[0x14:0x24]` = host NpId (breakpoint
+  `FUN_003b2a9c` at the `host_rec[1..5]` copy, read what a working party-host
+  connection would put there).
+
 ## State-code caveat (for the next session)
 
 The numeric argument to `_opd_FUN_00347160(code, name_str)` is **not** a direct
