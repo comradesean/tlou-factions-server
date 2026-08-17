@@ -331,3 +331,81 @@ carry `[HH:MM:SS.mmm]` timestamps.
 lobby-timer base `0x01385850`, search-attempt counter `0x013858b4`, abort flag
 `0x013858b0`, connection handle `0x01383bd8+0x1A48`, reserve deadline
 `0x0138594c`, lobby-state obj `0x01385cdc`.
+
+## §7 Real-server model validation 2026-08-17
+
+**Verdict: the real-server model is CORRECT and COMPLETE. The election was NOT
+load-bearing.** Every claim below re-verified in disassembly this pass (objdump
+of the decrypted EBOOT, VMA = file+0x10000). Proceeding to gut the inert
+election machinery; no correctness tweaks required.
+
+### Q1 — GAME_LIST_WAIT / PICK robustness to multi/empty/stale lists
+
+- **`FUN_003b4bf4` (GAME_LIST_WAIT) handles any entry count, empty included.**
+  `0x3b4c14 bl 0xad0f60` (status); `0x3b4c38 cmpwi r3,1 / beq 0x3b4d10`: if
+  still-searching, poll the 60 s timeout; else (search done, ANY count) it
+  reads the count via `0x3b4c58 bl 0xad2594` and runs a zero-loop
+  `0x3b4c7c..0x3b4c90` bounded by `*count` (stride 4) — count 0 skips the loop
+  cleanly — then `0x3b4d00 li r3,7 / bl 0x347160` → PICK. Empty and multi both
+  fall through the same door.
+- **`FUN_003b6c78` (PICK): non-empty → connect, empty → 1+2·rand re-search.**
+  On first entry (its own `+0` flag == 0) it calls the selector
+  `0x3b6cdc bl 0x3b6a08`: nonzero → `0x3b6d08 b 0x3b2a9c` (CONNECT_TO_HOST);
+  zero → `0x3b6d0c` arms a backoff `const 1.0 (‑32436) + 2·rand` into two float
+  globals and sets the flag. Subsequent passes (`0x3b6d88`) wait out the
+  backoff then `0x3b6dd8 b 0x3b5e9c` (re-search, bumps the attempt counter).
+- **`FUN_003b6a08` (selector) iterates the WHOLE list and self-blacklists stale
+  picks.** Loop `0x3b6a68..0x3b6bd4` runs `r28` over all `*count` entries
+  (stride 56), picking the best by a float metric at dest+0x2c. Return
+  (`0x3b6c40..0x3b6c74`) = `(selected_ptr != 0)`. Critically, `0x3b6a78..
+  0x3b6ac8` walks an **8-slot recently-failed table** (room_id at entry+8 vs 8
+  stored ids) and, on a match within **≤ 8999 ms**, `ble 0x3b6bb8` SKIPS that
+  entry. So a room the client just failed to reserve against is ignored for ~9 s.
+- **Stale/full/gone pick → reserve times out → back to PICK, room blacklisted.**
+  `FUN_003b6404` (RESERVE_SLOTS_WAIT): `0x3b6480 li r3,257 / bl 0x3c8f20` polls
+  the host's reserve reply; on a reply it decodes (56 B, `bl 0x3c9228`), gates
+  `entry.room_id == session+0x98`, then `0x3b64dc bl 0x3b2f40` (→ 0x130 join).
+  No reply and deadline passed (`0x3b6510 fcmpu / blt 0x3b6530`) →
+  `bl 0x3b26c0` ("Joining Request timed out") → back to GAME_LIST_PICK, where
+  the selector now skips the just-failed room for ~9 s and picks another or
+  re-searches.
+  **⇒ plain list-return is robust to staleness; the client prunes dead/full
+  picks itself. The stub does NOT need to prune.** (Its existing filter —
+  public, `members < max_players`, exclude self — is a sufficient, sane prune
+  that just avoids wasting the client a 6 s reserve cycle.)
+
+### Q2 — the returned entry format is sufficient (and empirically proven)
+
+The stub fills entry[0:8]=room_id (join key + the selector's blacklist key),
+entry[0xc]=cur, entry[0x10]=max, entry[0x14:0x24]=host NpId. CONNECT_TO_HOST
+(`FUN_003b2a9c`) copies the attribute block [0x14:0x38] as the host address and
+starts P2P signaling **by NpId** — so entry[0x14:0x24]=host NpId is the one
+load-bearing field beyond room_id, and it is present. A real 2-client Find Match
+completed live with exactly this format, so the fields are correct/complete;
+nothing is being sent wrong or zero that a pick requires.
+
+### Q3 — registry timing matches what the client needs
+
+Host is advertised the instant its `0x12f` lands (added to `active_rooms` with
+`public=True` in the RoomCreate handler) and stays listed across its whole
+SERVER_LOBBY window until its `0x133`, on which it is removed **immediately**
+(no grace — the grace was the fatal bug of the last run). Host-migration is not
+replicated and is not needed for 2-player convergence. This is exactly the
+add-on-create / drop-on-leave a real server does.
+
+### Q4 — no livelock; convergence is w.p. 1
+
+Each client's cycle is search-burst (5×`0x135`, each `1+2·rand` s ⇒ ~5–11 s) →
+self-host → SERVER_LOBBY (12 s at count 1) → `0x133` → repeat, ≈ 22–23 s total
+with a host "listable" for >50 % of it. A livelock would require the two cycles
+to hold **perfect anti-phase forever** (every searcher window disjoint from
+every host window). The `1+2·rand` backoff (re-rolled every burst) plus variable
+self-host latency make the phase relationship a random walk, so P(sustained
+anti-phase) → 0. When both search simultaneously they both self-host (re-roll);
+when both host simultaneously they both tear down at 12 s (re-roll); otherwise a
+searcher's `0x135` overlaps the other's SERVER_LOBBY and it sees + joins the host.
+Per-cycle overlap probability is high (order 40–70 %), so convergence typically
+within a few cycles (~a minute) and is certain in the limit. The election bought
+one-cycle determinism; the natural model trades that for real-server fidelity and
+still converges. **The determinism the election guaranteed is genuinely not
+needed** — confirmed by the live 2-client success on the natural-flow build.

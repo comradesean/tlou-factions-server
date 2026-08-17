@@ -141,17 +141,6 @@ ROOM_PTR = 0x01383bd8
 GAME_ROOM_PTR = 0x01383bd8
 PARTY_ROOM_PTR = 0x01387f58
 
-# Cross-connection find-match pairing state (2026-08-15). The stub is
-# otherwise stateless per-connection - with two independent real RPCN
-# accounts both sitting in "Find Match" simultaneously, neither could ever
-# find the other since nothing tied their connections together. Single-slot
-# waiting room: first searcher to arrive registers here and waits; the next
-# *different* searcher pairs with whoever is waiting and both get pushed a
-# real 2-member RoomJoined+Member pair. Guarded by waiting_lock since each
-# connection runs in its own thread.
-waiting_lock = threading.Lock()
-waiting_player = None
-
 # Cross-connection room registry (2026-08-16, party-join support). Every
 # room a connection creates via RoomCreate is registered here so that a
 # LATER 0x130 RoomJoin from a DIFFERENT connection can find it. Live
@@ -239,77 +228,6 @@ def extract_member_blob(chunk, len_off, blob_off):
         return None
     return bytes(chunk[blob_off:blob_off + blob_len])
 
-# ---------------------------------------------------------------------------
-# SERIALIZED HOST/JOINER ELECTION (2026-08-17)
-# ---------------------------------------------------------------------------
-# See research/notes/2026-08-17-find-match-coordination-root-cause.md §4. Two
-# clients pressing Find Match both self-elect host (each searches, gets an
-# empty list, self-hosts) and neither is ever a plain joiner - with a ~12 s
-# host window inside a ~23 s matchmaking cycle, unassisted rendezvous is a coin
-# flip. The stub therefore SERIALIZES the two roles:
-#
-#   * the FIRST connection to search becomes HOST-ELECT (A). Every one of its
-#     0x135s in the burst is answered with an EMPTY 0x136 so it exhausts its 5
-#     searches (~9-11 s) and self-hosts.
-#   * every OTHER searcher is PARKED: it gets NO 0x136 at all, so it blocks in
-#     NET_SM_CLIENT_GAME_LIST_WAIT and stops sending 0x135s. Parking is free -
-#     the client is happy to wait; its hard timeout is 60.0 s (float
-#     0x01269c48, FUN_003b4bf4 @ 0x3b4d10) after which it shows an error
-#     dialog, so we never hold longer than ELECTION_HOLD_CAP_SECONDS.
-#   * the instant A's 0x12f RoomCreate lands, every parked joiner is RELEASED
-#     with a ONE-entry 0x136 naming A's room (a stub-synthesized unique room id
-#     - both clients literally send the same heap pointer 0x01383bd8, so the
-#     registry must never be keyed on the raw client value) and A's real NpId.
-#   * if the joiner's 0x130 RoomJoin does not arrive within
-#     ELECTION_JOIN_WATCHDOG_SECONDS the election is abandoned (A tears its own
-#     lobby down at t(0x12f) + 12.0 s anyway) and the next 0x135 starts a fresh
-#     election - roles may swap, which is fine.
-#
-# Timings below are all from the disassembly table in §3 of that note.
-#
-# ---- 2026-08-17 LIVE RESULT: the election + roster push WORK. ----
-# The remaining teardown is NOT a stub bug. Measured off TTY.log with the
-# local client hosting (so the whole cycle is visible in one log):
-#   613.5267  net-matchmaking.cpp:725  CREATE_GAME_WAIT   (the 0x12f)
-#   613.7900  "comradesean joined match" + :874 SERVER_LOBBY
-#   614.0600  SCE_NP_SIGNALING_EVENT_EXT_MUTUAL_ACTIVATED mgnomad2
-#   614.8567  "mgnomad2 joined match"        <- our 2-member roster applied
-#   629.5600  net-matchmaking.cpp:1039 GOTO NET_SM_LEAVE_GAME
-# 629.56 - 613.53 = 16.03 s = 8.0 + lobbyWaitTable[2]. The very next cycle,
-# with nobody joining, held 12.03 s = 8.0 + lobbyWaitTable[1]. The deadline
-# therefore proves FUN_003b19c4 counted exactly TWO members: the host's own
-# record is recognised (FUN_00ad0e40 matches member+0xE8 against
-# room_obj+0x19EC, which our Member's local_ref_id sets via 0x00ad37c8) AND
-# the joiner's P2P handle at member+0xF0 reported state 2. The three remote-
-# host cycles show the same 16 s (543.9/570.4/595.5 -> teardown ~559.7/586.2/
-# 611.5). Nothing about the roster push is broken.
-# What fails is the NEXT check, FUN_003b7a78 @0x003b7ac0:
-#   cmplw cr7, r29(count=2), r3(min = FUN_0039f1e0() = DC cfg+0x14)
-#   bge -> start-gate;  else if obj2[0x64]==0 or count<obj2[0x64] -> TEAR DOWN
-# i.e. the mode's minimum-players-to-start. That value is client-side runtime
-# DC data (research/notes/2026-08-17-mode-min-players.md) - NO server message
-# can change it. The levers are: read it live (BP 0x003b7ac0: r3=min,
-# r29=count; BP 0x003b7ac8 for the obj2[0x64] runtime floor), or the
-# 1-instruction client patch FUN_0039f1e0 -> `li r3,2; blr`
-# (38 60 00 02 4e 80 00 20). Do not chase this in the stub.
-
-# Client's GAME_LIST_WAIT hard timeout is 60.0 s -> error dialog + LEAVE_GAME.
-# Never hold a 0x136 anywhere near that long.
-ELECTION_HOLD_CAP_SECONDS = 40.0
-# A's lobby teardown fires at t(0x12f) + 8.0 + lobbyWaitTable[1] = 12.0 s. The
-# reference (working) PICK -> CONNECT_TO_HOST -> RESERVE -> 0x130 path took
-# 0.17 s, so 9 s is a very generous budget that still leaves A alive.
-ELECTION_JOIN_WATCHDOG_SECONDS = 9.0
-# If the host-elect never reaches RoomCreate (backed out to the menu, crashed,
-# ...) release the parked joiners rather than sitting on them.
-ELECTION_CREATE_TIMEOUT_SECONDS = 35.0
-
-# The single in-flight election, or None. Guarded by election_lock (an RLock:
-# the release path calls back into helpers that re-take it).
-election_lock = threading.RLock()
-election = None
-_election_gen = [0]
-
 # Stub-synthesized PUBLIC room ids. RoomCreate's own wire offset 4:12 is
 # `00000000 01383bd8` on EVERY client (offset 4:8 is uninitialised stack,
 # offset 8:12 is the statically-allocated game-room object) - so two hosts
@@ -319,12 +237,13 @@ _election_gen = [0]
 # put in Member's wire 16:24 into room_obj+0x10 and echoes it back to us in
 # 0x133 / 0x137 / 0x140 / 0x13a (live-confirmed), and the P2P reserve reply
 # carries it to the joiner, so the joiner's 0x130 names this same value.
+_public_room_lock = threading.Lock()
 _public_room_seq = [0]
 
 
 def synth_public_room_id(room_ptr):
     """Mint a globally-unique 8-byte room id for a public (find-match) room."""
-    with election_lock:
+    with _public_room_lock:
         _public_room_seq[0] += 1
         seq = _public_room_seq[0]
     return struct.pack(">II", 0x50000000 | (seq & 0x0fffffff), room_ptr & 0xffffffff)
@@ -708,94 +627,6 @@ def build_room_search(search_obj_ptr, entries):
     return bytes(header) + bytes(body)
 
 
-# ---------------------------------------------------------------------------
-# Election state machine helpers
-# ---------------------------------------------------------------------------
-# States (election["state"]):
-#   "electing" - A has searched, has NOT yet sent its 0x12f. A's 0x135s get an
-#                EMPTY 0x136; everyone else parks (no reply at all).
-#   "hosting"  - A's 0x12f landed, parked joiners were released with a 1-entry
-#                0x136. Waiting for a joiner's 0x130 (watchdog armed).
-#   "joined"   - a joiner's 0x130 landed and both sides hold the real 2-member
-#                roster. New searchers get the ordinary public list.
-# The election is torn down by: A's 0x133, A's socket close, the create
-# timeout, or the join watchdog.
-
-
-def _send_room_search(target, search_obj_ptr, entries, tag, why):
-    """Send a 0x136 to one parked/searching connection. Never called for a live
-    host - a 0x136 writes through the searcher's search object, which for a
-    host IS its room object (0x01383bd8)."""
-    try:
-        target["conn"].sendall(build_room_search(search_obj_ptr, entries))
-        target["emit"](f"   [{tag}] {target['npid']!r} <- 0x136 with "
-                       f"{len(entries)} entry(s) ({why})")
-        return True
-    except OSError as e:
-        target["emit"](f"   [{tag}] {target['npid']!r} send failed: {e}")
-        return False
-
-
-def election_abandon(reason, emit=None):
-    """Tear the current election down and release anyone still parked with an
-    EMPTY list (so they self-host and can win the NEXT election)."""
-    global election
-    with election_lock:
-        e = election
-        if e is None:
-            return
-        election = None
-        for t in e.get("timers", []):
-            t.cancel()
-        e["timers"] = []
-        stranded = [j for j in e["joiners"].values() if not j.get("released")]
-        for j in stranded:
-            j["released"] = True
-            if j.get("cap_timer") is not None:
-                j["cap_timer"].cancel()
-    (emit or e["host_emit"])(
-        f"   [watchdog] abandon election host={e['host_npid']!r} "
-        f"state={e['state']}: {reason} "
-        f"(releasing {len(stranded)} parked searcher(s) with an empty list)")
-    for j in stranded:
-        _send_room_search(j, j["search_obj_ptr"], [], "release",
-                          f"election abandoned: {reason}")
-
-
-def _election_create_timeout(gen):
-    with election_lock:
-        if election is None or election["gen"] != gen or election["state"] != "electing":
-            return
-    election_abandon(f"host-elect never reached RoomCreate within "
-                     f"{ELECTION_CREATE_TIMEOUT_SECONDS:.0f}s")
-
-
-def _election_join_watchdog(gen):
-    with election_lock:
-        if election is None or election["gen"] != gen or election["state"] != "hosting":
-            return
-    election_abandon(f"no 0x130 RoomJoin within "
-                     f"{ELECTION_JOIN_WATCHDOG_SECONDS:.0f}s of the host's 0x12f "
-                     f"(host tears its own lobby down at 12.0s)")
-
-
-def _election_park_cap(gen, conn_key):
-    """HARD CAP: a parked joiner has been holding a 0x136 for
-    ELECTION_HOLD_CAP_SECONDS. The client's own hard timeout is 60.0 s and ends
-    in an error dialog, so let it go with an empty list well before that."""
-    with election_lock:
-        if election is None or election["gen"] != gen:
-            return
-        j = election["joiners"].get(conn_key)
-        if j is None or j.get("released"):
-            return
-        j["released"] = True
-        j["capped"] = True
-    _send_room_search(j, j["search_obj_ptr"], [], "release",
-                      f"{ELECTION_HOLD_CAP_SECONDS:.0f}s hold cap expired - "
-                      f"letting it self-host")
-
-
 def build_room_leave(room_id, member_id):
     """Build a 0x134 RoomLeave (24 bytes) - "member X left the room".
 
@@ -1031,9 +862,9 @@ def start_member_refresher(conn, emit, members, room_id, max_players,
 def _ts():
     """Wall-clock stamp for every log line: [HH:MM:SS.mmm].
 
-    Added 2026-08-17. The find-match election is a timing problem end to end
-    (host lobby deadline = t(RoomCreate) + 8.0 + lobbyWaitTable[count]; 6.0 s
-    P2P reserve timeout; 60.0 s GAME_LIST_WAIT cap), and this log had NO
+    Added 2026-08-17. Find-match is a timing problem end to end (host lobby
+    deadline = t(RoomCreate) + 8.0 + lobbyWaitTable[count]; 6.0 s P2P reserve
+    timeout; 60.0 s GAME_LIST_WAIT cap), and this log had NO
     per-line timestamps at all - correlating it against RPCS3's TTY game clock
     was impossible and blocked a whole debugging round. Every physical line is
     stamped (hexdump rows included) so any grep/tail of a subset is still
@@ -1070,7 +901,6 @@ def recv_exact(conn, n, timeout=10):
 
 
 def handle(conn, addr, log_lock, log):
-    global waiting_player, election
     ts = datetime.datetime.now().isoformat()
 
     def emit(text):
@@ -1346,137 +1176,9 @@ def handle(conn, addr, log_lock, log):
                     }
                 if find_match_searching:
                     emit(f"   (this RoomCreate follows a find-match search - "
-                         f"room {room_id.hex()} registered as PUBLIC/matchmade)")
+                         f"room {room_id.hex()} registered as PUBLIC/matchmade; "
+                         f"now discoverable in the 0x136 list to other searchers)")
                     find_match_searching = False  # one-shot
-                    # ---- ELECTION: the host-elect just became a real host ----
-                    # Release every parked joiner NOW with a one-entry 0x136
-                    # naming this room. A's lobby deadline is t(now) + 12.0 s;
-                    # the reference PICK -> CONNECT_TO_HOST -> RESERVE -> 0x130
-                    # path takes ~0.2 s, so the joiner has an enormous margin.
-                    to_release = []
-                    with election_lock:
-                        e = election
-                        if (e is not None and e["host_key"] == id(conn)
-                                and e["state"] == "electing"):
-                            e["state"] = "hosting"
-                            e["create_ts"] = time.time()
-                            e["room_id"] = room_id
-                            e["max_players"] = max_players
-                            for t in e["timers"]:
-                                t.cancel()
-                            wd = threading.Timer(ELECTION_JOIN_WATCHDOG_SECONDS,
-                                                 _election_join_watchdog,
-                                                 args=(e["gen"],))
-                            wd.daemon = True
-                            e["timers"] = [wd]
-                            wd.start()
-                            for j in e["joiners"].values():
-                                if not j.get("released"):
-                                    j["released"] = True
-                                    if j.get("cap_timer") is not None:
-                                        j["cap_timer"].cancel()
-                                    to_release.append(j)
-                            emit(f"   [elect] host={npid!r} is LIVE "
-                                 f"(0x12f room_id={room_id.hex()}) - releasing "
-                                 f"{len(to_release)} parked searcher(s); join "
-                                 f"watchdog armed for "
-                                 f"{ELECTION_JOIN_WATCHDOG_SECONDS:.0f}s")
-                    entry_info = {"members": [(MEMBER_ID, npid)],
-                                  "max_players": max_players, "npid": npid}
-                    for j in to_release:
-                        _send_room_search(
-                            j, j["search_obj_ptr"], [(room_id, entry_info)],
-                            "release",
-                            f"host {npid!r} room {room_id.hex()} - PICK this")
-                    # ---- PRE-JOIN NAT PUNCH (2026-08-17) ----
-                    # MEASURED, not guessed. TTY.log 543.9-611.5 (three
-                    # consecutive cycles with the REMOTE host mgnomad2):
-                    #   543.9567 CONNECT_TO_HOST -> 544.1600 Ping = 0 ms ->
-                    #   1327 RESERVE_SLOTS_WAIT -> 550.1934 line 1400 (= the
-                    #   6.00 s reserve timeout) -> back to GAME_LIST_PICK.
-                    #   Same at 570.62->576.66 and 595.66->601.69. Only the
-                    #   SECOND attempt logs SCE_NP_SIGNALING_EVENT_EXT_
-                    #   MUTUAL_ACTIVATED and gets a reserve reply. When the
-                    #   LOCAL client hosted instead (613.53 RoomCreate) the
-                    #   remote joiner was in at 614.86 - 1.3 s, no timeout.
-                    # So the stall is one-sided NAT/signaling: the joiner
-                    # dials the host at CONNECT_TO_HOST, but the host only
-                    # ever dials BACK when a roster naming the joiner reaches
-                    # it - and today that roster is only sent after the 0x130,
-                    # which itself needs the reserve to have succeeded. The
-                    # first reserve datagram therefore dies in the host's NAT
-                    # and ~8.4 s of the host's 16.0 s lobby budget is burned
-                    # every cycle.
-                    # Fix: the moment the host is LIVE in SERVER_LOBBY and we
-                    # hand a parked searcher the 0x136 naming it, also push the
-                    # host the 2-member roster. FUN_00ad33d8 @0x00ad34b0 turns
-                    # each non-local entry into mgr->vtable[0x10](npid) (the
-                    # P2P connect) with the handle stored at member+0xF0
-                    # (0x00ad34e0), so the host starts punching outward in
-                    # parallel with the joiner instead of ~8 s later.
-                    # SAFE TO REPEAT: the identical roster is pushed again on
-                    # the 0x130, and FUN_00ad33d8's first loop de-dupes by
-                    # NpId (bl 0xe459bc @0x00ad3458) and returns early at
-                    # 0x00ad3474 for an already-registered member - no
-                    # reconnect, no churn.
-                    # NOT the discarded `[pair]` push: that one fabricated a
-                    # roster for a client that was not a host and not in
-                    # SERVER_LOBBY. This fires only for a host whose 0x12f we
-                    # just answered, naming a searcher we are simultaneously
-                    # pointing at that exact room.
-                    # Restricted to the single-joiner case because the 0x130
-                    # handler's roster is likewise (MEMBER_ID, JOINER_MEMBER_ID)
-                    # - inventing ids for a 3rd+ searcher here would disagree
-                    # with what that handler later re-pushes.
-                    if len(to_release) == 1:
-                        j0 = to_release[0]
-                        pre_members = [(MEMBER_ID, npid),
-                                       (JOINER_MEMBER_ID, j0["npid"])]
-                        # The joiner's own blob has not arrived yet (it rides in
-                        # its 0x130), so its entry is seeded blank here and the
-                        # host is topped up with a 0x13b from the 0x130 handler -
-                        # Member CANNOT update an already-registered member
-                        # (FUN_00ad33d8 NpId de-dupe early-return @0x00ad3474).
-                        with rooms_lock:
-                            pre_blobs = {mid: member_blobs[(room_id, mid)]
-                                         for mid, _ in pre_members
-                                         if (room_id, mid) in member_blobs}
-                        try:
-                            conn.sendall(build_member(
-                                pre_members, room_id, max_players,
-                                owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID,
-                                room_ptr=room_ptr, populate_self_npid=True,
-                                blobs=pre_blobs))
-                            emit(f"   [punch] pushed host {npid!r} a 2-member "
-                                 f"roster naming {j0['npid']!r} BEFORE its "
-                                 f"0x130 so the host dials the peer now "
-                                 f"(kills the 6.0s first-reserve timeout); "
-                                 f"re-pushed identically on the 0x130 and "
-                                 f"de-duped by NpId client-side")
-                            with rooms_lock:
-                                room_entry = active_rooms.get(id(conn))
-                                if room_entry is not None:
-                                    room_entry["members"] = pre_members
-                            # The solo refresher would re-push a 1-member
-                            # roster 10 s from now, which OMITS the joiner and
-                            # tears its P2P handle down (FUN_00ad3190 ->
-                            # vtable[0x1c] @0x00ad3268). Retire it: restarting
-                            # with a >1-member roster is the established
-                            # "multi-member rooms are P2P-maintained" skip.
-                            if active_room_stop is not None:
-                                active_room_stop.set()
-                            active_room_stop = threading.Event()
-                            start_member_refresher(
-                                conn, emit, pre_members, room_id, max_players,
-                                MEMBER_ID, MEMBER_ID, active_room_stop,
-                                room_ptr=room_ptr, populate_self_npid=True)
-                            with rooms_lock:
-                                room_entry = active_rooms.get(id(conn))
-                                if room_entry is not None:
-                                    room_entry["stop_event"] = active_room_stop
-                        except OSError as ex:
-                            emit(f"   [punch] pre-join roster push to host "
-                                 f"{npid!r} failed: {ex}")
             elif opcode == 0x130 and len(chunk) >= 0x18:
                 # RoomJoin - see active_rooms' comment for the wire evidence.
                 join_room_ptr = struct.unpack(">I", chunk[8:12])[0]
@@ -1495,30 +1197,6 @@ def handle(conn, addr, log_lock, log):
                     for key, info in active_rooms.items():
                         if info["conn"] is not conn and info["room_id"] == target_room_id:
                             host = info
-                if host is None:
-                    # ELECTION FALLBACK: this connection was released with a
-                    # one-entry 0x136 naming the elected host's room. The room
-                    # id that comes back on the 0x130 is relayed through the
-                    # P2P reserve handshake (FUN_003ca178 -> host ->
-                    # FUN_003b6404 -> FUN_00ad6718), so if anything reshapes it
-                    # on the way we still know exactly which room this join is
-                    # for - the per-connection mapping is authoritative.
-                    with election_lock:
-                        e = election
-                        if (e is not None and e["state"] in ("hosting", "joined")
-                                and e["joiners"].get(id(conn), {}).get("released")):
-                            host_key = e["host_key"]
-                        else:
-                            host_key = None
-                    if host_key is not None:
-                        with rooms_lock:
-                            host = active_rooms.get(host_key)
-                        if host is not None:
-                            emit(f"   [release] 0x130 carried room_id="
-                                 f"{target_room_id.hex()} which is not registered "
-                                 f"- resolved to elected host {host['npid']!r} "
-                                 f"room {host['room_id'].hex()} via the election "
-                                 f"mapping")
                 if host is not None:
                     # Always speak the room identity WE assigned (registry key).
                     # For the party/invite path this is identical to what the
@@ -1648,36 +1326,27 @@ def handle(conn, addr, log_lock, log):
                                            active_room_stop,
                                            room_ptr=join_room_ptr,
                                            populate_self_npid=True)
-                    # ---- ELECTION: a REAL join landed. Disarm the watchdog.
-                    # The 2-member roster pushed just above is what makes the
-                    # host dial this peer (FUN_00ad33d8 -> mgr->Connect); the
-                    # link the joiner already established resolves to state 2,
-                    # so FUN_003b19c4 counts 2 and the host's lobby deadline
-                    # moves from 12.0 s to 16.0 s (lobbyWaitTable[2]).
-                    with election_lock:
-                        e = election
-                        if (e is not None
-                                and e["host_key"] == id(host["conn"])
-                                and e["state"] == "hosting"):
-                            e["state"] = "joined"
-                            for t in e["timers"]:
-                                t.cancel()
-                            e["timers"] = []
-                            emit(f"   [elect] JOINED - {own_npid!r} joined elected "
-                                 f"host {host['npid']!r} room "
-                                 f"{target_room_id.hex()}; watchdog disarmed, "
-                                 f"real 2-member roster pushed to both sides")
+                    # The 2-member roster pushed to the host just above is what
+                    # makes it dial this peer (FUN_00ad33d8 -> mgr->Connect); the
+                    # link the joiner already established resolves to state 2, so
+                    # FUN_003b19c4 counts 2 and the host's lobby deadline moves
+                    # from 12.0 s to 16.0 s (lobbyWaitTable[2]).
             elif opcode == FIND_MATCH_OPCODE:
-                # SERIALIZED HOST/JOINER ELECTION (2026-08-17). Replaces the
-                # purely reactive "answer every 0x135 with whatever public
-                # rooms exist" logic AND the `[pair]` synthetic roster push,
-                # both of which are explicitly rejected by
-                # research/notes/2026-08-17-find-match-coordination-root-cause.md:
-                # the roster is server-controlled but the COUNT is P2P-gated
-                # (FUN_003b19c4 only counts a member whose connection handle at
-                # member+0xF0 reports state 2), so a fabricated roster is a
-                # display illusion whose link dies in ~16 s. Only a real join
-                # produces a real link. See the module-level election block.
+                # REAL-SERVER BEHAVIOR (root-cause note §7, validated in
+                # disassembly). We do NOT park, elect, withhold, or fabricate
+                # anything: we answer every 0x135 search with the ACTUAL list of
+                # live public games (0x136) and let the client's own matchmaking
+                # code decide whether to PICK one or self-host. Two symmetric
+                # searchers that both self-host are not a deadlock to engineer
+                # around - the client's search cadence uses a randomized
+                # 1+2*rand() backoff (FUN_003b6c78 @0x3b6d64), so the two
+                # rotations drift apart and one ends up hosting (in SERVER_LOBBY)
+                # while the other is searching, at which point the searcher sees
+                # the host in this list and joins. Convergence is w.p. 1 (§7 Q4).
+                # A fabricated 2-member roster would NOT help: the SERVER_LOBBY
+                # count is P2P-gated (FUN_003b19c4 counts a member only when its
+                # connection handle at member+0xF0 reports state 2), so only a
+                # real join produces a real, counted link.
                 find_match_searching = True
                 search_obj_ptr = (struct.unpack(">I", chunk[8:12])[0]
                                   if len(chunk) >= 12 else ROOM_PTR)
@@ -1687,40 +1356,18 @@ def handle(conn, addr, log_lock, log):
                 marker = (struct.unpack(">H", chunk[0x18:0x1a])[0]
                           if len(chunk) >= 0x1a else 0)
                 conn_key = id(conn)
-                me = {"conn": conn, "emit": emit, "npid": own_npid,
-                      "search_obj_ptr": search_obj_ptr}
-                # SAFETY (never-send rule): a live host's search object IS its
-                # room object (0x01383bd8) and a 0x136 writes +0xa4/+0x200/
-                # +0x208 through it. "Live host" = strictly between its own
-                # 0x12f and its 0x133 - a registry membership test, NEVER a
-                # timer. The old 10 s "abandon grace" gated this on a clock and
-                # suppressed a 0x136 to a client that was genuinely searching,
-                # hanging it for the full 60 s GAME_LIST_WAIT timeout and
-                # killing the run (root-cause note §5, divergence #2).
-                # Scoped precisely: the hazard is that the object this 0x136
-                # would be written through is the very object this connection
-                # is hosting a room on. A PARTY host (room_ptr 0x01387f58)
-                # searching on the GAME object (0x01383bd8) is not affected and
-                # must still get an answer.
-                # REAL-SERVER BEHAVIOR (2026-08-17, replaces the serialized
-                # election). We do NOT park, elect, withhold, or fabricate
-                # anything: we answer every search with the ACTUAL list of live
-                # public games and let the client's own matchmaking code decide
-                # whether to join one or self-host. Two symmetric searchers that
-                # both self-host are not a deadlock we must engineer around - the
-                # client's own search cadence uses a randomized 1+2*rand()
-                # backoff, so the two rotations drift apart and one will be
-                # hosting (in SERVER_LOBBY) while the other is searching, at
-                # which point the searcher sees the host in this list and joins.
-                # This is exactly how the real matchmaking server behaved.
-                #
-                # The ONLY thing we withhold is a 0x136 to a connection that is
-                # ITSELF a live host: a 0x136 is written through the searcher's
-                # search object, which for a host IS its own room object
-                # (0x01383bd8), so answering it would corrupt the host's room. A
+                # NEVER-SEND rule: the ONLY thing we withhold is a 0x136 to a
+                # connection that is ITSELF a live host. A 0x136 is written
+                # through the searcher's search object, which for a host IS its
+                # own room object (0x01383bd8), so answering would corrupt the
+                # host's room. "Live host" is a registry membership test (between
+                # its own 0x12f and 0x133), NEVER a timer - the old 10 s "abandon
+                # grace" gated this on a clock and suppressed a 0x136 to a client
+                # that was genuinely searching, hanging it for the full 60 s
+                # GAME_LIST_WAIT timeout (root-cause note §5, divergence #2). A
                 # live host is in SERVER_LOBBY and is not searching anyway; this
                 # only guards the edge where a party host (room_ptr 0x01387f58)
-                # searches on the game object.
+                # searches on the game object (0x01383bd8).
                 with rooms_lock:
                     hosted = active_rooms.get(conn_key)
                     live_host = (hosted is not None
@@ -1797,19 +1444,6 @@ def handle(conn, addr, log_lock, log):
                          f"dropped from the find-match list IMMEDIATELY, no "
                          f"grace; this connection is no longer a host and will "
                          f"be answered normally if it searches again)")
-                # The elected host gave up (or the joined pair broke up): tear
-                # the election down so the next 0x135 starts a fresh one. Roles
-                # may swap - that is fine and intended.
-                with election_lock:
-                    e = election
-                    is_host = e is not None and e["host_key"] == id(conn)
-                    if e is not None and not is_host:
-                        j = e["joiners"].pop(id(conn), None)
-                        if j is not None and j.get("cap_timer") is not None:
-                            j["cap_timer"].cancel()
-                if is_host:
-                    election_abandon("elected host sent 0x133 (left its lobby)",
-                                     emit=emit)
                 # If this connection had JOINED someone else's room with this
                 # id, notify the remaining members (0x134) and shrink their
                 # refresher roster.
@@ -1915,20 +1549,6 @@ def handle(conn, addr, log_lock, log):
         if active_room_stop is not None:
             active_room_stop.set()
         stop_member_refresher(id(conn))
-        # Election hygiene on socket close - never leave a dead connection as
-        # the host-elect (that would park every future searcher until the cap).
-        with election_lock:
-            e = election
-            closing_host = e is not None and e["host_key"] == id(conn)
-            if e is not None and not closing_host:
-                j = e["joiners"].pop(id(conn), None)
-                if j is not None and j.get("cap_timer") is not None:
-                    j["cap_timer"].cancel()
-        if closing_host:
-            election_abandon("elected host's connection closed", emit=emit)
-        with waiting_lock:
-            if waiting_player is not None and waiting_player["conn"] is conn:
-                waiting_player = None
         with rooms_lock:
             info = active_rooms.pop(id(conn), None)
             if info is not None:
