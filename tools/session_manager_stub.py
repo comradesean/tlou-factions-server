@@ -180,6 +180,66 @@ active_rooms = {}
 member_blobs = {}   # (room_id_bytes, member_id) -> bytes (exactly 32)
 
 # ---------------------------------------------------------------------------
+# THE BLOB IS ALSO UPLOADED INSIDE RoomCreate AND RoomJoin (2026-08-17)
+# ---------------------------------------------------------------------------
+# 0x13a only ever fires when FUN_003b15bc rebuilds the blob while the room
+# already has a room id: its sender FUN_00ad6148 writes the local mirror
+# (memcpy(room+0x19FC, data, len); room+0x19F8 = len @0x00ad61d4/0x00ad61e4)
+# and then, at 0x00ad6240, does `ld r9,16(r29)` / `beq -> return 0` - i.e. if
+# room_obj+0x10 (the room id) is still 0 it silently sends NOTHING and leaves
+# no deferred-retry marker. On the find-match path the blob is built before the
+# matchmade room exists, so NO 0x13a is ever sent (live-confirmed: an exhaustive
+# opcode tally over the whole 2026-08-17 find-match session found 0x13a x0).
+#
+# The client hands the server that same 32-byte blob a different way on that
+# path: it embeds it in the two messages that CREATE its membership.
+#
+#   0x12f RoomCreate  (buffer base r1+144, FUN_00ad5b78)
+#       0x00ad5d10  lwz r11,6648(r31)   ; r31 = room obj -> room+0x19F8 = LENGTH
+#       0x00ad5d18  stb r11,182(r1)     ; -> wire offset 0x26
+#       0x00ad5d20  addi r11,r1,312     ; -> wire offset 0xa8
+#       0x00ad5d30  lbzu r7,6652(r9)    ; source = room+0x19FC, copied byte-wise
+#
+#   0x130 RoomJoin    (buffer base r1+112, FUN_00ad6718)
+#       0x00ad67a0  lwz r9,6648(r28)    ; room+0x19F8 = LENGTH
+#       0x00ad67ac  stb r9,124(r1)      ; -> wire offset 0x0c
+#       0x00ad67a8  addi r11,r1,136     ; -> wire offset 0x18
+#       0x00ad67c0  lbzu r0,6652(r9)    ; source = room+0x19FC, copied byte-wise
+#
+# Live confirmation (session_manager_stub-run.log, 2026-08-17 01:55:25):
+#   0x12f: wire[0x26] = 0x20, wire[0xa8:0xc8] =
+#          00*8 | 00 00 ff ff ff ff 00 00 | 00*8 | 56 7c 00 00 00 00 00 00
+#   0x130: wire[0x0c] = 0x20, wire[0x18:0x38] = same shape, tail 56 9c ...
+# blob[10..13] = ff ff ff ff (unset loadout) and blob[22..] = uninitialised
+# stack exactly as FUN_003b15bc's layout predicts.
+#
+# So the server harvests each player's blob from its own 0x12f/0x130 and
+# redistributes it: Member (0x131) entry[39]=len / entry[40..] seeds it into a
+# member record at registration time, and 0x13b updates one that is already
+# registered (FUN_00ad33d8 de-dupes by NpId and returns early, so Member can
+# only ever SEED). Both are needed - see the harvest sites below.
+ROOM_CREATE_BLOB_LEN_OFF = 0x26
+ROOM_CREATE_BLOB_OFF = 0xa8
+ROOM_JOIN_BLOB_LEN_OFF = 0x0c
+ROOM_JOIN_BLOB_OFF = 0x18
+
+
+def extract_member_blob(chunk, len_off, blob_off):
+    """Pull a client's own per-member data blob out of a 0x12f/0x130 frame.
+
+    Returns bytes or None. FUN_00ad33d8 asserts len <= 64 (net-session.cpp:218)
+    and the UI getter FUN_00ad2650 hands the blob to the lobby ONLY when the
+    length is exactly 32 (`cmpwi cr7,r0,32` @ 0x00ad2734), so anything else is
+    worth logging but useless to relay.
+    """
+    if len(chunk) <= len_off:
+        return None
+    blob_len = chunk[len_off]
+    if not (0 < blob_len <= 64) or len(chunk) < blob_off + blob_len:
+        return None
+    return bytes(chunk[blob_off:blob_off + blob_len])
+
+# ---------------------------------------------------------------------------
 # SERIALIZED HOST/JOINER ELECTION (2026-08-17)
 # ---------------------------------------------------------------------------
 # See research/notes/2026-08-17-find-match-coordination-root-cause.md §4. Two
@@ -1142,6 +1202,44 @@ def handle(conn, addr, log_lock, log):
                 # captured value instead - EXPERIMENTAL, not yet live-tested.
                 team = struct.unpack(">H", chunk[0xb0:0xb2])[0]
 
+                # ---- HARVEST THIS HOST'S 32-BYTE MEMBER BLOB (2026-08-17) ----
+                # RANK/LOADOUT FIX. wire[0x26] = length, wire[0xa8:] = blob
+                # (0x00ad5d10/0x00ad5d18/0x00ad5d20/0x00ad5d30 - see
+                # extract_member_blob). Without this the stub has NOTHING to put
+                # in the roster's per-member blob field on the find-match path,
+                # because no 0x13a is ever sent there (FUN_00ad6148 @0x00ad6240
+                # returns silently while room_obj+0x10 == 0), so every remote
+                # member's FUN_00ad2650 lookup returns NULL and the lobby's rank
+                # / faction / loadout widgets render nothing.
+                # NOTE the team read just above is really blob[8]<<8|blob[9] -
+                # the same bytes - which is consistent with blob[9] being the
+                # `value-1` string-table index FUN_0039c69c is called with.
+                host_blob = extract_member_blob(chunk, ROOM_CREATE_BLOB_LEN_OFF,
+                                                ROOM_CREATE_BLOB_OFF)
+                # A fresh room reuses a shared static room_id on the private /
+                # party paths (0000000001383bd8 / 0000000001387f58), so drop
+                # anything a PREVIOUS occupant of that id left behind before
+                # seeding this one - otherwise a dead player's rank/loadout gets
+                # replayed to the next joiner.
+                with rooms_lock:
+                    for k in [kk for kk in member_blobs if kk[0] == room_id]:
+                        member_blobs.pop(k, None)
+                if host_blob is not None:
+                    with rooms_lock:
+                        member_blobs[(room_id, MEMBER_ID)] = host_blob
+                    emit(f"   [blob] harvested {len(host_blob)}-byte member blob "
+                         f"from {npid!r}'s RoomCreate (wire 0x{ROOM_CREATE_BLOB_OFF:x}, "
+                         f"len byte 0x{ROOM_CREATE_BLOB_LEN_OFF:x}) -> cached for "
+                         f"room {room_id.hex()} member_id={MEMBER_ID}"
+                         + ("" if len(host_blob) == 32 else
+                            "  *** NOT 32 BYTES - FUN_00ad2650 will reject it ***"))
+                else:
+                    emit(f"   [blob] no usable member blob in {npid!r}'s "
+                         f"RoomCreate (len byte = "
+                         f"{chunk[ROOM_CREATE_BLOB_LEN_OFF] if len(chunk) > ROOM_CREATE_BLOB_LEN_OFF else '??'}) "
+                         f"- remote rank/loadout will stay blank for this room")
+                create_blobs = {MEMBER_ID: host_blob} if host_blob else None
+
                 # EXPERIMENTAL (2026-08-16, dispatch audit proposal #4, applied
                 # after the OwnerChanged-alone test still hit the team assert):
                 # RoomJoined is DROPPED from the solo-host reply. Audit
@@ -1166,7 +1264,8 @@ def handle(conn, addr, log_lock, log):
                 member = build_member([(MEMBER_ID, npid)], room_id, max_players,
                                        owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID,
                                        team=team, room_ptr=room_ptr,
-                                       populate_self_npid=True)
+                                       populate_self_npid=True,
+                                       blobs=create_blobs)
                 # EXPERIMENTAL (2026-08-16, dispatch audit finding #1): the
                 # client's RoomCreate sender clears its own "I am the host"
                 # flag and only 0x13f can set it - without this a solo host
@@ -1333,11 +1432,21 @@ def handle(conn, addr, log_lock, log):
                         j0 = to_release[0]
                         pre_members = [(MEMBER_ID, npid),
                                        (JOINER_MEMBER_ID, j0["npid"])]
+                        # The joiner's own blob has not arrived yet (it rides in
+                        # its 0x130), so its entry is seeded blank here and the
+                        # host is topped up with a 0x13b from the 0x130 handler -
+                        # Member CANNOT update an already-registered member
+                        # (FUN_00ad33d8 NpId de-dupe early-return @0x00ad3474).
+                        with rooms_lock:
+                            pre_blobs = {mid: member_blobs[(room_id, mid)]
+                                         for mid, _ in pre_members
+                                         if (room_id, mid) in member_blobs}
                         try:
                             conn.sendall(build_member(
                                 pre_members, room_id, max_players,
                                 owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID,
-                                room_ptr=room_ptr, populate_self_npid=True))
+                                room_ptr=room_ptr, populate_self_npid=True,
+                                blobs=pre_blobs))
                             emit(f"   [punch] pushed host {npid!r} a 2-member "
                                  f"roster naming {j0['npid']!r} BEFORE its "
                                  f"0x130 so the host dials the peer now "
@@ -1431,12 +1540,39 @@ def handle(conn, addr, log_lock, log):
                     # RoomCreate's own sender clears it client-side).
                     host_entry = (MEMBER_ID, host["npid"])
                     joiner_entry = (JOINER_MEMBER_ID, own_npid)
+                    # ---- HARVEST THIS JOINER'S 32-BYTE MEMBER BLOB ----
+                    # RANK/LOADOUT FIX (2026-08-17): wire[0x0c] = length,
+                    # wire[0x18:] = blob (FUN_00ad6718 0x00ad67a0/0x00ad67ac/
+                    # 0x00ad67a8/0x00ad67c0). This is the ONLY place the joiner
+                    # ever tells us its rank/faction/loadout on the find-match
+                    # path - it sends no 0x13a there.
+                    join_blob = extract_member_blob(chunk, ROOM_JOIN_BLOB_LEN_OFF,
+                                                    ROOM_JOIN_BLOB_OFF)
+                    if join_blob is not None:
+                        with rooms_lock:
+                            member_blobs[(target_room_id, JOINER_MEMBER_ID)] = join_blob
+                        emit(f"   [blob] harvested {len(join_blob)}-byte member "
+                             f"blob from {own_npid!r}'s RoomJoin (wire "
+                             f"0x{ROOM_JOIN_BLOB_OFF:x}, len byte "
+                             f"0x{ROOM_JOIN_BLOB_LEN_OFF:x}) -> cached for room "
+                             f"{target_room_id.hex()} member_id={JOINER_MEMBER_ID}"
+                             + ("" if len(join_blob) == 32 else
+                                "  *** NOT 32 BYTES - FUN_00ad2650 will reject it ***"))
+                    else:
+                        emit(f"   [blob] no usable member blob in {own_npid!r}'s "
+                             f"RoomJoin - the host's rank/loadout widgets for "
+                             f"this player will stay blank")
+                    with rooms_lock:
+                        join_blobs = {mid: member_blobs[(target_room_id, mid)]
+                                      for mid in (MEMBER_ID, JOINER_MEMBER_ID)
+                                      if (target_room_id, mid) in member_blobs}
                     self_member = build_member([joiner_entry, host_entry],
                                                target_room_id, host["max_players"],
                                                owner_ref_id=MEMBER_ID,
                                                local_ref_id=JOINER_MEMBER_ID,
                                                room_ptr=join_room_ptr,
-                                               populate_self_npid=True)
+                                               populate_self_npid=True,
+                                               blobs=join_blobs)
                     conn.sendall(self_member + build_owner_changed(target_room_id, 0)
                                  + build_owner_member(target_room_id, MEMBER_ID))
                     emit(f"   parsed opcode={opcode:#x} (RoomJoin) - JOINED "
@@ -1448,7 +1584,8 @@ def handle(conn, addr, log_lock, log):
                                                owner_ref_id=MEMBER_ID,
                                                local_ref_id=MEMBER_ID,
                                                room_ptr=host["room_ptr"],
-                                               populate_self_npid=True)
+                                               populate_self_npid=True,
+                                               blobs=join_blobs)
                     try:
                         host["conn"].sendall(host_member
                                              + build_owner_member(target_room_id, MEMBER_ID))
@@ -1723,6 +1860,12 @@ def handle(conn, addr, log_lock, log):
                         info["stop_event"].set()
                         dropped_public = bool(info.get("public"))
                         del active_rooms[id(conn)]
+                        # Retire the room's cached member blobs with it, so a
+                        # departed player's rank/faction/loadout can never be
+                        # seeded into the NEXT room that reuses this id.
+                        for k in [kk for kk in member_blobs
+                                  if kk[0] == info["room_id"]]:
+                            member_blobs.pop(k, None)
                 stop_member_refresher(id(conn))
                 if dropped_public:
                     emit(f"   (public host room {room_id_tail.hex()} abandoned - "

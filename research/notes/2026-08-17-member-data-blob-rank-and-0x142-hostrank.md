@@ -324,6 +324,84 @@ nothing.
 
 ---
 
+## 3e. CORRECTION/EXTENSION (2026-08-17, later): `0x13a` is NOT the only
+## supplier — the blob is uploaded inside `0x12f` RoomCreate and `0x130` RoomJoin
+
+§3d listed only `0x13a` as the client→server supplier. That is why the
+find-match lobby still showed no remote ranks after 4a–4c were applied: **on the
+find-match path the client never sends a `0x13a` at all.**
+
+### Why no `0x13a` there
+
+The `0x13a` sender is `FUN_00ad6148` (`this, room, data, len`), reached from
+`FUN_00ad1fc0` (`0x3b17cc` / `0x3b17e0`):
+
+```
+ad6148:  cmplwi cr7,r6,64 ; assert len <= 64        (net-session.cpp:1383)
+ad61d4:  addi r3,r27,6652        ; room+0x19FC
+ad61e4:  stw  r31,6648(r29)      ; room+0x19F8 = len       <- LOCAL MIRROR, always
+ad61e8:  bl   0xe3e064           ; memcpy(room+0x19FC, data, len)
+ad6240:  ld   r9,16(r29)         ; room_id = room+0x10
+ad6244:  li   r3,0
+ad624c:  beq  cr7,0xad62b0       ; room_id == 0 -> RETURN 0, SEND NOTHING
+ad6250:  li   r0,314 (0x13a) ... stb r31,116(r1)  ; wire[4] = len
+ad629c:  bl   0xacb93c           ; send 80 bytes
+```
+
+`FUN_003b15bc` builds the blob and pushes it to both room objects long before a
+matchmade room exists, so `room+0x10` is still 0 and the message is dropped with
+**no deferred-retry marker of any kind** (unlike `0x142`'s write-only
+`room_obj+0xD0`). Live proof: an exhaustive opcode tally over the whole
+2026-08-17 find-match session (`session_manager_stub-run.log`, 6308 lines, the
+stub logs every unhandled opcode) is `0x135`×310, `0x140`×115, `0x133`×111,
+`0x145`×98, `0x12f`×65, `0x130`×50, `0x146`×8 — **`0x13a`×0**.
+
+### Where the blob actually rides on that path
+
+Both membership-creating messages carry the local mirror verbatim:
+
+| message | length byte | blob bytes | evidence |
+|---|---|---|---|
+| `0x12f` RoomCreate (`FUN_00ad5b78`, buffer base `r1+144`) | wire **`0x26`** | wire **`0xa8..0xc7`** | `ad5d10 lwz r11,6648(r31)` / `ad5d18 stb r11,182(r1)`; `ad5d20 addi r11,r1,312` / `ad5d30 lbzu r7,6652(r9)` |
+| `0x130` RoomJoin (`FUN_00ad6718`, buffer base `r1+112`) | wire **`0x0c`** | wire **`0x18..0x37`** | `ad67a0 lwz r9,6648(r28)` / `ad67ac stb r9,124(r1)`; `ad67a8 addi r11,r1,136` / `ad67c0 lbzu r0,6652(r9)` |
+
+Live bytes (stub log 2026-08-17 01:55:25, comradesean hosting / mgnomad2
+joining) — both length bytes are `0x20` = 32 and both payloads decode exactly to
+§3b's layout, including the uninitialised `blob[22..]` tail:
+
+```
+0x12f  wire[0x26]=20   wire[0xa8]: 00*8 | 00 00 ff ff ff ff 00 00 | 00*8 | 56 7c 00 00 00 00 00 00
+0x130  wire[0x0c]=20   wire[0x18]: 00*8 | 00 00 ff ff ff ff 00 00 | 00*8 | 56 9c 00 00 00 00 00 00
+```
+
+Note this also identifies the field the stub had been reading as `team` from
+RoomCreate `0xb0:0xb2`: it is `blob[8]<<8 | blob[9]`, i.e. **`blob[9]` is the
+team/faction byte** — consistent with §3b's "`value-1` index into a name/string
+lookup (`0x3c2ad0` → `FUN_0039c69c`)" being the faction-name table, and with the
+live-confirmed `0/1/2` = unset/Blue/Red value set.
+
+### Consequence for the server
+
+The server is expected to **harvest** each player's blob from that player's own
+`0x12f`/`0x130` and **redistribute** it:
+
+- `0x131` Member entry `[39]`=len / `[40..]`=blob **seeds** a member record at
+  registration time (`FUN_00ad33d8`);
+- `0x13b` **updates** one that is already registered — mandatory, because
+  `FUN_00ad33d8` de-dupes by NpId and early-returns (`0x00ad3474`), so a
+  re-pushed Member can never change an existing member's blob.
+
+That ordering is load-bearing for the election flow specifically: the `[punch]`
+roster reaches the host *before* the joiner's `0x130`, so the host registers the
+joiner with an empty blob and only a subsequent `0x13b` can fill it in.
+
+Applied in `tools/session_manager_stub.py` (`extract_member_blob` +
+`ROOM_CREATE_BLOB_*` / `ROOM_JOIN_BLOB_*`, harvest sites in the `0x12f` and
+`0x130` branches). **Confidence: high** — disassembly plus live wire bytes on
+both messages.
+
+---
+
 ## 4. Ready-to-apply stub implementation sketch (NOT applied — live testing in progress)
 
 All of this is in `tools/session_manager_stub.py`.
