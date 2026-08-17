@@ -82,7 +82,7 @@ Net primitives (shared with the whole `*-server` family):
 | `0x00acc424` | connect + hello handshake (name arg, 88B hello, 8B reply, byte[0]==`"`). |
 | `0x00acbf90` | TCP connect (sockaddr/socket/setsockopt/connect). |
 | `0x00acd5f8` | send-all (buffered). |
-| `0x00acd568` | recv (buffered; returns bytes, `<1` = closed/done). |
+| `0x00acd568` | recv (buffered; returns bytes, `<1` = closed/done — but see §8: at the leaderboard call sites a server EOF is treated as an ERROR, not end-of-response). |
 | `0x00acbad0` | close/teardown. |
 | `0x00e46560` | `snprintf(dst, size, fmt, ...)`. |
 | `0x00e45684` | `strncat`/`strlcat` (append). |
@@ -155,6 +155,10 @@ leaderboard-update <board:int> <npid:string> <score:int64> <base64-metadata>\n
 Read replies are a stream split on `\n`; the client scans each complete line
 and only acts on lines whose first char is `+`. Tokens are space-separated
 (`strtok_r`). Two line shapes:
+
+> **LIVE CORRECTION (2026-08-17 evening, see §8):** the response must end with
+> a trailing NUL byte — that, not EOF, is what terminates the client's read
+> loop. This section's static read missed it.
 
 ### 3.1 GET reply line (`FUN_003aeee8`) — 4 tokens
 ```
@@ -274,18 +278,19 @@ Reuse the `session_manager_stub.py` TCP-control pattern:
      `+<total>\n` / `+<a> <b>\n` for the clan variant. A minimal legal answer
      is a single `+0\n` (empty board) — the parsers tolerate zero entries.
 4. Close after the client stops (recv returning 0 ends its loop).
+   **LIVE CORRECTION (see §8):** "the client's loop ends on recv 0" is
+   DISPROVED — the loop ends on a trailing NUL in the response, after which
+   the client closes first. Never close (or half-close) before the client
+   does: a server-initiated EOF here trips the client's network-error path.
 
-**Framing caveat (the one real open item):** `FUN_00acd5f8`/`FUN_00acd568`
-are the *same* buffered send/recv wrappers ticket-server uses for its
-post-hello messages C/D. `docs/protocol/0x11_sibling_servers_family.md` asserts
-these wrap every payload in a keyed encrypt-then-MAC frame (`0x33` magic); the
-ticket-server follow-up (`0x11_ticket_server_hello.md`, "encrypted/hashed data
-now ruled out") partially contradicts that. This is unresolved and gates
-whether the stub writes raw ASCII or framed bytes. It is the **only** thing
-between this spec and a working stub, and it is shared with — and therefore
-resolvable by — the concurrent live-capture / current-state effort, not by
-more static reading. Whatever ticket-server ends up needing, leaderboard needs
-byte-for-byte the same, because it is literally the same transport code.
+**Framing caveat — RESOLVED LIVE (2026-08-17, see §8):** post-hello bytes ARE
+keyed encrypt-then-MAC frames (`0x33` magic), both directions — client
+requests decrypt with `tools/ticket_cipher.py` (tag_ok) and the stub's
+encrypted replies are accepted and rendered. The raw-ASCII reading of
+`0x11_ticket_server_hello.md` is wrong for this path. (Original text of the
+caveat, for the record: `FUN_00acd5f8`/`FUN_00acd568` are the *same* buffered
+send/recv wrappers ticket-server uses for its post-hello messages C/D, so
+whatever ticket-server needs, leaderboard needs byte-for-byte the same.)
 
 ---
 
@@ -299,4 +304,37 @@ byte-for-byte the same, because it is literally the same transport code.
 | Response line shapes + per-entry field offsets + base64 | high | decompile of the parse loops + LUT bytes |
 | Board ids 0x194/0x195/0x196 and their triggers | high | `FUN_003f208c`/`FUN_00348f18`/`FUN_0031e1a8` decompiled |
 | Full board enumeration | low | rest of the board table is runtime-populated (BSS), not read this pass |
-| Whether post-hello bytes are raw vs encrypted-frame | unresolved | cross-doc contradiction; needs a live capture |
+| Whether post-hello bytes are raw vs encrypted-frame | ~~unresolved~~ **confirmed: encrypted frames** | live (2026-08-17): requests decrypt tag_ok, encrypted replies accepted + rendered (§8) |
+| Response termination: trailing NUL sentinel, client closes first; server EOF = client error path | high (live) | three-way live evidence, §8; corrects §3/§7's "EOF ends the loop" static read |
+
+---
+
+## 8. Live corrections (2026-08-17 evening, stub commit `f2f4162`)
+
+First live exercise of a real-reply stub (`tools/ticket_server_stub.py`
+`handle_leaderboard`) surfaced two errors in this note's static reading and
+closed its one open item:
+
+1. **Response termination is a trailing NUL byte, not EOF.** Three-way live
+   evidence, each isolating one variable:
+   - NUL-only placeholder replies (pre-decode stub): client parses, closes the
+     connection ITSELF, no error, empty board.
+   - `'+'`-rows without NUL + prompt server half-close: rows RENDER, but the
+     EOF trips the client's error path — TTY.log `recv() failed (errno=0)` →
+     `Error 9` → "You have been disconnected from the game servers" boot to
+     the main menu ~1s after the screen opens.
+   - `'+'`-rows without NUL, server holds the socket: infinite spinner, then
+     the same EOF error when the server's idle timeout finally closes.
+   So the client's read loop consumes until NUL (mirroring its own
+   strlen/NUL-terminated send side), then the client closes first. The recv
+   wrapper's `<1 = closed/done` (§1 code map) is only the mechanical return
+   convention — at the leaderboard call sites a server EOF is an ERROR, not a
+   terminator.
+2. **Framing is encrypted frames, both directions** (the §7 caveat, now
+   resolved): requests decrypt via `tools/ticket_cipher.py` with valid tags;
+   replies encrypted with the message-D direction convention (out-counter
+   seeded from client_nonce) are accepted and rendered.
+3. Working reply shape used by the stub, confirmed rendering on both clients
+   across boards 404/405/406 (solo GET, multi-name GET, RANGE paging):
+   `"+..." lines + "\x00"` in one encrypted frame, `+<total>` emitted before
+   the RANGE rows, server holds the socket until client FIN (30s idle cap).
