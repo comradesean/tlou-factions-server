@@ -55,7 +55,10 @@ seq:
       32-byte rank/loadout card (blob_length is 32 in practice, and the UI
       getter _opd_FUN_00ad2650 requires exactly 32). Structure (see
       protos/0x131_member.ksy data_blob and protos/0x13a member_blob): byte 8
-      = flags, byte 9 = title index, bytes 10..13 = four loadout item-ids
-      (0xff = empty), u16 at byte 14 = rank-widget value, rest = stat region.
+      = flags, byte 9 = title index, bytes 10..13 = the host map-picker's
+      recent-level ring (CORRECTED 2026-08-17 — was "four loadout item-ids"; NOT
+      loadout, it is NetGameManager+0x4982 recent-map indices, see
+      protos/common/member_data.ksy; 0xff = unset), u16 at byte 14 = rank-widget
+      value, rest = stat region.
       The packet is always 80 bytes regardless of blob_length, so bytes past
       blob_length (i.e. 48:80 when length is 32) are unused padding."

@@ -4,8 +4,10 @@ meta:
   license: CC0-1.0
 doc: |
   The 32-byte per-member data record that carries a player's lobby CARD
-  (team/faction, loadout, rank). The same 32 bytes appear in four places, all
-  cross-confirmed:
+  (team/faction, host map-picker recent-level history, rank). NB: this record
+  does NOT carry MP cosmetics or a gear loadout - the "loadout_slot" labels here
+  were CORRECTED 2026-08-17 to recent_level_* (see that field). The same 32 bytes
+  appear in four places, all cross-confirmed:
 
   - `0x12f` RoomCreate wire 0xa8:0xc8 (the host's own card), length at wire 0x26
   - `0x130` RoomJoin  wire 0x18:0x38 (the joiner's own card), length at wire 0x0c
@@ -41,19 +43,30 @@ seq:
       1/2 = the two factions) in
       research/notes/2026-08-16-team-selection-field-confirmed.md - wire 0xb0
       of RoomCreate == offset 8 of this record. High confidence.
-  - id: loadout_slot_0
-    type: u2
+  - id: recent_level_0
+    type: u1
     doc: |
-      Offset 10:12. First loadout item-id. 0xffff = empty slot; live non-empty
-      values 0x000e, 0x000f, 0x0011, 0x0012, 0x0013, 0x0015 (small item ids).
-      Varies as the player changes loadout between captures. High confidence
-      it is a loadout slot; the id->item mapping is not yet decoded.
-  - id: loadout_slot_1
-    type: u2
-    doc: |
-      Offset 12:14. Second loadout item-id, same encoding as loadout_slot_0
-      (0xffff = empty; live 0x000e etc.). The two slots vary independently
-      (e.g. `000f 000e`, `0011 000e`, `0013 ffff`).
+      Offset 10. CORRECTED 2026-08-17 (was mislabeled "loadout_slot_0"): NOT
+      loadout. This byte and recent_level_1..3 are the host map-picker's
+      RECENT-LEVEL ring - the low bytes of `NetGameManager+0x4982` (global
+      0x01382082), a ring of recently-played level/map indices. The blob
+      producer FUN_003b15bc copies them here; the host's weighted-random map
+      picker FUN_003a2310 reads them byte-wise (`lbz r0, 0xa(blob+k)`, k=0..3)
+      and applies a DC penalty when a candidate map matches - i.e. "don't
+      replay a map these players just played." 0xff = unset. They churn every
+      match, and reset to 0xff on a fresh boot, because they are map history,
+      not equipped gear. NB: MP cosmetics are NOT in this blob - they are built
+      from the persisted profile (P+0x670..). See research/notes/
+      2026-08-17-member-blob-vanity-semantics.md.
+  - id: recent_level_1
+    type: u1
+    doc: "Offset 11. Recent-level ring entry 1. See recent_level_0."
+  - id: recent_level_2
+    type: u1
+    doc: "Offset 12. Recent-level ring entry 2. See recent_level_0."
+  - id: recent_level_3
+    type: u1
+    doc: "Offset 13. Recent-level ring entry 3. See recent_level_0."
   - id: rank_value
     type: u2
     doc: |

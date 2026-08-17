@@ -135,8 +135,11 @@ supersedes several rows in the table below (noted inline); the headline changes:
   now clears in ~30ms.
 - **`0x13a`/`0x13b` are the per-member DATA BLOB pair, not telemetry /
   destruction.** `0x13a` (client→server, SetPartyData) publishes a client's own
-  32-byte member card (byte 8 flags, byte 9 title index, bytes 10..13 four
-  loadout item-ids, u16 at byte 14 the rank value, tail = stat region); the
+  32-byte member card (byte 8 flags, byte 9 title index, bytes 10..13 the host
+  map-picker's recent-level ring — CORRECTED 2026-08-17, was "four loadout
+  item-ids"; NOT loadout, it is NetGameManager+0x4982 recent-map indices, see
+  protos/common/member_data.ksy — u16 at byte 14 the rank value, tail = stat
+  region); the
   server relays it per-member as `0x13b`, which writes it to `member_slot+0xFC`.
   The lobby UI's rank/loadout getter (`_opd_FUN_00ad2650`) reads that field and
   accepts it ONLY at length exactly 32. Member (0x131) SEEDS the blob via entry

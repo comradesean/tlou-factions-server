@@ -34,3 +34,19 @@ __pycache__/
 
 # Generated Kaitai parsers (build artifacts of protos/*.ksy)
 protos/*.py
+
+# leaderboard-server stub runtime score store
+tools/leaderboard_scores.sqlite
+
+# --- Reverse-engineering scratch dumps (not committed) ---
+# Raw Ghidra/objdump decompile + disassembly exports
+research/ghidra/*.log
+research/ghidra/*.txt
+research/disasm/
+# Live server run logs and debug logs
+*-run.log
+tools/*_debug.log
+# Stray Ghidra export blobs written to the repo root
+/003433d0
+/012bc660
+/0x00ad33d8

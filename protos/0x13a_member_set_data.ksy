@@ -19,7 +19,8 @@ doc: |
   unrelated CALLER LOOP, not this message's CONTENT: 0x13a carries the
   client's own 32-byte member data blob (SetPartyData / "MemberSetData") -
   the same blob the lobby UI reads for a REMOTE player, containing title,
-  rank and the four loadout item-ids. The stub relays it to the room's other
+  rank and the host map-picker's recent-level ring (NOT loadout — corrected
+  2026-08-17, see the member_blob field). The stub relays it to the room's other
   members as 0x13b, and that path is live-confirmed working (the remote
   player's member slot +0xFC is populated from it). See
   research/notes/2026-08-17-member-data-blob-rank-and-0x142-hostrank.md and
@@ -51,9 +52,11 @@ seq:
       Offset 16:48. The 32-byte per-member data blob - the SAME structure the
       lobby UI reads for a remote player (see protos/0x131_member.ksy
       data_blob and protos/0x13b's blob). Decoded from live captures:
-      byte 8 = flags, byte 9 = title index, bytes 10..13 = four loadout
-      item-ids (0xff = empty slot; live: `00 0e ff ff` while in a game room
-      vs `ff ff ff ff` in a party lobby with no loadout selected), u16 at
+      byte 8 = flags, byte 9 = title index, bytes 10..13 = the host map-picker's
+      recent-level ring (CORRECTED 2026-08-17 — was "four loadout item-ids"; NOT
+      loadout, it is NetGameManager+0x4982 recently-played map indices, see
+      protos/common/member_data.ksy; 0xff = unset, live `00 0e ff ff` in a game
+      room vs `ff ff ff ff` fresh), u16 at
       byte 14 = the rank-widget value, remaining bytes = a stat region that
       is zero on an empty profile. The server relays these 32 bytes verbatim.
   - id: tail
