@@ -50,8 +50,10 @@ Untick the patch and restart to revert; the file writes nothing to disk.
 
 ## Address convention
 
-RPCS3 PPU-hash patch offsets are the debugger/disassembly VMA **minus
-0x10000**, which for this EBOOT equals the plain file offset (verified against
-the community MLAA patch entries: their offsets index real original
-instructions in the decrypted `EBOOT.elf`). The repo's research notes use VMA;
-subtract 0x10000 when turning a note's address into a patch line.
+RPCS3 PPU-hash patch addresses are **plain VMAs** — exactly the addresses the
+RPCS3 debugger and this repo's research notes use (VMA = EBOOT file offset +
+0x10000). No shifting. Verified live: an entry at the file-offset
+interpretation reported "Applied" but changed nothing in-game; at the VMA it
+works, and the community MLAA entries decode as coherent `lwz → li r0,0`
+patches only under the VMA reading. When turning a research-note address into
+a patch line, use it as-is.
