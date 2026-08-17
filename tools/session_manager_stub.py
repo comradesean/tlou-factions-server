@@ -1198,8 +1198,23 @@ def handle(conn, addr, log_lock, log):
                                 host.pop("abandon_ts", None)
                             host["emit"](
                                 f"   [pair] pushed host {host['npid']!r} a 2-member "
-                                f"roster (joiner {own_npid!r}) to hold SERVER_LOBBY "
-                                f"while the joiner connects P2P")
+                                f"roster (joiner {own_npid!r}) to hold SERVER_LOBBY")
+                            # SYMMETRIC: also push THIS searcher (the joiner) the
+                            # 2-member roster with itself first and the host as
+                            # owner, so BOTH clients see the shared lobby (not just
+                            # the host). Old direct-pairing got both to see each
+                            # other; the list-only rework lost the joiner side.
+                            joiner_member = build_member(
+                                [joiner_entry, host_entry], host_rid,
+                                host["max_players"], owner_ref_id=MEMBER_ID,
+                                local_ref_id=JOINER_MEMBER_ID,
+                                room_ptr=host["room_ptr"], populate_self_npid=True)
+                            conn.sendall(joiner_member
+                                         + build_owner_changed(host_rid, 0)
+                                         + build_owner_member(host_rid, MEMBER_ID))
+                            emit(f"   [pair] pushed joiner {own_npid!r} the 2-member "
+                                 f"roster (host {host['npid']!r} as owner) - both "
+                                 f"clients now see the shared lobby")
                         except OSError:
                             pass
             elif opcode == ROOM_LEAVING_OPCODE and len(chunk) >= 16:
