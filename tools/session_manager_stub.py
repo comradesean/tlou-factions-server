@@ -179,6 +179,13 @@ active_rooms = {}
 # hostrank.md.
 member_blobs = {}   # (room_id_bytes, member_id) -> bytes (exactly 32)
 
+# How long a find-match PUBLIC host room stays findable after the host abandons
+# SERVER_LOBBY (member count < mode min). Long enough for a searcher mid-cycle
+# to still list and join it; the join then pushes the host a 2-member roster
+# that raises the count and makes it stay/start. See
+# research/notes/2026-08-17-find-match-flow.md.
+PUBLIC_ROOM_GRACE_SECONDS = 10
+
 
 def build_room_joined(npid, name, room_id, id_gate=0, map_id=b"\x00\x00\x00\x00"):
     """Build a guessed NetMatchmakingRoomJoined (opcode 0x132) reply to a
@@ -545,7 +552,15 @@ def build_room_search(search_obj_ptr, entries):
         e[0:8] = room_id
         struct.pack_into(">H", e, 0xc, len(info.get("members", [])) or 1)
         struct.pack_into(">H", e, 0x10, info.get("max_players", 8))
-        # attribute block [0x14:0x38] left zero for the first live test.
+        # HOST IDENTITY (2026-08-17, find-match-flow.md Q3): the joiner's
+        # CONNECT_TO_HOST handler (_opd_FUN_003b2a9c) copies this entry's
+        # attribute block [0x14:0x38] and starts a P2P SIGNALING connect to the
+        # host peer using the NpId carried here - NOT a 0x130 to us (the 0x130
+        # already happened at GAME_LIST_PICK). With this left zero the joiner
+        # resolves no peer and CONNECT_TO_HOST times out (~30s) -> force-leave.
+        # entry[0x14:0x24] = the host's 16-byte NpId (best concrete guess).
+        host_npid = info.get("npid", b"")[:16]
+        e[0x14:0x14 + len(host_npid)] = host_npid
         body += bytes(e)
     return bytes(header) + bytes(body)
 
@@ -1078,6 +1093,9 @@ def handle(conn, addr, log_lock, log):
                     with rooms_lock:
                         host["conns"][id(conn)] = (JOINER_MEMBER_ID, conn, emit)
                         host["members"] = [host_entry, joiner_entry]
+                        # A joiner arrived: the room is live again, clear any
+                        # grace-abandon marker so it isn't purged mid-match.
+                        host.pop("abandon_ts", None)
                     # Restart both refreshers with the joint roster.
                     host["stop_event"].set()
                     new_host_stop = threading.Event()
@@ -1115,17 +1133,34 @@ def handle(conn, addr, log_lock, log):
                 find_match_searching = True
                 search_obj_ptr = (struct.unpack(">I", chunk[8:12])[0]
                                   if len(chunk) >= 12 else ROOM_PTR)
+                now = time.time()
                 with rooms_lock:
+                    # Don't answer a connection that is ITSELF a public host with
+                    # a game list - it's no longer searching, and a 0x136 re-arms
+                    # search behavior on the game-room object it's now hosting on
+                    # (find-match-flow.md Q2). Let its SERVER_LOBBY wait run.
+                    self_hosting = any(info.get("public") and info["conn"] is conn
+                                       and "abandon_ts" not in info
+                                       for info in active_rooms.values())
+                    # Include public rooms on OTHER connections that aren't full,
+                    # keeping briefly-abandoned ones (grace) so a searcher mid-
+                    # cycle still finds a host that momentarily dipped below min.
                     entries = [(info["room_id"], info) for info in active_rooms.values()
                                if info.get("public") and info["conn"] is not conn
-                               and len(info.get("members", [])) < info.get("max_players", 8)]
-                reply = build_room_search(search_obj_ptr, entries)
-                conn.sendall(reply)
-                emit(f"   parsed opcode={opcode:#x} (find-match search) - sent "
-                     f"RoomSearch (0x136) listing {len(entries)} public game(s) "
-                     f"[{', '.join(rid.hex() for rid, _ in entries) or 'none'}], "
-                     f"search_obj_ptr={search_obj_ptr:#x}; empty list => client "
-                     f"self-hosts a public game")
+                               and len(info.get("members", [])) < info.get("max_players", 8)
+                               and now - info.get("abandon_ts", 0) < PUBLIC_ROOM_GRACE_SECONDS]
+                if self_hosting:
+                    emit(f"   parsed opcode={opcode:#x} (find-match search) - this "
+                         f"connection is already a public HOST; not sending a game "
+                         f"list (letting its SERVER_LOBBY wait run)")
+                else:
+                    reply = build_room_search(search_obj_ptr, entries)
+                    conn.sendall(reply)
+                    emit(f"   parsed opcode={opcode:#x} (find-match search) - sent "
+                         f"RoomSearch (0x136) listing {len(entries)} public game(s) "
+                         f"[{', '.join(rid.hex() for rid, _ in entries) or 'none'}], "
+                         f"search_obj_ptr={search_obj_ptr:#x}; empty list => client "
+                         f"self-hosts a public game")
             elif opcode == ROOM_LEAVING_OPCODE and len(chunk) >= 16:
                 # No reply - confirmed fire-and-forget, see the constant's
                 # docstring. This firing means the client just gave up on
@@ -1147,7 +1182,20 @@ def handle(conn, addr, log_lock, log):
                     info = active_rooms.get(id(conn))
                     if info is not None and info["room_id"] == room_id_tail:
                         info["stop_event"].set()
-                        del active_rooms[id(conn)]
+                        if info.get("public") and len(info.get("members", [])) <= 1:
+                            # GRACE (find-match-flow.md): a public host abandons
+                            # SERVER_LOBBY the moment its member count dips below
+                            # the mode minimum (~12s of solo waiting). Don't drop
+                            # the room instantly - keep it briefly so a searcher
+                            # mid-cycle can still find and join it. Purged from
+                            # the list after PUBLIC_ROOM_GRACE_SECONDS and on
+                            # connection close.
+                            info["abandon_ts"] = time.time()
+                            emit(f"   (public host room {room_id_tail.hex()} "
+                                 f"abandoned - keeping {PUBLIC_ROOM_GRACE_SECONDS}s "
+                                 f"grace for a mid-cycle joiner)")
+                        else:
+                            del active_rooms[id(conn)]
                 # If this connection had JOINED someone else's room with this
                 # id, notify the remaining members (0x134) and shrink their
                 # refresher roster.
