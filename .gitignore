@@ -31,3 +31,6 @@ captures/*.log
 .DS_Store
 *.swp
 __pycache__/
+
+# Generated Kaitai parsers (build artifacts of protos/*.ksy)
+protos/*.py
