@@ -10,6 +10,14 @@ doc: |
   correlates with the client's *own* matchmaking-search state, not a
   one-off "I left a room" event.
 
+  CLARIFIED 2026-08-17: the server must REPLY to each 0x135 with a `0x136`
+  RoomSearch game list (server->client) - that is what NET_SM_CLIENT_GAME_LIST_
+  WAIT blocks on. Wire offset 8 is the client's search-object pointer (live
+  0x01383bd8) which the 0x136 reply MUST echo back at its own offset 8. See
+  protos/0x136_room_search.ksy and research/notes/2026-08-17-find-match-flow.md.
+  Find-match (public matchmaking) is the ONLY path to a COUNTED game that
+  credits progression (see 2026-08-17-match-counts-latch.md).
+
   STATUS: the declared opcode/size table (docs/protocol/session_manager_and_
   matchmaking.md) names this NetMatchmakingRoomLeft at 24 bytes - WRONG on
   both counts, per this project's now-established pattern of declared-table

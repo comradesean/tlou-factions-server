@@ -83,6 +83,20 @@ be wrong:**
 **Also: an opcode outside the 11-case dispatch chain permanently wedges the
 connection** (the default branch returns without advancing the receive cursor).
 
+**2026-08-17 — FIND-MATCH and PROGRESSION (read the session handoff:
+`research/notes/2026-08-17-session-handoff.md`).** Two load-bearing findings:
+(1) **Progression (supplies/rank/journeys) credits ONLY for a COUNTED matchmade
+game** — custom/invite games never set the "match counts" latch by design, so
+only find-match (public matchmaking) can advance the metagame. (2) **`0x136`
+RoomSearch is the SERVER->CLIENT find-match GAME LIST** the client's
+`NET_SM_CLIENT_GAME_LIST_WAIT` blocks on (server must push it in reply to the
+`0x135` search); the join is then pure P2P (`CONNECT_TO_HOST` by the host NpId
+carried in the `0x136` entry at `[0x14:0x24]`), NOT a `0x130`. Find-match is
+implemented in the stub and works up through pick+connect; the open blocker is
+two-client host/joiner coordination (both self-host). See
+`protos/0x136_room_search.ksy`, `2026-08-17-find-match-flow.md`,
+`2026-08-17-match-counts-latch.md`, `2026-08-17-mode-min-players.md`.
+
 **2026-08-16/17 — LIVE-CONFIRMED WORKING. Solo-host, party invite + join, and
 2-player matches all run end-to-end against `tools/session_manager_stub.py`.**
 Full trail: `research/notes/2026-08-16-solo-host-fixed-live-confirmed.md`,
