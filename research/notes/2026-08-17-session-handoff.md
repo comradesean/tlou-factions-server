@@ -85,12 +85,10 @@ commits) as the solution; they are papering over the missing real join.
 
 ## Other root-caused items (server-adjacent, mostly P2P)
 
-- **Join Party** (`2026-08-17-join-party-*`): the tag-267/268/0x130 discovery
-  handshake works and comradesean's client AUTO-creates a party on a join
-  request, but the party collapses with `lost connection to party member`
-  (sceNpSignaling PEER_DEACTIVATED, errorCode 0x8002a810 — a P2P keepalive
-  timeout). NOT stub-fixable; the lever is RPCN signaling stability (the
-  `os error 104` churn evicting `signaling_info`; a grace-window was sketched).
+- **Join Party (friends-list): UNRELIABLE, OPEN — QUARANTINED.** This session's
+  investigation and all its conclusions are archived at `archive/joinparty/` and
+  deliberately kept out of a fresh attempt. Do NOT read them before forming your own
+  read. Invite-to-Party works; friends-list Join is the unreliable direction.
 - **Remote faction-model mismatch** (`2026-08-17-team-assignment-consistency.md`):
   team is host-authoritative, NpId-keyed at `player+0x1dc` (default -1),
   broadcast to the joiner ONLY over P2P `assign_team`. If the remote NpId isn't
@@ -102,7 +100,7 @@ commits) as the solution; they are papering over the missing real join.
 
 ## Convergence
 
-Join Party collapse, the game-end party drop, the remote faction model, AND the
+The game-end party drop, the remote faction model, AND the
 find-match join all sit on the same **P2P signaling/rendezvous** layer. The
 matchmaking-server (our stub) side is largely correct; the remaining frontier
 is getting two consoles to establish and hold a real P2P link — and, upstream
