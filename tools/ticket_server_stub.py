@@ -147,8 +147,11 @@ def build_leaderboard_response(cmd):
         if start == 0 and end == 1:
             return f"+{total}\n", f"range(clan) board={board} total={total}"
         rows = STORE.page(board, start, end)
-        out = "".join(f"+{name} {score} {blob}\n" for (name, score, blob) in rows)
-        out += f"+{total}\n"
+        # Total first, then rows (protocol note §7). Entry ranks are positional
+        # (start+index+1) so the lone-total line's position doesn't affect them,
+        # but total-first matches the recommended/likely-retail order.
+        out = f"+{total}\n"
+        out += "".join(f"+{name} {score} {blob}\n" for (name, score, blob) in rows)
         return out, f"range(blob) board={board} [{start},{end}] rows={len(rows)} total={total}"
 
     # Unknown verb: send a benign empty-board answer rather than hang.
@@ -162,54 +165,57 @@ def handle_leaderboard(conn, session_token, client_nonce, log_append):
     outbound counter starting at client_nonce (same direction convention as the
     ticket handshake's message D). Client sends one verb per connection in
     practice, but we loop so a pipelined connection also works."""
-    # The client opens ONE connection per command (get / range / update each
-    # arrive on their own connection, live-confirmed) and treats the connection
-    # CLOSE (EOF) as end-of-response - the leaderboard read loop re-packs lines
-    # until the socket closes. So we must answer the one command and close
-    # promptly; holding the socket open makes the leaderboard screen spin until
-    # the client times out and drops PSN. Handle exactly one command, then close.
+    # LIVE-DISPROVED 2026-08-17: an earlier version half-closed (SHUT_WR)
+    # immediately after the reply, on the theory that EOF signals
+    # end-of-response. The client actually treats a server-initiated EOF here
+    # as a network failure - TTY.log shows "recv() failed (errno=0)" ->
+    # "Error 9" -> "You have been disconnected from the game servers" the
+    # instant the leaderboard screen is opened. Every other sibling service
+    # (ticket, heartbeat) lets the CLIENT close first, error-free, and the
+    # placeholder-era leaderboard replies did too ("connection closed by peer"
+    # in this log). So: reply, then hold the socket open until the client
+    # closes (or goes idle), exactly like the ticket message-C/D path.
     in_ctr = session_token
     out_ctr = client_nonce
-    conn.settimeout(10)
-    try:
-        header = recv_exact(conn, 20)
-    except (ConnectionError, socket.timeout, OSError):
-        log_append("  (leaderboard client closed before command)\n")
-        return
-    plen = int.from_bytes(header[2:4], "big")
-    pad = header[1]
-    try:
-        ciphertext = recv_exact(conn, plen + pad)
-    except (ConnectionError, socket.timeout, OSError) as e:
-        log_append(f"  (leaderboard truncated frame: {e})\n")
-        return
-    frame = header + ciphertext
-    plaintext, tag_ok, in_ctr, _, _ = ticket_cipher.decrypt_frame(
-        CANDIDATE_KEY, in_ctr, frame)
-    cmd = plaintext.decode("ascii", "replace")
-    log_append(f"-- leaderboard cmd (tag_ok={tag_ok}): {cmd!r}\n")
-    response, note = build_leaderboard_response(cmd)
-    frame_out, out_ctr = ticket_cipher.encrypt_frame(
-        CANDIDATE_KEY, out_ctr, response.encode("ascii", "replace"))
-    conn.sendall(frame_out)
-    # Signal end-of-response by half-closing our send side (the leaderboard read
-    # loop treats connection-close as "response complete"), THEN drain the
-    # client's side to a clean FIN/FIN shutdown. A bare close() with the client's
-    # own FIN (or any trailing bytes) still unread emits a TCP RST, which the game
-    # reads as an abnormal game-server drop -> "You have been disconnected from
-    # the game servers." Consuming to EOF first guarantees a graceful close.
-    drained = "clean"
-    try:
-        conn.shutdown(socket.SHUT_WR)
-        conn.settimeout(3)
-        while conn.recv(256):
-            pass
-    except socket.timeout:
-        drained = "drain-timeout"
-    except OSError:
-        drained = "peer-reset"
-    log_append(f"   -> {note}; replied {len(response)} bytes "
-               f"({len(frame_out)}-byte frame); close={drained}")
+    served = 0
+    while True:
+        try:
+            header = recv_exact(conn, 20, timeout=30)
+        except socket.timeout:
+            log_append(f"  (leaderboard idle 30s after {served} command(s), closing)\n")
+            return
+        except (ConnectionError, OSError):
+            if served == 0:
+                log_append("  (leaderboard client closed before command)\n")
+            else:
+                log_append(f"  (leaderboard client closed after {served} command(s))\n")
+            return
+        plen = int.from_bytes(header[2:4], "big")
+        pad = header[1]
+        try:
+            ciphertext = recv_exact(conn, plen + pad)
+        except (ConnectionError, socket.timeout, OSError) as e:
+            log_append(f"  (leaderboard truncated frame: {e})\n")
+            return
+        frame = header + ciphertext
+        plaintext, tag_ok, in_ctr, _, _ = ticket_cipher.decrypt_frame(
+            CANDIDATE_KEY, in_ctr, frame)
+        cmd = plaintext.decode("ascii", "replace")
+        log_append(f"-- leaderboard cmd (tag_ok={tag_ok}): {cmd!r}\n")
+        response, note = build_leaderboard_response(cmd)
+        # Trailing NUL = end-of-response sentinel. Live-derived 2026-08-17 from
+        # three behaviors: NUL-only placeholder replies -> client closes clean;
+        # '+'-rows without NUL + prompt EOF -> rows RENDER but the EOF raises
+        # Error 9 -> "disconnected from game servers"; rows without NUL and no
+        # EOF -> the screen spins forever. So the client parses until NUL (its
+        # own send side is strlen/NUL-terminated ASCII too), then closes the
+        # connection itself.
+        frame_out, out_ctr = ticket_cipher.encrypt_frame(
+            CANDIDATE_KEY, out_ctr, response.encode("ascii", "replace") + b"\x00")
+        conn.sendall(frame_out)
+        served += 1
+        log_append(f"   -> {note}; replied {len(response)} bytes "
+                   f"({len(frame_out)}-byte frame); holding for client close\n")
 
 
 def hexdump(data):
