@@ -6,7 +6,7 @@ config). This doc confirms/refutes whether the five other `*-server` string
 literals found alongside `"ticket-server"` in the binary
 (`heartbeat-server`, `leaderboard-server`, `invite-server`,
 `facebook-server`, `single-player-server`) use the same connect/hello
-handshake, per the coordinator's ask this session.
+handshake.
 
 **status: partial** - messages A/B (hello/hello_response) confirmed
 identical for four of the five (by construction: literally the same
@@ -14,7 +14,7 @@ function, `FUN_00acc424`); `invite-server` confirmed **dead code** (see
 below - not just the connect string, the entire `net-invite.cpp`
 translation unit has zero live code references). Post-hello payload shapes
 documented per service to the depth time allowed - breadth prioritized over
-depth per the coordinator's brief, and see the "Encrypted frame layer"
+depth, and see the "Encrypted frame layer"
 cross-reference below, which affects every service in this family.
 
 ## Method
@@ -122,7 +122,7 @@ as a next step.
 
 ## Encrypted frame layer applies here too
 
-**Important correction relative to how this session first characterized
+**Important correction relative to how this doc's first pass characterized
 these services' post-hello traffic** (as "plain ASCII text commands"): all
 four services' post-hello sends/receives go through the exact same
 `FUN_00acd5f8` (send) / `FUN_00acd568` (recv) wrappers as ticket-server's

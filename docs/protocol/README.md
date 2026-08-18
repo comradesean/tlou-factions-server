@@ -1,10 +1,10 @@
 # Protocol Documentation Index
 
-**Numeric opcode IDs are confirmed** for 115 `NetEventType` values (0-114) — recovered directly from an in-memory enum-to-name table via Ghidra, see `protos/common/opcodes.ksy` and `research/notes/ghidra-opcode-recovery.md`. **The opcode-to-payload dispatch mechanism is now found and fully mapped** (a 115-entry allocator jump table at `0x0038ec40`, keyed directly by opcode) — see `docs/protocol/net_event_dispatch_and_simple_opcodes.md` for the discovery and `research/notes/2026-08-14-gameplay-opcode-mapping.md` for the full per-opcode status ledger. 41 opcodes have fully confirmed, `ksc`-validated payload schemas so far (16 from the first pass's inline-constructed opcodes, 25 more from a 2026-08-15 pass that generalized the vtable-resolution technique to opcodes with a dedicated external constructor — see `docs/protocol/net_event_dispatch_and_simple_opcodes.md` section 5 and `research/notes/2026-08-15-gameplay-opcode-schema-expansion.md`); every other opcode has at least a known object size and (for ~57 of the remaining ones) a known constructor address ready for the next pass. **Live testing on the `NetMatchmaking*`/session-manager family below now reaches full 2-player gameplay** (2026-08-16/17): against a self-hosted stub (`tools/session_manager_stub.py`), a real client goes through auth, solo-host into an actual match, party invite + accept + join, cross-connection find-match pairing, and two real players loading into and playing a match together. See the "LIVE-CONFIRMED WORKING" banner in `docs/protocol/session_manager_and_matchmaking.md` and the `research/notes/2026-08-16-solo-host-fixed-live-confirmed.md` / `2026-08-16-two-player-party-and-match-working.md` / `2026-08-17-member-data-blob-rank-and-0x142-hostrank.md` notes. Open items: remote-player rank/gear render empty (served profiles are empty — rank/gear progression needs the `profiles/…`+`userdata/….txt.crypt` pipeline, under investigation), the party P2P link drops at game end, and an intermittent "Host quit for cheating" teardown. Earlier trail: the `research/notes/2026-08-14-*`/`2026-08-15-*` session notes. The `net_event_type` gameplay-event family immediately below (opcodes 0-114) remains primarily static-analysis-confirmed, consistent with the project's decided scope (auth/matchmaking/signaling backbone, not gameplay-simulation reimplementation).
+**Numeric opcode IDs are confirmed** for 115 `NetEventType` values (0-114) — recovered directly from an in-memory enum-to-name table via Ghidra, see `protos/common/opcodes.ksy` and `research/notes/ghidra-opcode-recovery.md`. **The opcode-to-payload dispatch mechanism is now found and fully mapped** (a 115-entry allocator jump table at `0x0038ec40`, keyed directly by opcode) — see `docs/protocol/net_event_dispatch_and_simple_opcodes.md` for the discovery and `research/notes/2026-08-14-gameplay-opcode-mapping.md` for the full per-opcode status ledger. 41 opcodes have fully confirmed, `ksc`-validated payload schemas so far (16 from the first pass's inline-constructed opcodes, 25 more from a 2026-08-15 pass that generalized the vtable-resolution technique to opcodes with a dedicated external constructor — see `docs/protocol/net_event_dispatch_and_simple_opcodes.md` section 5 and `research/notes/2026-08-15-gameplay-opcode-schema-expansion.md`); every other opcode has at least a known object size and (for ~57 of the remaining ones) a known constructor address ready for the next pass. **Live testing on the `NetMatchmaking*`/session-manager family below now reaches full 2-player gameplay** (2026-08-16/17): against a self-hosted stub (`server/session_manager.py`), a real client goes through auth, solo-host into an actual match, party invite + accept + join, cross-connection find-match pairing, and two real players loading into and playing a match together. See the "LIVE-CONFIRMED WORKING" banner in `docs/protocol/session_manager_and_matchmaking.md` and the `research/notes/2026-08-16-solo-host-fixed-live-confirmed.md` / `2026-08-16-two-player-party-and-match-working.md` / `2026-08-17-member-data-blob-rank-and-0x142-hostrank.md` notes. Open items: remote-player rank/gear render empty (served profiles are empty — rank/gear progression needs the `profiles/…`+`userdata/….txt.crypt` pipeline, under investigation), the party P2P link drops at game end, and an intermittent "Host quit for cheating" teardown. Earlier trail: the `research/notes/2026-08-14-*`/`2026-08-15-*` session notes. The `net_event_type` gameplay-event family immediately below (opcodes 0-114) remains primarily static-analysis-confirmed, consistent with the project's decided scope (auth/matchmaking/signaling backbone, not gameplay-simulation reimplementation).
 
 Also known: a 38-entry catalog of lobby/match state names (`NET_SM_*`) pulled from the binary's string table, status unconfirmed either way (state-machine states vs. actual wire opcodes) — see `protos/pending/net_sm_states_catalog.md`.
 
-**A fourth family, added 2026-08-15, is not reverse-engineered at all**: RPCN's own `CommandType`/`NotificationType` PSN protocol, read directly from this project's forked RPCN server source (`backend/rpcn/`) rather than decompiled — see the summary below and `docs/protocol/rpcn_psn_commands.md`.
+**A fourth family, added 2026-08-15, is not reverse-engineered at all**: RPCN's own `CommandType`/`NotificationType` PSN protocol, read directly from the upstream RPCN server source (`RipleyTom/rpcn`) rather than decompiled — see the summary below and `docs/protocol/rpcn_psn_commands.md`.
 
 ## `net_event_type` gameplay-event family (opcodes 0-114)
 
@@ -89,8 +89,7 @@ rather than by `net_event_type`. See
 **Every post-hello message on this whole family (ticket-server's C/D and
 every sibling's post-hello payload below) is wrapped in a shared,
 keyed encrypt-then-MAC frame - see "Encrypted frame layer" in
-`0x11_ticket_server_hello.md`. The cipher itself is SOLVED: `tools/
-ticket_cipher.py` decrypts a real captured message C, passes its own
+`0x11_ticket_server_hello.md`. The cipher itself is SOLVED: `server/lib/ticket_cipher.py` decrypts a real captured message C, passes its own
 auth_tag check, and recovers a genuine Sony NP ticket (contains
 "UP9000-BCUS98174_00" and "comradesean" in plaintext) - confirmed
 2026-08-14 via a live RPCS3 memory read of the static key plus ground-truth
@@ -101,7 +100,7 @@ Ghidra emulation to debug the Python reimplementation.**
 | A | `ticket_server_hello` | client→server | confirmed | high | `protos/0x11_ticket_server_hello.ksy` |
 | B | `ticket_server_hello_response` | server→client | confirmed structurally; session_token confirmed as live encrypted-frame key material (not inert) | high | `protos/0x11_ticket_server_hello_response.ksy` |
 | C | `ticket_server_ticket_submit` | client→server | CONFIRMED WORKING - cipher decrypts real capture, recovers genuine NP ticket | high | `protos/0x11_ticket_server_ticket_submit.ksy` |
-| D | `ticket_server_ticket_submit_response` | server→client | frame format/crypto confirmed working (real frame constructible via `tools/ticket_cipher.py`); content still unconfirmed (never captured) | high (framing/crypto) / unconfirmed (content) | `protos/0x11_ticket_server_ticket_submit_response.ksy` |
+| D | `ticket_server_ticket_submit_response` | server→client | frame format/crypto confirmed working (real frame constructible via `server/lib/ticket_cipher.py`); content still unconfirmed (never captured) | high (framing/crypto) / unconfirmed (content) | `protos/0x11_ticket_server_ticket_submit_response.ksy` |
 
 ### Sibling `*-server` family (same opcode-0x11 hello, different service_name)
 
@@ -126,7 +125,7 @@ family either - a **third**, independent raw-TCP protocol, opcodes `0x12d`-`0x14
 (301-328), opened by `g_pSessionManager::Init()` right after the ticket-server
 handshake finishes. **This is the connection behind the
 `g_pSessionManager->Init()() failed` / `recv() failed (errno=9)` failure that
-was the live blocker going into this session** - root-caused and confirmed via
+was the live blocker going into this pass** - root-caused and confirmed via
 a live RPCS3 syscall-log capture: `Init()` opens a brand-new connection to the
 same redirected host as ticket-server but **port 7314** (not 7320), the
 connect silently fails (`s=-1` on every subsequent syscall), and `Init()`
@@ -139,7 +138,7 @@ All 28 `NetMatchmaking*` opcodes have confirmed numeric IDs and wire sizes
 (cross-checked three independent ways: static decompile, live TTY capture, and
 the receive dispatcher's own switch-case literals). The cipher this family
 uses to key its post-handshake traffic reuses the exact same static key as
-ticket-server (see `docs/known-keys.md`), so `tools/ticket_cipher.py`'s already
+ticket-server (see `docs/known-keys.md`), so `server/lib/ticket_cipher.py`'s already
 -solved ARX implementation should carry over once the frame format is
 confirmed.
 
@@ -206,7 +205,7 @@ builder) — never both.
 
 Not reverse-engineered from `EBOOT.elf` like the other three - this is
 Sony's own PSN client-server protocol, already fully defined in source in
-this project's own forked RPCN server (`backend/rpcn/`, see `backend/README.md`).
+the upstream RPCN server (`RipleyTom/rpcn`), which this project runs unmodified.
 Evidence source is direct source-code reading (`client.rs`, `notifications.rs`,
 the `cmd_*.rs` handlers), which per `CONVENTIONS.md`'s confidence discipline
 is a *stronger* basis than decompilation for the protocol shape itself - what

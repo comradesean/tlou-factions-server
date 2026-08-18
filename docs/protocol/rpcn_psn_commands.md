@@ -1,8 +1,8 @@
 # RPCN/PSN command & notification families (fourth protocol family)
 
 **Evidence source note (differs from the other three families):** everything
-below is read directly from this project's own forked RPCN server source
-(`backend/rpcn/`, submodule at commit `5ff5c6f` / tag `1.8.8-1-g5ff5c6f` as of
+below is read directly from the upstream RPCN server source
+(`RipleyTom/rpcn`, version `1.8.8` / commit `5ff5c6f` as of
 this doc), not decompiled or captured. Per `CONVENTIONS.md`'s confidence
 discipline, that makes numeric IDs, wire framing, and command/notification
 purpose **high confidence by construction** wherever a claim is a direct
@@ -26,19 +26,18 @@ to it exactly like any other PS3 title that links `sceNp`/`sceNp2` would.
 
 The other three families were all recovered by reverse-engineering
 `EBOOT.elf` - there was no source to read. RPCN is different: it's **already
-fully defined in source**, vendored as a git submodule
-(`backend/rpcn/`, forked from `RipleyTom/rpcn` - see `backend/README.md`).
-`backend/README.md` is explicit that "No Factions-specific server-side logic
-has been added to the fork itself yet" - so everything in `backend/rpcn/src/`
-is generic RPCN/PSN reimplementation, not anything written for this project.
-This doc's job is to catalog that generic surface and mark which parts
-Factions' EBOOT evidence says it actually uses.
+fully defined in source**, in the public upstream project
+(`RipleyTom/rpcn`). The project runs stock upstream RPCN unmodified - no
+Factions-specific server-side logic is added to RPCN itself - so everything in
+RPCN's `src/` is generic RPCN/PSN reimplementation, not anything written for
+this project. This doc's job is to catalog that generic surface and mark which
+parts Factions' EBOOT evidence says it actually uses.
 
 ## Transport & framing
 
-TLS connection (self-hosted fork listens on `Host=0.0.0.0, Port=31313` by
-default per `backend/README.md`; RPCS3 is pointed at it via
-`config/rpcn.yml`). Every packet - both directions - shares one 15-byte
+TLS connection (a self-hosted RPCN instance listens on `Host=0.0.0.0,
+Port=31313` by default; RPCS3 is pointed at it via its RPCN host setting).
+Every packet - both directions - shares one 15-byte
 header (`HEADER_SIZE = 15`, `client.rs`):
 
 | Offset | Size | Field | Notes |
@@ -74,7 +73,7 @@ server→client, same as always) but it does mean **a single client action can
 fan out server-initiated pushes to third parties**, not just a reply to the
 sender - worth knowing before assuming "client sends command X" implies
 "only the sender hears back." Confirmed handlers doing this (`grep -rn
-"NotificationType::" backend/rpcn/src/server/client/*.rs backend/rpcn/src/server/*.rs`):
+"NotificationType::" src/server/client/*.rs src/server/*.rs (in an RPCN checkout)`):
 
 | Command handler (`cmd_*.rs`) | Pushes | To whom |
 |---|---|---|
@@ -214,7 +213,7 @@ for Factions server-parity purposes.**
 the server operator's own admin client, not any game client. N/A to the
 generic-vs-Factions-specific question; this is operational tooling for
 whoever runs the RPCN instance (this project's own dev config sets
-`AdminsList=comradesean` per `backend/README.md`).
+`AdminsList=comradesean` in the RPCN config).
 
 ## `NotificationType` (server→client pushes) - `notifications.rs`
 
@@ -228,7 +227,7 @@ load-bearing for Factions' P2P gameplay link); `MemberJoinedRoomGUI`,
 `MemberLeftRoomGUI`, `RoomDisappearedGUI`, `RoomOwnerChangedGUI`,
 `QuickMatchCompleteGUI`, and an unused `_UserKickedGUI` (leading underscore in
 the enum itself - dead/reserved, never constructed anywhere in
-`backend/rpcn/src/`) - all paired with the likely-unused GUI room family
+RPCN `src/`) - all paired with the likely-unused GUI room family
 above, so likely similarly low-relevance to Factions specifically.
 
 ## Relation to the already-documented `NetMatchmaking*` family - these are two separate matchmaking layers, don't conflate them
@@ -237,8 +236,8 @@ This is the point most likely to confuse a future reader, so it's worth
 stating plainly:
 
 1. **RPCN's own room system** (`CreateRoom`/`JoinRoom`/etc., this doc, "generic, but confirmed heavily used by Factions" above) is a reimplementation of **Sony's `sceNpMatching2`** - the standard PSN room/matching API any RPCS3 title using that library gets from RPCN "for free," scoped per-title by `ComId`, running over RPCN's own TLS connection (port 31313 in this build's config, same connection as login/friends/tickets/everything else in this doc).
-2. **The `NetMatchmaking*` family** (`docs/protocol/session_manager_and_matchmaking.md`, opcodes `0x12d`-`0x148`) is a **raw custom TCP protocol on a separate port (7314)**, opened independently by `g_pSessionManager::Init()`, that does **not** go through `sceNpMatching2` or `sceNpSignaling` at all. That doc's own "Ruled out this pass" section already confirmed this directly: a repo-wide grep for `"7314"`/`"NetMatchmaking"` in `backend/rpcn/` finds nothing, and concluded RPCN's room code "implement[s] Sony's standard `sceNpMatching2` protocol (a different, unrelated NP subsystem)" while `NetMatchmaking*` "is a raw custom TCP protocol... not going through any `sceNpMatching2`/`sceNpSignaling` call... genuinely new protocol surface needing a from-scratch stub." Nothing in this pass overturns that - it's restated here because it's the single most important fact for relating these two docs.
+2. **The `NetMatchmaking*` family** (`docs/protocol/session_manager_and_matchmaking.md`, opcodes `0x12d`-`0x148`) is a **raw custom TCP protocol on a separate port (7314)**, opened independently by `g_pSessionManager::Init()`, that does **not** go through `sceNpMatching2` or `sceNpSignaling` at all. That doc's own "Ruled out this pass" section already confirmed this directly: a grep for `"7314"`/`"NetMatchmaking"` across the RPCN source finds nothing, and concluded RPCN's room code "implement[s] Sony's standard `sceNpMatching2` protocol (a different, unrelated NP subsystem)" while `NetMatchmaking*` "is a raw custom TCP protocol... not going through any `sceNpMatching2`/`sceNpSignaling` call... genuinely new protocol surface needing a from-scratch stub." Nothing in this pass overturns that - it's restated here because it's the single most important fact for relating these two docs.
 
 **How they fit together at runtime**, per `research/notes/network-topology.md`'s framing (RPCN mechanically provides "rooms/matchmaking" via `sceNpMatching2` and "P2P rendezvous" via `sceNpSignaling`, while "the actual matchmaking criteria, ready-up/team-assignment flow, and room search/attribute data are game-specific" and live in Factions' own `lobby-flow.cpp`/`net-matchmaking.cpp` plus the `NetMatchmaking*` wire family): the `sceNpMatching2` room (created via this doc's `CreateRoom`, tagged with Factions' `ComId`) is the outer, PSN-level room membership/presence/signaling-info container, while the `NetMatchmaking*` protocol on port 7314 layers Factions' actual lobby state machine, ready-up flow, and richer room search/attribute data on top of it once a session is established. The opaque `SetRoomDataInternal`/`SetRoomDataExternal` blobs this doc's room commands carry are exactly the kind of payload `network-topology.md` already flagged as needing correlation against the `NetMatchmaking*` fields to fully understand - **not resolved by this pass**, left as open work in that note.
 
-**Practical implication for anyone implementing "the server's matchmaking":** it spans *both* layers. RPCN's `room_manager`/`cmd_room.rs` already works generically and needs no Factions-specific code (per `backend/README.md`, nothing has been added to the fork yet and none is obviously required here). The `NetMatchmaking*` layer is the one that's entirely from-scratch Factions-specific protocol, served today by `tools/session_manager_stub.py`. Don't assume RPCN "already handles matchmaking" makes the `NetMatchmaking*` stub redundant, and don't assume the `NetMatchmaking*` stub is the only matchmaking-shaped traffic a real client generates - a real session exercises both concurrently.
+**Practical implication for anyone implementing "the server's matchmaking":** it spans *both* layers. RPCN's `room_manager`/`cmd_room.rs` already works generically and needs no Factions-specific code (stock upstream RPCN is used unmodified, and none is obviously required here). The `NetMatchmaking*` layer is the one that's entirely from-scratch Factions-specific protocol, served today by `server/session_manager.py`. Don't assume RPCN "already handles matchmaking" makes the `NetMatchmaking*` stub redundant, and don't assume the `NetMatchmaking*` stub is the only matchmaking-shaped traffic a real client generates - a real session exercises both concurrently.

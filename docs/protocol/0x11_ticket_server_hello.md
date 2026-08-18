@@ -88,7 +88,7 @@ pass up too).
 
 Raw PPC disassembly of `0xacc4bc`-`0xacc58c` (see
 `research/ghidra/socket_wrapper_family_decomp.txt` and the raw `objdump`
-excerpt captured this session) shows the actual stores, with `r1` = this
+excerpt captured this pass) shows the actual stores, with `r1` = this
 function's own stack pointer (frame allocated fresh via
 `stdu r1,-336(r1)` at function entry) and the send buffer starting at `r1+136`:
 
@@ -138,7 +138,7 @@ targeting that address range before the copy loop reads it). This means the
 that same stack depth - not initialized by this function, its arguments, or
 anything the caller explicitly passed in for this purpose.
 
-This directly answers coordinator suggestion #1 from this session's brief
+This directly answers open question #1
 ("check whether the pointer-looking request bytes are derived from the RPCN
 ticket"): **no** - they cannot be, because they are proven-uninitialized
 memory read before any ticket-related code in this call path has even run
@@ -148,7 +148,7 @@ capture are self-consistent with genuine PS3/RPCS3 PPU stack addresses
 sitting in that memory purely by coincidence of what the stack held at that
 depth - not an intentional session-binding mechanism.
 
-This also answers coordinator suggestion #2 (try the known Blowfish/HMAC-SHA1
+This also answers open question #2 (try the known Blowfish/HMAC-SHA1
 keys from the `.crypt` investigation against these "opaque" bytes): **not
 applicable / moot** - since the bytes are proven uninitialized stack garbage
 rather than any kind of derived ciphertext or digest, there is nothing
@@ -186,8 +186,8 @@ confirmed by its `LZCOUNT`/masking pattern), gating service names to 63 chars
 
 ### Why prior captures never got past message A
 
-Our TCP catcher (`tools/catch_tcp.py`, not touched this session per the
-"hands off" rule) never implemented this protocol - it either echoed the
+Our TCP catcher (`research/tools/catch_tcp.py`, not modified in this pass) never
+implemented this protocol - it either echoed the
 request back or sent nothing. `FUN_00acc424`'s validation
 (`local_e0[0] != '"' -> close`) means **any** response that isn't exactly
 8 bytes starting with `0x22` causes an immediate `_opd_FUN_00acbad0` (close)
@@ -253,7 +253,7 @@ length prefix). This is unambiguous: message C is
 `[u16 BE ticket_length][raw ticket bytes]`, sent on the *same* socket right
 after a passing message B, with no additional framing.
 
-This directly answers coordinator suggestion #3 ("look for a fixed-size
+This directly answers open question #3 ("look for a fixed-size
 receive buffer allocation right after the send, to learn the expected
 response size before understanding field semantics") - the buffer is
 `auStack_500`, and the length argument to the receive call
@@ -280,7 +280,7 @@ field-by-field schema.
 
 ## Encrypted frame layer: messages C and D are NOT sent/received raw
 
-**Discovered and confirmed 2026-08-14, second follow-up pass this session**,
+**Discovered and confirmed 2026-08-14, second follow-up pass**,
 triggered by the first-ever live capture of a real message C (272 bytes,
 `captures/tcp_catch.log`, connection at `2026-08-14T08:11:28`) that flatly
 contradicted the original "2-byte length + raw ticket bytes" schema (first
@@ -384,7 +384,7 @@ confirmation as this investigation gets without a working decrypt.
 line observed `248` for a different ticket - sizes legitimately vary by a
 few bytes run to run).
 
-This also explains two things the coordinator's team had already ruled out
+This also explains two things previously ruled out
 as red herrings, which turn out not to be red herrings after all:
 Blowfish-with-the-known-`.crypt`-key producing garbage on the 272 bytes is
 *expected*, since this is a completely different, unrelated cipher; and the
@@ -457,7 +457,7 @@ don't match any standard named cipher this pass could identify (not
 TEA/XTEA/RC5/ChaCha/Salsa in their standard forms) - treat it as bespoke.
 
 **Where `K` and the data word combine (the actual mode-specific step) -
-this is the coordinator-flagged decrypt-vs-encrypt asymmetry, now resolved**:
+this is the previously-flagged decrypt-vs-encrypt asymmetry, now resolved**:
 
 ```c
 // FUN_00db7f88 (digest, read-only) and FUN_00db7cb0 (encrypt) - IDENTICAL:
@@ -477,7 +477,7 @@ advances using the ciphertext word it just read (before overwriting it),
 not the plaintext it just produced. Assuming symmetry here (i.e. having
 decrypt's feedback use the recovered plaintext, matching encrypt's literal
 instruction shape) would silently produce garbage after the first word -
-exactly the failure mode the coordinator flagged, and confirmed as the real
+exactly the previously-flagged failure mode, and confirmed as the real
 behavior by disassembling `FUN_00db7e08` directly rather than inferring it.
 
 **`FUN_00db5ec0`'s key-mixing mechanism (also fully resolved)**: seeds a
@@ -501,14 +501,14 @@ final whitening XOR, not just an endian conversion.
 
 ### Reimplementation: WORKING AND VERIFIED (2026-08-14, fourth pass)
 
-**The cipher is fully solved.** `tools/ticket_cipher.py` correctly decrypts
+**The cipher is fully solved.** `server/lib/ticket_cipher.py` correctly decrypts
 the real 272-byte capture, passes its own auth_tag verification, and
 recovers a plaintext that is unambiguously a real Sony NP ticket.
 
 **How the key got independently confirmed, closing off the "wrong key"
-hypothesis.** The coordinator broke into a live RPCS3 process at
+hypothesis.** Breaking into a live RPCS3 process at
 `FUN_00db5ec0`'s entry (`0x00db5ec0`) during a real NetInit run and
-directly read process memory: `r3` (the key pointer argument) was
+directly reading process memory showed: `r3` (the key pointer argument) was
 `0xed7a50` on both call sites within one frame (matching this doc's
 two-call pattern - once for the digest/tag pass, once for the encrypt
 pass), and a direct memory read of 16 bytes at that address matched the
@@ -516,20 +516,20 @@ candidate key byte-for-byte (`78 56 34 12 32 54 76 98 88 ef cd ab ef cd ab
 89`). `r4` (the counter argument) was `0` on both hits, confirming
 `session_token=0` for the first frame of a connection. This ruled out
 "wrong key" and "wrong counter" as explanations, which meant the bug had
-to be in this doc's/`tools/ticket_cipher.py`'s reconstruction of the
+to be in this doc's/`server/lib/ticket_cipher.py`'s reconstruction of the
 algorithm itself.
 
 **Finding the actual bug: ground-truth Ghidra emulation, checkpointed.**
 Rather than re-reading disassembly again (which had already been done
 multiple times without finding the error), this pass used Ghidra's own
 PPC pcode emulator (`ghidra.app.emulator.EmulatorHelper`, scripted via
-`tools/ghidra_scripts/EmulateKeySchedule.java`) to actually *execute*
+`research/tools/ghidra_scripts/EmulateKeySchedule.java`) to actually *execute*
 `FUN_00db5ec0` with the confirmed key and `counter=0`, dumping the 4-word
 state at every internal call boundary (after the initial key byte-swap,
 after the counter-mixing digest round, before/after the finalization
 snapshot's byte-swap, and after the finalization round) - full trace in
 `research/ghidra/keysched_trace.txt`. Comparing each checkpoint against the
-equivalent intermediate value in `tools/ticket_cipher.py` found that
+equivalent intermediate value in `server/lib/ticket_cipher.py` found that
 **every step matched exactly except the very last one** (the finalization
 round, `FUN_00db7cb0` applied to a snapshot of the state).
 
@@ -547,7 +547,7 @@ implicit inside `FUN_00db7cb0` - cancel out completely. The real data fed
 into the finalization round's loop is simply **the state's own current
 words, unchanged** - the state is fed through itself. Fixed in
 `key_schedule()`; confirmed to match the emulated ground truth bit-for-bit
-at every checkpoint (`python3 tools/ticket_cipher.py`'s internal asserts
+at every checkpoint (`python3 server/lib/ticket_cipher.py`'s internal asserts
 now pass).
 
 **Confirmation against the real capture, with the fix applied**:
@@ -567,8 +567,8 @@ cross-check against RPCN's own ticket format):
 
 This is a genuine, semantically valid Sony NP ticket - it contains the
 literal ASCII substrings `"UP9000-BCUS98174_00"` (this title's PS3 content
-ID, `BCUS98174` matching the game's own title ID given in this
-investigation's briefing) and `"comradesean"` (very likely the connecting
+ID, `BCUS98174` matching the game's own title ID) and `"comradesean"`
+(very likely the connecting
 player's PSN online ID), surrounded by clear Sony-style TLV
 (type/length/value) framing throughout. This is about as strong a
 real-world confirmation as static + emulation-assisted reverse engineering
@@ -576,7 +576,7 @@ can produce short of Sony's own source.
 
 **Message D**: with the cipher confirmed working, a real, cryptographically
 valid `ticket_server_ticket_submit_response` frame can now be constructed
-for any server implementation - `tools/ticket_cipher.py`'s `encrypt_frame()`
+for any server implementation - `server/lib/ticket_cipher.py`'s `encrypt_frame()`
 keyed by `client_nonce` (this captured session's message A gave
 `client_nonce=0x3b188d6f`) produces a frame the client's own decoder
 (`FUN_00acbb90`) will accept (correct magic byte, correct self-consistent
@@ -594,7 +594,7 @@ reason - swap in whatever content is decided on next.
 `FUN_00acb6fc`/`FUN_00acbb90` are the SAME shared helpers `FUN_00acd5f8`/
 `FUN_00acd568` call for every one of the sibling *-server connections
 mapped in `docs/protocol/0x11_sibling_servers_family.md` - meaning their
-post-hello payloads (previously described in this session's first pass as
+post-hello payloads (previously described in an earlier pass as
 "plain ASCII text commands") are actually the PLAINTEXT *input* to this
 same encrypted frame, not what actually goes out on the wire. The
 service-specific payload-construction logic (sprintf-style command
@@ -602,7 +602,7 @@ strings, base64-ish "+"-line parsing, etc.) still stands as a correct
 description of the plaintext; it is additionally wrapped in this frame
 before transmission. See that doc for details.
 
-## Ruled out this session
+## Ruled out in this pass
 
 - **Message A's "pointer-looking" bytes are session tokens derived from the
   RPCN ticket** - ruled out. Proven uninitialized stack memory, read before
@@ -611,7 +611,7 @@ before transmission. See that doc for details.
   bytes** - not applicable; premise (that the bytes are derived/encrypted
   data) doesn't hold once they're shown to be uninitialized memory.
 - **RPCN already implements an equivalent to this protocol** - ruled out.
-  `backend/rpcn/` was grepped for `ticket-server`, `7320`,
+  the RPCN source was grepped for `ticket-server`, `7320`,
   `heartbeat-server`, `leaderboard-server`, `invite-server` (case-insensitive,
   across all `.rs` files) - zero matches. RPCN's `req_ticket`
   (`src/server/client/cmd_misc.rs:88`) only covers issuing the NP ticket
@@ -621,13 +621,13 @@ before transmission. See that doc for details.
 - **Matchmaking rides this same "X-server" family** - ruled out as a
   hypothesis for THIS handshake specifically. In-game matchmaking goes
   through Sony's own `sceNpMatching2`/`sceNpSignaling` APIs (confirmed by
-  the many `sceNpMatching2*`/`sceNpSignaling*` string refs found this
-  session, e.g. `sceNpMatching2CreateJoinRoom`, `sceNpSignalingActivateConnection`),
+  the many `sceNpMatching2*`/`sceNpSignaling*` string refs found in this
+  pass, e.g. `sceNpMatching2CreateJoinRoom`, `sceNpSignalingActivateConnection`),
   which is a separate NP subsystem RPCN would need to implement on its own
   terms - not part of this raw-TCP "X-server" family at all. Not
-  investigated further (out of this task's scope per the brief).
+  investigated further (out of scope for this pass).
 
-## Other service names found (family survey, low-effort pass per coordinator ask)
+## Other service names found (family survey, low-effort pass)
 
 Found via a single `strings`/grep pass over the EBOOT for `*-server`
 patterns near `ticket-server` (`0x00e7a2d0`); VMAs below already converted
@@ -636,8 +636,8 @@ from `strings`' raw file offsets (+`0x10000`, see note above):
 `heartbeat-server` (`0x00e7a0e8`), `ticket-server` (`0x00e7a2d0`),
 `invite-server` (`0x00e7d0b0`), `leaderboard-server` (`0x00e7d268`). None of
 these were individually decompiled
-this session - listed here only to map the shape of the broader backend
-surface for future prioritization, per the coordinator's ask. Given the
+in this pass - listed here only to map the shape of the broader backend
+surface for future prioritization. Given the
 generic `FUN_00acc424` handshake this doc reverse-engineered is a shared
 helper (it takes the service name as a plain string argument, not something
 `ticket-server`-specific), **the strong hypothesis is that every one of these
@@ -648,7 +648,7 @@ generalizes.
 
 ## Ruled out / corrected this follow-up pass
 
-- **"`session_token` is a dead, write-only field"** - this session's own
+- **"`session_token` is a dead, write-only field"** - this pass's own
   first-draft conclusion, reached by tracing only `FUN_003557a8` (which
   indeed never reads `conn+0x50` directly) without also checking the leaf
   send helper `FUN_00acb6fc`, which does. **Withdrawn** - see "Encrypted
@@ -660,13 +660,13 @@ generalizes.
   message D's size is self-described by its own frame header, like message
   C.
 - **"Message C is `[u16 BE length][raw ticket bytes]`, no further
-  wrapping"** - the original message-C schema from this session's first
-  pass. **Disproven** by the first real live capture (272 bytes, first two
+  wrapping"** - the original message-C schema from an earlier pass.
+  **Disproven** by the first real live capture (272 bytes, first two
   bytes read as a nonsensical 13058-byte length under that schema). See
   "Encrypted frame layer" above for the corrected format.
 - Applying the known `.crypt` Blowfish key to the 272-byte capture producing
   garbage, and the RPCN ticket version magic not appearing in it - both
-  already correctly ruled out as informative by the coordinator's team
+  already correctly ruled out as informative
   before this pass started, and now positively *explained* (different
   cipher entirely; the captured bytes are ciphertext, not a ticket in the
   clear) rather than just ruled out.
@@ -682,16 +682,16 @@ generalizes.
 | Message B: unknown1 | medium | Byte range confirmed unread by the validating function; whether truly inert elsewhere is not proven |
 | Message B: session_token | high (as key material), unconfirmed (its exact starting-value requirements) | Confirmed via disassembly of the actual consumer (`FUN_00acb6fc`) that it's read/used/incremented as frame-encryption key material, and byte-exact-matched against a real capture's frame math; NOT confirmed whether the client requires anything specific about its *value* beyond internal self-consistency (a server picks it, so this may be moot) |
 | Message C: frame_magic, pad_count, plaintext_len, auth_tag(existence)/ciphertext(existence) | high | Byte-exact match (two independent arithmetic checks) against a real 272-byte live capture, plus full disassembly of both the encode and decode paths |
-| Message C: auth_tag/ciphertext algorithm (round function, CFB feedback, key schedule, tag finalize) | high, CONFIRMED WORKING | Independently re-derived from raw disassembly of both the encode (`FUN_00acb6fc`) and decode (`FUN_00acbb90`) paths, debugged against ground-truth Ghidra emulation (`research/ghidra/keysched_trace.txt`) until every checkpoint matched exactly; `tools/ticket_cipher.py` now decrypts the real 272-byte capture and passes its own auth_tag verification |
+| Message C: auth_tag/ciphertext algorithm (round function, CFB feedback, key schedule, tag finalize) | high, CONFIRMED WORKING | Independently re-derived from raw disassembly of both the encode (`FUN_00acb6fc`) and decode (`FUN_00acbb90`) paths, debugged against ground-truth Ghidra emulation (`research/ghidra/keysched_trace.txt`) until every checkpoint matched exactly; `server/lib/ticket_cipher.py` now decrypts the real 272-byte capture and passes its own auth_tag verification |
 | Message C: static key bytes | high, CONFIRMED (2 independent methods) | Static resolution (TOC-chain, same across both encode/decode paths) AND a live RPCS3 memory read at `FUN_00db5ec0`'s entry both give the identical 16 bytes at `0xed7a50` |
 | Message C: recovered plaintext is a real NP ticket | high | Contains literal ASCII `"UP9000-BCUS98174_00"` (this title's content ID) and `"comradesean"` (very likely the player's online ID), with consistent Sony-style TLV structure throughout |
-| Message D: frame format | high (structural, by analogy - crypto layer confirmed working) | Confirmed to share the same decoder (`FUN_00acbb90`), header format, and now-verified-working cipher as message C; a real, self-consistent frame can be constructed (`tools/ticket_cipher.py`'s `encrypt_frame()`), but no independent live capture of an actual message D exists to confirm the client accepts it end-to-end |
+| Message D: frame format | high (structural, by analogy - crypto layer confirmed working) | Confirmed to share the same decoder (`FUN_00acbb90`), header format, and now-verified-working cipher as message C; a real, self-consistent frame can be constructed (`server/lib/ticket_cipher.py`'s `encrypt_frame()`), but no independent live capture of an actual message D exists to confirm the client accepts it end-to-end |
 | Message D: content | unconfirmed | Never observed; no other code path explains it - framing/crypto is solved, content is a placeholder |
 
 ## Next steps (prioritized)
 
 1. **Decide message D's real content and test it live** - the cipher is no
-   longer the blocker. `tools/ticket_cipher.py`'s `encrypt_frame()`, keyed
+   longer the blocker. `server/lib/ticket_cipher.py`'s `encrypt_frame()`, keyed
    by `client_nonce` from the connection's own message A, produces a frame
    the client's decoder should accept (correct magic byte, self-consistent
    auth_tag - verified by round-tripping the generated frame through
@@ -701,8 +701,8 @@ generalizes.
    this doc's original "session grant / final auth confirmation" hypothesis)
    and observing whether NetInit proceeds past this handshake for the first
    time ever.
-2. **Update `tools/ticket_server_stub.py`** to build real encrypted frames
-   using `tools/ticket_cipher.py` instead of the current all-zero 16-byte
+2. **Update `server/ticket_server.py`** to build real encrypted frames
+   using `server/lib/ticket_cipher.py` instead of the current all-zero 16-byte
    placeholder (which is very likely not a valid frame - wrong magic byte,
    no correct tag) - this is the concrete change that would let a live test
    actually exercise the newly-working cipher.

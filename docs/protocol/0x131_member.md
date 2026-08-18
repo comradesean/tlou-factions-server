@@ -10,7 +10,7 @@ each nailed down via live RPCS3 debugging after two real crashes - see "The
 found. This is the mechanism this project believes is needed to tell the
 client "you are both a member of this room AND its owner" - something
 `RoomJoined` (0x132) alone does not do (see "Why this message matters"
-below). **UPDATED 2026-08-16**: `tools/session_manager_stub.py` now sends
+below). **UPDATED 2026-08-16**: `server/session_manager.py` now sends
 `Member` **without** `RoomJoined` on the solo-host and find-match/party paths
 (followed by `0x13f`/OwnerChanged and `0x13d`/OwnerMember). RoomJoined's
 hardcoded `is_local=0` registration created a phantom second member and

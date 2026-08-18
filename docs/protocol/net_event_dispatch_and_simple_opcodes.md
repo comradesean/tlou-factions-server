@@ -2,13 +2,13 @@
 
 Companion doc for the gameplay-event opcode space (`protos/common/opcodes.ksy`'s
 `net_event_type` enum, values 0-114) - **not** the `0x11_ticket_server_*`
-control-channel family another session is documenting in parallel (different,
+control-channel family documented in parallel elsewhere (different,
 unrelated opcode namespace/protocol entirely).
 
 Covers two things:
 1. **The dispatch/factory mechanism** - how the game goes from a raw opcode
    byte to a constructed, type-specific event object. This was the primary
-   target of this session and is now solidly confirmed.
+   target of this pass and is now solidly confirmed.
 2. **16 individually confirmed opcode payload schemas** - the simplest,
    cleanest opcodes in the table, picked deliberately as the highest-confidence
    subset rather than trying to cover all 115 in one pass. See
@@ -19,7 +19,7 @@ Covers two things:
 
 ### Finding it
 
-Starting from the task's confirmed entry points `FUN_00ace694` (`0x00ace694`)
+Starting from the confirmed entry points `FUN_00ace694` (`0x00ace694`)
 and `FUN_00acecd0` (`0x00acecd0`) - the two functions already known to read a
 queued event's type via a 1-byte load `*(byte*)(node+4)` - decompiling
 `FUN_00acecd0` shows it allocating a fresh event object via:
@@ -54,7 +54,7 @@ table_base + *(i32*)(table_base + opcode*4)`), not raw pointers.
 
 `PTR_DAT_012fdef4` is read at file-scope as a plain 4-byte value (address
 `0x012fdef4` holds `0x01271330` in this build - confirmed via
-`tools/ghidra_scripts/DumpNetEventFactoryTable.java`, which also verified this
+`research/tools/ghidra_scripts/DumpNetEventFactoryTable.java`, which also verified this
 is the *same* TOC base value used by the per-opcode trampolines below, since
 they're all in the same compiled unit / address neighborhood,
 `0x38ec00`-`0x390bc4`). Table base slot = `0x1271330 + (-0x7ee4)` =
@@ -102,7 +102,7 @@ Each opcode's class has its own vtable, reached via **another sequential TOC
 slot table** - but only for opcodes using the *inline*-construction path
 above (opcodes with a dedicated external constructor load their class vtable
 pointer from a completely different, unrelated TOC region inside that
-constructor function, which was not resolved this session for opcodes beyond
+constructor function, which was not resolved in this pass for opcodes beyond
 the ones below). For the inline-construction opcodes, the derived-class vtable
 pointer TOC offset starts at `-0x7ee0` for opcode 0 and increments by exactly
 4 bytes for **every subsequent inline-construction opcode in enum order**
@@ -110,7 +110,7 @@ pointer TOC offset starts at `-0x7ee0` for opcode 0 and increments by exactly
 sequence - confirmed by cross-checking that the offset only advances once
 between opcode 1 and opcode 3, skipping opcode 2/`load_level` which has an
 external constructor). Formula and full derivation:
-`tools/ghidra_scripts/ResolveNetEventVtables.java` +
+`research/tools/ghidra_scripts/ResolveNetEventVtables.java` +
 `research/ghidra/vtables_final.txt`.
 
 **Gotcha that cost real time**: a vtable slot does not hold a raw code
@@ -165,7 +165,7 @@ and that `packet_header.ksy`'s `opcode: u1` field is real (see recommended
 update below). The 4-bit-count + u16-list trailer is **not** part of the
 opcode's own payload - it's a generic "extra recipients" list attached by the
 base `NetEvent` class to every outgoing event, independent of opcode. Not
-otherwise investigated this session (its exact purpose - e.g. targeted resend
+otherwise investigated in this pass (its exact purpose - e.g. targeted resend
 to specific players who missed a broadcast - is a reasonable hypothesis, not
 confirmed).
 
@@ -173,17 +173,17 @@ Caveat: `FUN_00acecd0`'s receive-side decompile calls `FUN_0038ec00(0)` with a
 **literal 0**, not the just-read opcode byte - this looks like it could be
 this specific queue's own hardcoded assumption (maybe this queue only ever
 carries `start_connection` events pre-handshake) rather than a decompiler
-error, but this was not resolved this session. The envelope conclusions above
+error, but this was not resolved in this pass. The envelope conclusions above
 rely on the **send-side** evidence (`FUN_00ace694`), which is unambiguous.
 
-**Recommended follow-up (not done this session, flagged for whoever picks
-this up next)**: update `protos/common/packet_header.ksy` to raise `opcode`
+**Recommended follow-up (not done in this pass, flagged for follow-up)**:
+update `protos/common/packet_header.ksy` to raise `opcode`
 from medium to high confidence given this closes the loop end-to-end
 (construction -> queue -> wire), and to document the leading continuation-bit
-+ optional-trailer framing found here. Left undone this session to keep this
++ optional-trailer framing found here. Left undone in this pass to keep this
 doc's scope to net-event payloads specifically; the packet_header.ksy file
-itself was explicitly out of scope for individual opcode work per the task
-brief, though this finding bears directly on it.
+itself was explicitly out of scope for individual opcode work, though this
+finding bears directly on it.
 
 ## 3. The BitStream field-level API
 
@@ -424,7 +424,7 @@ vtableAddr = *(uint32*)(anchorVal + (-0x7ffc))
 then the same PPC32 `.opd`-descriptor double-dereference from section 1
 resolves `vtableAddr+0x8` (Deserialize) and `vtableAddr+0xc` (Serialize) to
 real function addresses. New tooling:
-`tools/ghidra_scripts/ResolveExternalCtorVtables.java` (takes
+`research/tools/ghidra_scripts/ResolveExternalCtorVtables.java` (takes
 `name anchorAddrHex offsetHex` triples, reusable for the remaining ~57
 external-constructor opcodes not covered this pass). Verified correct by
 cross-checking vtable+0x14/+0x18/+0x1c/+0x20 for every opcode in this batch
@@ -446,12 +446,12 @@ individually decompiled) in section 3's pass:
 
 | Function | Role | Evidence |
 |---|---|---|
-| `FUN_00a1add0` | `ReadFloat() -> f32` | Decompiled this session (`research/ghidra/batch1_helpers_decomp.txt`): 4-byte assembly loop identical in shape to the confirmed `Read32` helpers, first used at `grenade_start_fuse`'s `fuse_time` field. |
+| `FUN_00a1add0` | `ReadFloat() -> f32` | Decompiled this pass (`research/ghidra/batch1_helpers_decomp.txt`): 4-byte assembly loop identical in shape to the confirmed `Read32` helpers, first used at `grenade_start_fuse`'s `fuse_time` field. |
 | `FUN_00a1b81c` | `WriteFloat(value)` | Symmetric write; explicitly casts its `double` parameter to `float` before the 4-byte write loop - confirms 32-bit single-precision, not `double`. |
-| `FUN_00a1b488` | `Read32() -> uint` (4th equivalent call site) | Decompiled this session: byte-identical 4-byte-loop shape to the other three confirmed Read32 helpers (`FUN_00a1ae90`/`FUN_00a1b3c8`/`FUN_00a1af50`). **This resolves the width that blocked `request_ownership` (opcode 72) in the first pass** - it's a plain 32-bit read, not a novel width; `request_ownership` is now unblocked for a future pass. |
+| `FUN_00a1b488` | `Read32() -> uint` (4th equivalent call site) | Decompiled this pass: byte-identical 4-byte-loop shape to the other three confirmed Read32 helpers (`FUN_00a1ae90`/`FUN_00a1b3c8`/`FUN_00a1af50`). **This resolves the width that blocked `request_ownership` (opcode 72) in the first pass** - it's a plain 32-bit read, not a novel width; `request_ownership` is now unblocked for a future pass. |
 | `FUN_00a1be18` | `Write32(value)` (4th equivalent call site) | Symmetric write, same finding. |
-| `FUN_00a1ab64` | `ReadU8() -> byte` (new 8-bit call site) | Decompiled this session: loop bound produces exactly one byte (`*param_2 = (char)uVar3`), confirmed via `swap_booster`'s `flag_byte` field where the *Serialize* side pairs it with the already-known `Write8` (`FUN_00a1b6d4`). |
-| `FUN_00a1b190` | `Read16() -> ushort` (3rd equivalent call site) | Decompiled this session; paired with `FUN_00a1b548` (`Write16`, symmetric) in `swap_booster`'s `old_slot_value` field. |
+| `FUN_00a1ab64` | `ReadU8() -> byte` (new 8-bit call site) | Decompiled this pass: loop bound produces exactly one byte (`*param_2 = (char)uVar3`), confirmed via `swap_booster`'s `flag_byte` field where the *Serialize* side pairs it with the already-known `Write8` (`FUN_00a1b6d4`). |
+| `FUN_00a1b190` | `Read16() -> ushort` (3rd equivalent call site) | Decompiled this pass; paired with `FUN_00a1b548` (`Write16`, symmetric) in `swap_booster`'s `old_slot_value` field. |
 
 ### The "optional compact id" idiom
 
@@ -564,7 +564,7 @@ Type-confirmed high, semantics low-medium for both.
 
 Both use a **full 32-bit `ReadBits(32)`** for their npc-id field, distinct
 from the common 13-bit player/entity-index scheme used everywhere else in
-this opcode family - a new cross-opcode pattern this pass surfaced.
+this opcode family - a new cross-opcode pattern found in this pass.
 `npc_kill`: `npc_id` (b32 via `ReadBits(32)`, 0x10) + `field_14` (u32 via
 `FUN_00a1b3c8`, 0x14); Deserialize `0x0040375c` / Serialize `0x00402c40`,
 Execute `0x00403ca0` (unusually convoluted, includes an exception-trap path
@@ -686,7 +686,7 @@ for a dedicated "stats sync family" follow-up (likely shared by
 `increment_tally_stat`/opcode 101 and others in the same address
 neighborhood).
 
-## Ruled out / explicitly not attempted this session
+## Ruled out / explicitly not attempted in this pass
 
 - **`message` (opcode 45)** - looked at (Deserialize `0x0038d45c`, Serialize
   `0x0038ddc0`). This is a real, working opcode but its payload is a
@@ -700,7 +700,7 @@ neighborhood).
   `0x0038b360`). Mostly simple (13-bit id + three 32-bit fields + one float)
   but has one field (object offset 0x20, spanning to 0x30) read via
   `FUN_00a1c0a8` and written via a lone `FUN_00a1ca84(param_2)` call that
-  takes no explicit value argument - shape/width not resolved this session,
+  takes no explicit value argument - shape/width not resolved in this pass,
   so the whole opcode was left out rather than half-documented.
 - **`assign_team_desc` (opcode 19)** and **`assign_team` (opcode 18)** - both
   looked at; both are large (nested per-team-slot arrays, a 256-byte embedded
@@ -711,8 +711,8 @@ neighborhood).
   in the first pass. `request_ownership` was blocked on the then-unconfirmed
   width of `FUN_00a1b488`/`FUN_00a1be18` - **section 5 (2026-08-15) now
   confirms this pair is a plain 32-bit Read32/Write32 equivalent**, so
-  `request_ownership` is unblocked and a good target for the next pass (not
-  done this session - out of the batch picked). `transfer_ownership` is a
+  `request_ownership` is unblocked and a good target for a future pass (not
+  done in this pass - out of the batch picked). `transfer_ownership` is a
   tagged union (a byte tag 0-3 selects between float/int32/two other 32-bit
   interpretations for its last field) - real and decodable, just needs the
   tag's exact meaning pinned down before it's worth writing a `.ksy` for it.

@@ -27,9 +27,9 @@ entries as fully trustworthy, anything less as still provisional.
   producing byte-identical output.
 - **Also needed**: a companion 4168-byte seed table (`BLOWFISH_KEY_DATA`, the
   Blowfish key-schedule base data, not itself secret/unique but required alongside the
-  key string above) - stored at `tools/blowfish_key_data.py`, extracted from the same
+  key string above) - stored at `server/lib/blowfish_key_data.py`, extracted from the same
   reference source.
-- **Used in code**: `tools/psarc_crypt.py`, `SECRET_KEY`.
+- **Used in code**: `server/lib/psarc_crypt.py`, `SECRET_KEY`.
 
 ## HMAC-SHA1 key - content-delivery integrity check
 
@@ -51,7 +51,7 @@ entries as fully trustworthy, anything less as still provisional.
   Separately confirmed functionally: a repack built with this key produced a real,
   passing HMAC that the live game client accepted (`connect ok` in RPCS3's own log,
   first time ever for a repacked file).
-- **Used in code**: `tools/psarc_crypt.py`, `HMAC_KEY`.
+- **Used in code**: `server/lib/psarc_crypt.py`, `HMAC_KEY`.
 
 ## Ticket-server frame cipher key - post-handshake control-channel encryption
 
@@ -79,7 +79,7 @@ entries as fully trustworthy, anything less as still provisional.
   succeeded (auth-tag verification still fails) - the key is confirmed correct, but
   the cipher reimplementation still has an unresolved bug elsewhere (see
   `docs/protocol/0x11_ticket_server_hello.md` for the live investigation).
-- **Used in code**: `tools/ticket_cipher.py`, `candidate_key` (name reflects that the
+- **Used in code**: `server/lib/ticket_cipher.py`, `candidate_key` (name reflects that the
   *key* is confirmed even though the surrounding decrypt code is not yet working end
   to end - not a statement of doubt about the key itself).
 
@@ -103,7 +103,7 @@ response (offset 8) rather than anything from ticket-server.
   connection to port 7314 currently fails before any real
   `NetMatchmakingServerHello` has ever been received to test the cipher
   against).
-- **Practical implication**: `tools/ticket_cipher.py`'s already-solved and
+- **Practical implication**: `server/lib/ticket_cipher.py`'s already-solved and
   verified key-schedule/round functions should apply unchanged to this second
   protocol - no new cipher reversal expected to be needed, only new framing
   work (whether post-handshake `NetMatchmaking*` frames use the same 20-byte
@@ -119,7 +119,7 @@ response (offset 8) rather than anything from ticket-server.
   reimplementation isn't done yet.
 - Anything about how `sceNpManagerGetTicket`'s own 248-byte NP ticket is internally
   structured beyond RPCN's own (already-known, already-working) serialization in
-  `backend/rpcn/src/server/client/ticket.rs` - not investigated as EBOOT-side secret
+  RPCN's `src/server/client/ticket.rs` - not investigated as EBOOT-side secret
   material since RPCN already round-trips it successfully.
 
 ## Notes for future entries

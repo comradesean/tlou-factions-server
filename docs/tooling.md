@@ -17,12 +17,12 @@ Any future session should re-verify the SHA256 before assuming findings still ap
 | Tool | Status | Notes |
 |---|---|---|
 | `powerpc64-linux-gnu-objdump` (binutils 2.42) | present | Used for the full linear disassembly. ~0.3% of instructions (11,176 / 3.7M lines) come back as `.long`/unrecognized — consistent with Cell-specific Altivec instructions (e.g. `lvlx`) that this binutils build doesn't decode. |
-| Python `capstone` 5.0.6 (`CS_ARCH_PPC`) | present | Not yet scripted against the binary this session; available for targeted disassembly once specific functions are identified via Ghidra. |
+| Python `capstone` 5.0.6 (`CS_ARCH_PPC`) | present | Not yet scripted against the binary; available for targeted disassembly once specific functions are identified via Ghidra. |
 | Ghidra 12.0 (`/mnt/e/ghidra`) | present | Stock install only — no PS3-specific loader by default. See `docs/ghidra-setup.md` for the required setup (found via prior-art search, not yet fully applied — see that doc for what's outstanding and why). |
 | `kaitai-struct-compiler` (`ksc`) | present | Used to validate every `.ksy` file in `protos/` compiles cleanly. |
-| `git` 2.43.0 | present | Repo initialized this session. |
+| `git` 2.43.0 | present | Repo initialized 2026-08-13. |
 | `tshark` (4.2.2) | present (installed 2026-08-14, capture-session phase) | Capture itself happens in Wireshark on the Windows host running RPCS3 (see `docs/capture-howto.md`); `tshark` here is for analyzing the resulting `.pcapng` files. |
-| Python `scapy` 2.7.0 | present, in a local venv at `tools/.venv/` (gitignored — recreate with `python3 -m venv tools/.venv && tools/.venv/bin/pip install scapy`) | No system-wide pip / no passwordless sudo in this environment, hence the venv. |
+| Python `scapy` 2.7.0 | present, in a local venv at `research/tools/.venv/` (gitignored — recreate with `python3 -m venv research/tools/.venv && research/tools/.venv/bin/pip install scapy`) | No system-wide pip / no passwordless sudo in this environment, hence the venv. |
 | `mitmproxy` / `pwntools` | not installed | No concrete task needs them yet. |
 
 ## Ghidra language/compiler-spec decision

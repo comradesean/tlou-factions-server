@@ -35,7 +35,7 @@ derivation.
 - **Total size is 120 bytes (`0x78`), not the 160 the opcode/size debug-log
   table declares.** The dispatch code's own buffer-advance amount after
   processing this case is authoritative and directly contradicts the table -
-  third such correction found this session (after `ClientHello2` and `Ping`'s
+  third such correction found in this pass (after `ClientHello2` and `Ping`'s
   opcode corrections in the parent doc). Treat the debug table as unreliable
   for any opcode without an independent check.
 - Offset 8-15 (id gate): the dispatch code searches the connection's 4 room
