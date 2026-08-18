@@ -229,13 +229,46 @@ init, not the gate's token call, which the patch skips). The ONLY failure was
 `157.240.14.15` (real Facebook) and connect failed/retried every 5s. Fix =
 add the host switch above + restart the merged `catch_http.py`.
 
+## Live test — 2026-08-17 (working)
+
+With `graph.facebook.com=<stub-ip>` added to the IP/Hosts switches and the
+merged `catch_http.py` running, the flow works: `/me` and `/me/friends` are
+served once each and parsed (the game then sends all 11 friend fbids to
+`facebook-get-npid`), and the player's own name shows as the `/me` name
+(first line of `facebook_friends.txt`). Two follow-on issues, both resolved:
+
+- **facebook-server backend Error 9.** After a successful connect the game
+  opens `facebook-server` connections (`facebook-set` / `facebook-get-fid` /
+  `facebook-get-npid`) on 7320. The stub fell through to the ticket path
+  (generic reply + server-close), which the client reads as `recv() failed
+  (errno=0)` → `Error 9`. Fixed by a dedicated `facebook-server` handler in
+  `ticket_server_stub.py` (proper `+`-line replies + NUL sentinel + hold for
+  client close, mirroring leaderboard). See that file's `handle_facebook`.
+- **The lobby avatar spinner was a JPEG-vs-PNG format bug, NOT a
+  connection/RPCS3 limit.** The picture *was* downloading fine (17 KB served
+  on a 5s loop). The image loader `FUN_00ac719c` (@ `0x00ac7384`) picks its
+  decoder from the URL's last 3 chars: `strcmp(url_end-3, "png"` @ `0x00ed7490`)
+  → PNG decoder if equal, else JPEG. Our `/me/picture?...access_token=STUB` URL
+  ends in `STUB`, so the game always uses the **JPEG** decoder; we were serving
+  PNG → silent decode failure → spin + re-fetch. Fixed by serving JPEG
+  (`tools/facebook_pics/me.jpg` override + embedded placeholder JPEG); the icon
+  then renders. Lesson: `/picture` MUST be JPEG unless the URL ends in `png`.
+
 ## Open / still to confirm
 
-- Re-test with the host switch in place: expect `catch_http` to log `fb:me` /
-  `fb:me/friends` and the clan survivors to take the friends' names.
-- Whether names apply immediately or only after the clan is (re)populated — the
-  feature *overwrites* existing survivor names (metagame note), so an
-  already-populated clan is the test case.
+- Clan survivor renaming: `/me/friends` is parsed (all 11 friends reach
+  `facebook-get-npid`), but whether the survivor names visibly change was not
+  confirmed. The feature *overwrites an already-populated clan* (metagame note)
+  and shows on the Clan Roster / camp screen, not the MP lobby — so it needs an
+  existing clan of survivors to be visible. `facebook-get-npid` currently
+  returns fake NpIds per friend (a resolution test); the code
+  (`FUN_00ac1f94` → `FUN_00ac12c0`, called unconditionally after resolution)
+  suggests naming doesn't depend on resolution.
+- Observed side effect (kept): returning fake NpIds for `facebook-get-npid`
+  makes all the FB friends appear in the in-game **friends list** with those
+  fake PSN ids (the "which FB friends are on PSN" resolution succeeding on stub
+  data). Harmless as cosmetic population; do NOT act on them (party invite /
+  join / presence against non-existent NpIds may error or hang).
 
 ## Alternative not taken — edit `profile.21` directly
 
