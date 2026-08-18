@@ -1,3 +1,0 @@
-[submodule "backend/rpcn"]
-	path = backend/rpcn
-	url = git@github.com:comradesean/rpcn.git
