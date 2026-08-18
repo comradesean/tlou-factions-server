@@ -109,9 +109,44 @@ def build_put_response(request_line, text, body):
 # game's "Connect to Facebook" flow names the clan locally. See
 # research/notes/2026-08-17-facebook-connect-flow.md and tools/facebook_stub.py.
 FB_HOSTS = {"graph.facebook.com", "api.facebook.com", "graph-video.facebook.com"}
-FB_FRIENDS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "facebook_friends.txt")
+_FB_DIR = os.path.dirname(os.path.abspath(__file__))
+FB_FRIENDS_PATH = os.path.join(_FB_DIR, "facebook_friends.txt")
+# Optional real photos: drop <id>.png/.jpg or me.png/.jpg in tools/facebook_pics/.
+FB_PICS_DIR = os.path.join(_FB_DIR, "facebook_pics")
 FB_BASE_ID = 1000000000000001
+
+
+def _make_png(w=116, h=116, rgb=(84, 110, 122)):
+    """A valid solid-colour PNG built in-memory (no deps), so /picture returns a
+    real decodable image instead of empty bytes (empty = icon loader spins)."""
+    import struct
+    import zlib
+
+    def chunk(typ, data):
+        body = typ + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xffffffff)
+
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)  # 8-bit truecolour RGB
+    row = b"\x00" + bytes(rgb) * w                        # filter byte 0 + pixels
+    idat = zlib.compress(row * h, 9)
+    return sig + chunk(b"IHDR", ihdr) + chunk(b"IDAT", idat) + chunk(b"IEND", b"")
+
+
+_FB_PLACEHOLDER_PNG = _make_png()
+
+
+def _fb_picture_bytes(base):
+    """(content_type, body) for a /picture path. Serves a real override photo if
+    tools/facebook_pics/<key>.{png,jpg,jpeg} exists, else a generated placeholder.
+    key is the leading id, or 'me' for /me/picture."""
+    key = "me" if base.startswith("me/") else base.split("/", 1)[0]
+    for ext, ctype in ((".png", "image/png"), (".jpg", "image/jpeg"), (".jpeg", "image/jpeg")):
+        path = os.path.join(FB_PICS_DIR, key + ext)
+        if os.path.isfile(path):
+            with open(path, "rb") as f:
+                return ctype, f.read()
+    return "image/png", _FB_PLACEHOLDER_PNG
 
 
 def fb_load_people():
@@ -150,10 +185,10 @@ def fb_response(raw_path):
     elif base == "me":
         ctype, obj = "application/json", me
     elif base == "me/picture" or _re.fullmatch(r"\d+/picture", base):
-        body = b""
-        header = (f"HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\n"
-                  f"Content-Length: 0\r\nConnection: close\r\n\r\n").encode("ascii")
-        return header, f"fb:{base}", 0
+        ctype, body = _fb_picture_bytes(base)
+        header = (f"HTTP/1.1 200 OK\r\nContent-Type: {ctype}\r\n"
+                  f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n").encode("ascii")
+        return header + body, f"fb:{base}", len(body)
     else:
         m = _re.fullmatch(r"(\d+)", base)
         obj = next((p for p in [me] + friends if p["id"] == m.group(1)),

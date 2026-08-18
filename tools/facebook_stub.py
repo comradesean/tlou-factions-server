@@ -78,6 +78,22 @@ FRIENDS_PATH = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
 BASE_ID = 1000000000000001
 
 
+def _make_png(w=116, h=116, rgb=(84, 110, 122)):
+    """A valid solid-colour PNG built in-memory (no deps), so /picture returns a
+    real decodable image instead of empty bytes (empty = icon loader spins)."""
+    import struct
+    import zlib
+
+    def chunk(typ, data):
+        body = typ + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xffffffff)
+
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)  # 8-bit truecolour RGB
+    row = b"\x00" + bytes(rgb) * w                        # filter byte 0 + pixels
+    return sig + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(row * h, 9)) + chunk(b"IEND", b"")
+
+
 def load_people():
     """Return (me, friends) as lists of {"name","id"} dicts, read fresh on each
     request so edits to facebook_friends.txt take effect without a restart."""
@@ -127,10 +143,10 @@ def route(method, path):
     if base == "me":
         return "application/json", json_body(me)
 
-    # /me/picture, /<id>/picture -> avatar. Return empty 200 so the loader
-    # completes without an image (names are the point; pictures are optional).
+    # /me/picture, /<id>/picture -> avatar. Serve a valid image (an empty body
+    # makes the game's icon loader retry forever -> spinner next to your name).
     if base == "me/picture" or re.fullmatch(r"\d+/picture", base):
-        return "image/jpeg", b""
+        return "image/png", _make_png()
 
     # /<id>?fields=name  -> single-person name lookup.
     m = re.fullmatch(r"(\d+)", base)
