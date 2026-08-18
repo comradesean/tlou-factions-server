@@ -50,10 +50,11 @@ SETUP
 
        sudo python3 tools/facebook_stub.py
 
-   Port 80 collides with catch_http.py (the S3 content stub). If you need both
-   at once, either point graph.facebook.com at a different IP that this stub
-   owns, or fold these routes into catch_http.py. For just exercising the
-   Facebook feature, running this one alone is enough.
+   Port 80 collides with catch_http.py (the S3 content stub). RECOMMENDED when
+   you also run S3/profiles: these routes are already folded into catch_http.py
+   (its FB_HOSTS branch), so just point graph.facebook.com at that server and
+   skip this standalone stub. Use this one only if you want Facebook on its own
+   IP separate from catch_http.py.
 
 4. Edit tools/facebook_friends.txt to taste, connect in-game, watch the camp.
 

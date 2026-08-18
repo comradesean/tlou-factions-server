@@ -103,12 +103,81 @@ def build_put_response(request_line, text, body):
     return header, key, stored, " (PUT stored)" if stored else " (PUT empty)"
 
 
+# --- Facebook Graph stand-in (folded in from facebook_stub.py) ------------
+# When graph.facebook.com is IP/Hosts-switched to this server, answer its /me,
+# /me/friends and /<id>/picture calls from the editable friend list so the
+# game's "Connect to Facebook" flow names the clan locally. See
+# research/notes/2026-08-17-facebook-connect-flow.md and tools/facebook_stub.py.
+FB_HOSTS = {"graph.facebook.com", "api.facebook.com", "graph-video.facebook.com"}
+FB_FRIENDS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "facebook_friends.txt")
+FB_BASE_ID = 1000000000000001
+
+
+def fb_load_people():
+    """(me, friends) from facebook_friends.txt, re-read each request so edits
+    take effect live. First non-comment line = you (/me); rest = friends."""
+    try:
+        with open(FB_FRIENDS_PATH, "r", encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        lines = []
+    people, next_id = [], FB_BASE_ID
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "|" in line:
+            name, _, id_str = line.partition("|")
+            name, id_str = name.strip(), id_str.strip()
+            fid = id_str if id_str.isdigit() else str(next_id)
+        else:
+            name, fid = line, str(next_id)
+        people.append({"name": name, "id": fid})
+        next_id += 1
+    me = people[0] if people else {"name": "Survivor", "id": str(FB_BASE_ID)}
+    return me, people[1:]
+
+
+def fb_response(raw_path):
+    """(header+body, matched_label, served_len) for a Facebook Graph path."""
+    import json
+    import re as _re
+    me, friends = fb_load_people()
+    base = raw_path.split("?", 1)[0].lstrip("/")
+    if base == "me/friends":
+        ctype, obj = "application/json", {"data": friends, "paging": {}}
+    elif base == "me":
+        ctype, obj = "application/json", me
+    elif base == "me/picture" or _re.fullmatch(r"\d+/picture", base):
+        body = b""
+        header = (f"HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\n"
+                  f"Content-Length: 0\r\nConnection: close\r\n\r\n").encode("ascii")
+        return header, f"fb:{base}", 0
+    else:
+        m = _re.fullmatch(r"(\d+)", base)
+        obj = next((p for p in [me] + friends if p["id"] == m.group(1)),
+                   {"name": "Survivor", "id": m.group(1)}) if m else {}
+        ctype = "application/json"
+    body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+    header = (f"HTTP/1.1 200 OK\r\nContent-Type: {ctype}\r\n"
+              f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n").encode("ascii")
+    return header + body, f"fb:{base}", len(body)
+# --------------------------------------------------------------------------
+
+
 def build_response(request_line, text, body=None):
     parts = request_line.split()
     if len(parts) >= 1 and parts[0] == "PUT":
         return build_put_response(request_line, text, body)
     if len(parts) < 2 or parts[0] != "GET":
         return (f"HTTP/1.1 {FALLBACK_STATUS}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").encode("ascii"), "", 0, ""
+
+    # Facebook Graph hosts get the friend-list stand-in, not the file/S3 path.
+    host = get_header(text, "Host")
+    if host and host.split(":", 1)[0] in FB_HOSTS:
+        response, label, served_len = fb_response(parts[1])
+        return response, label, served_len, ""
 
     raw_path = parts[1].split("?", 1)[0]
     path = raw_path.lstrip("/")

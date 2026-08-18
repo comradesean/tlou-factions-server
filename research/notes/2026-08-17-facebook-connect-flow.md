@@ -204,22 +204,38 @@ Everything below is in the repo. No EBOOT binary editing — a toggleable
      etc.). Avoids any TLS MITM.
   3. *Graph http scheme, pictures* (optional) — same rewrite for the three
      `/…/picture` URLs, if you want avatar loads to resolve locally.
-- **RPCS3 config** — Network → IP/Hosts switches:
-  `graph.facebook.com=<stub-ip>` (+ `api.facebook.com`, `graph-video.facebook.com`).
-  dnshook rewrites hostnames only (not literal IPs) — fine here.
+- **RPCS3 config** — Network → IP/Hosts switches (append to existing S3
+  entries with `&&&`): `graph.facebook.com=<stub-ip>` (optionally
+  `api.facebook.com`, `graph-video.facebook.com`). dnshook rewrites hostnames
+  only (not literal IPs) — fine here. **This is the step most easily missed:
+  without it graph.facebook.com resolves to the real Facebook IP
+  (157.240.14.x), which the emulator can't reach → endless 5s retry spin.**
+- **Serving** — the Facebook routes are folded into `catch_http.py`
+  (`FB_HOSTS` branch), so the single :80 server you already run for S3/profiles
+  answers `/me`, `/me/friends`, `/…/picture` too (from `facebook_friends.txt`).
+  `facebook_stub.py` remains as a standalone equivalent if you'd rather run it
+  on its own IP.
 
-## Open / needs a live RPCS3 test
+## Live test — 2026-08-17 (first attempt)
 
-- Confirm the token-getter precondition `FUN_00347414` returns true in this
-  project's NP setup. If it returns false, the getter still returns null after
-  the gate populates the token, and the `/me` fetch bails — contingency is to
-  also neutralize that branch (nop the `beq` at `0x00ac1d30`, or the precond
-  check). Watch the `sys_tty` log on a button press to see which step fires.
-- Port 80 collision: `facebook_stub.py` and `catch_http.py` both want :80.
-  Run one, or give graph.facebook.com its own stub IP, or merge the routes.
-- Whether `/me/friends` friend names land on clan survivors immediately or only
-  after the clan is (re)populated — the feature *overwrites* existing survivor
-  names (metagame note), so an already-populated clan is the test case.
+Confirmed from `RPCS3.log`: all three patches applied at boot; the game issued
+`http://graph.facebook.com/me?fields=name,id&access_token=STUB`,
+`/me/friends…&access_token=STUB`, and `/me/picture…` — proving the gate patch
+(sign-in success), the token injection (`STUB`), and the http-scheme patch all
+work, and the precondition `FUN_00347414` is a non-issue (the fetches ran).
+`sceNpSnsFbInit` shows as an RPCS3 `TODO` stub (harmless — it's the module
+init, not the gate's token call, which the patch skips). The ONLY failure was
+`graph.facebook.com` missing from the IP/Hosts switches → it resolved to
+`157.240.14.15` (real Facebook) and connect failed/retried every 5s. Fix =
+add the host switch above + restart the merged `catch_http.py`.
+
+## Open / still to confirm
+
+- Re-test with the host switch in place: expect `catch_http` to log `fb:me` /
+  `fb:me/friends` and the clan survivors to take the friends' names.
+- Whether names apply immediately or only after the clan is (re)populated — the
+  feature *overwrites* existing survivor names (metagame note), so an
+  already-populated clan is the test case.
 
 ## Alternative not taken — edit `profile.21` directly
 
