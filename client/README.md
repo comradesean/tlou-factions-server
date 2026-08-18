@@ -47,4 +47,3 @@ verify:
 - `facebook_stub_patch.yml` — makes the "Connect to Facebook" flow succeed
   offline and routes the Graph calls to the local stand-in.
 - `minplayers_patch.yml` — lowers the find-match minimum (2-client dev testing).
-- `canary_patch.yml` — harmless patch-pipeline test.
