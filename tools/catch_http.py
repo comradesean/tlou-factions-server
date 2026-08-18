@@ -115,6 +115,9 @@ FB_FRIENDS_PATH = os.path.join(_FB_DIR, "facebook_friends.txt")
 # Optional real photos: drop <id>.png/.jpg or me.png/.jpg in tools/facebook_pics/.
 FB_PICS_DIR = os.path.join(_FB_DIR, "facebook_pics")
 FB_BASE_ID = 1000000000000001
+# Max friends served to /me/friends. The game overflows a 2048-byte stack buffer
+# at ~120+ friends (unbounded strcat in the Presence Thread) -> crash; keep low.
+FB_MAX_FRIENDS = 32
 
 
 # The game picks the image decoder from the URL's last 3 chars (facebook.cpp
@@ -187,7 +190,13 @@ def fb_response(raw_path):
     me, friends = fb_load_people()
     base = raw_path.split("?", 1)[0].lstrip("/")
     if base == "me/friends":
-        ctype, obj = "application/json", {"data": friends, "paging": {}}
+        # Cap the served friends: the game's Presence Thread builds its outbound
+        # "friends <id> <id> ..." request via unbounded strcat into a 2048-byte
+        # stack buffer (128 friends/line), so a large list smashes its own saved
+        # return address and crashes (jump to 0x30303030 = the '0'-run fbid bytes).
+        # ~120 16-digit ids overflow one batch; 32 keeps us far under, and a clan
+        # is only a few dozen survivors anyway. See the crash root-cause note.
+        ctype, obj = "application/json", {"data": friends[:FB_MAX_FRIENDS], "paging": {}}
     elif base == "me":
         ctype, obj = "application/json", me
     elif base == "me/picture" or _re.fullmatch(r"\d+/picture", base):
