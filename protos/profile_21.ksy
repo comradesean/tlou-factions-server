@@ -68,14 +68,26 @@ types:
         repeat-expr: 4
         doc: "Payload 0x000..0x0DF (P+0x008). kNumCustomLoadoutsPerMode = 4 custom loadout modes. All-zero (default items) in both samples."
     instances:
+      session_key:
+        pos: 0x02F4
+        type: u4
+        doc: "P+0x02FC. Per-lobby/match session key. FUN_003487a4 re-randomises the character descriptor whenever BE_u32(P+0x2FC) changes vs its saved copy (once per lobby/match cycle); read @0x00348840-0x003488e0. Value not sampled."
       title_badge:
         pos: 0x02F8
         type: u4
         doc: "P+0x0300. Low byte = lobby title/badge index (blob[9] source). 0 in both samples."
+      gated_customization_id:
+        pos: 0x0300
+        type: u4
+        doc: "P+0x0308. An unlock-gated customization id: FUN_0033f9b4's tail zeroes it when it fails the unlock check FUN_003ec084 (kind=0), read @P+0x308. comradesean 0xD40E5495 (passes) / mgnomad2 0 (revoked). Which asset it maps to is DC-assigned."
       member_blob_word:
         pos: 0x064C
         type: u4
-        doc: "P+0x0654. Copied verbatim into the member card (member_data card_stat_2/card_stat_3). 0 in both samples."
+        doc: "P+0x0654. Word 0 of the customization block (see custom_appearance below). Copied verbatim into the member card (member_data card_stat_2/card_stat_3). 0 in both samples."
+      custom_appearance:
+        pos: 0x0658
+        type: custom_appearance
+        doc: "P+0x0660..P+0x068F. Persisted MP character-appearance block (chosen character, survivor variant, equipped items, palette). See the custom_appearance type."
       total_matches:
         pos: 0x0A14
         type: u4
@@ -84,6 +96,10 @@ types:
         pos: 0x0A18
         type: u4
         doc: "P+0x0A20. Incremented when match result == 3 (win). 10 / 7 in the samples."
+      randomize_latch:
+        pos: 0x0A20
+        type: u4
+        doc: "P+0x0A28. Customization-randomise latch: FUN_0034279c sets it to 1 (@0x00348960) the first time the deterministic profile-driven appearance is built, so the randomise arm FUN_003433d0 (guarded on ==0) does not re-roll afterwards. 1 / 1 in both samples (both took the normal, non-random arm)."
       survivor_count:
         pos: 0x0A30
         type: u4
@@ -102,6 +118,10 @@ types:
         pos: 0x1AD0
         type: u4
         doc: "P+0x1AD8. Companion settlement counter. 13 / 8."
+      faction:
+        pos: 0x1AD4
+        type: u4
+        doc: "P+0x1ADC. Player faction / MP team: 0 or 1 (Hunters / Fireflies), asserted < NetInfo::kMaxNetTeams (==2) by FUN_00340e84/00340a6c/00340f80/00341344. Selects which chosen_char_id slot in custom_appearance is live. 1 / 1 in both samples."
       pop_highwater_a:
         pos: 0x1BD8
         type: u4
@@ -166,6 +186,40 @@ types:
         pos: 0x1E4C
         type: u4
         doc: "P+0x1E54. Population high-water (OnMatchEnd). 0 / 0."
+  custom_appearance:
+    doc: |
+      Persisted MP character-appearance block, P+0x0660..P+0x068F. The descriptor
+      builder FUN_00341344 (item loop @0x003414dc, base P+0x660 + i*4 + 8 for
+      i=2..7) and the randomise arm FUN_003433d0 (@0x003434ec) read these to build
+      the 16-byte render descriptor. The character/survivor/item values are DC
+      StringIds: the ids live here, but which model/item each id resolves to is
+      data-compiler-assigned (.pak), not in the EBOOT. There is no EBOOT writer for
+      survivor_variant_id / equipped_item_ids - the customization menu (DC) writes
+      them; the EBOOT only reads them here on load.
+    seq:
+      - id: chosen_char_id_team0
+        type: u4
+        doc: "P+0x0660. Chosen character-record id for team/faction 0. Written by the randomise arm FUN_003433d0 @0x003434ec; non-zero => the randomise arm ran at least once."
+      - id: chosen_char_id_team1
+        type: u4
+        doc: "P+0x0664. Chosen character-record id for team/faction 1 (the live one when faction==1, as in both samples)."
+      - id: unmapped_668
+        type: u4
+        doc: "P+0x0668. No traced reader or writer (the item loop starts at P+0x670; the char-id writes are 0x660/0x664). 0 in both samples; left named rather than folded into a pad."
+      - id: survivor_variant_id
+        type: u4
+        doc: "P+0x066C. Persisted survivor / appearance-variant StringId; linear-searched in the character record's list at +0x0C to yield descriptor slot desc[1] (read @0x0034185c; desc[1]=0 if not found). 0x638EF35A in both samples. Asset meaning is DC-assigned."
+      - id: equipped_item_ids
+        type: u4
+        repeat: expr
+        repeat-expr: 6
+        doc: "P+0x0670..P+0x0687. Six equipped-item StringIds read by the FUN_00341344 loop into desc[2..7]. Only the first three resolve to visible render slots (desc[2..4] -> engine slots 2/3/0); [3..5] are read but never rendered and are 0 in both samples. comradesean 93EA5D87/41ACAD8B/FD0E0860, mgnomad2 6A86861F/456DB03C/0AE569A8 (first three), rest 0. Asset meaning is DC-assigned."
+      - id: palette
+        type: u4
+        doc: "P+0x0688. Character palette id (read @0x0034157c). 0 in both samples."
+      - id: tint
+        type: u4
+        doc: "P+0x068C. Character tint id (read @0x003415b8). 0 in both samples."
   loadout_mode:
     doc: "One custom loadout mode = 14 u32 item/skill slots (kLoadoutSize). 0 = default."
     seq:

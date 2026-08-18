@@ -23,5 +23,15 @@ seq:
     type: u4
     doc: "Fixed 0x146 (326 decimal). Confirmed live, big-endian."
   - id: payload
-    size: 4
-    doc: "Offset 4:8. One live capture showed 18 ac 7a d2 - shape consistent with a random/session nonce or a hash, but not independently traced. Real meaning unconfirmed."
+    type: u4
+    doc: |
+      Offset 4:8. A DETERMINISTIC session-derived checksum, NOT a random nonce
+      (corrected 2026-08-18 from a full disasm trace of the builder @0xad7554-
+      0xad7598). The client calls the ARX keyschedule FUN_00db7f88(session_state,
+      buf, 0x24) - the same primitive that keys the session_seed from ServerHello -
+      then sums its four output words at 136/140/144/148(r1) mod 2^32
+      (add-chain @0xad7580-0xad758c) and byteswaps the result into this field.
+      So it is reproducible from the session_seed, varies per session, and a
+      server that ever needed to validate it would recompute via FUN_00db7f88 over
+      the session material. One live capture: 18 ac 7a d2. The stub does not
+      validate it (Init sends this fire-and-forget)."
