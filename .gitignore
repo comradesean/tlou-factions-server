@@ -40,6 +40,7 @@ protos/*.py
 .DS_Store
 *.swp
 .claude/
+ignored/
 
 # --- Stray Ghidra export blobs written to the repo root ---
 /003433d0
