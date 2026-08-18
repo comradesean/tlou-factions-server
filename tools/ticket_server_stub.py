@@ -46,11 +46,12 @@ LEADERBOARD_DB = os.environ.get(
 # 404 shares the layout; the clan board 405 reuses the slots but leaves the
 # stats zero, its score being MAX CLAN SIZE):
 #   [0] best_game  [1] time_played_sec  [2] executions  [3] deaths  [4] rank
-# So we decode it into named columns and re-encode byte-exact on read. The
-# round-trip (pack 5 u32, strip trailing zero bytes, keep >=1) was verified
-# reproducing every live row identically - e.g. rank 0 truncates the 5th field
-# away, exactly as the client sends it. `extra` carries any bytes beyond the 5
-# fields (none observed) so an unexpected longer blob still round-trips lossless.
+# So we decode it into named columns and re-encode on read. We serve the FULL
+# 5-field struct (see encode_blob) rather than reproducing the client's
+# trailing-zero truncation, so the `rank` field is always present - otherwise a
+# rank-0 player's blob has no rank and a peer's Friends-filter view falls back to
+# showing their standing instead of 0. `extra` carries any bytes beyond the 5
+# fields (none observed) so an unexpected longer blob still survives round-trip.
 BLOB_FIELDS = ("best_game", "time_played_sec", "executions", "deaths", "rank")
 
 
@@ -67,10 +68,20 @@ def decode_blob(b64):
 
 
 def encode_blob(fields, extra=b""):
-    """Named fields -> the exact wire blob: pack 5 BE-u32, append any extra,
-    strip trailing zero bytes (keep >=1), base64."""
+    """Named fields -> wire blob. We emit the FULL 5-field struct (we deliberately
+    do NOT reproduce the client's trailing-zero truncation), so the `rank` field
+    is always present.
+
+    Why: a client trailing-zero-truncates its blob when it submits, so a rank-0
+    player ships only 4 fields (no rank). If we re-served that truncated form, a
+    PEER's Friends-filter view - whose leaderboard-get reply carries its own rank
+    field - finds no rank in the blob and falls back to showing that player's
+    leaderboard STANDING instead of their real rank, while the Global view
+    (leaderboard-range, no such field) correctly shows 0. Emitting rank=0
+    explicitly puts the field back so both views read the real, decoded rank.
+    This changes no stat value; it just serves the fully-decoded record rather
+    than the client's compressed wire form."""
     raw = struct.pack(">IIIII", *(int(fields.get(k, 0)) for k in BLOB_FIELDS)) + extra
-    raw = raw.rstrip(b"\x00") or b"\x00"
     return base64.b64encode(raw).decode("ascii")
 
 
