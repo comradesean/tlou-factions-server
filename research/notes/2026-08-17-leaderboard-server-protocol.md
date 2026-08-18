@@ -338,3 +338,35 @@ closed its one open item:
    across boards 404/405/406 (solo GET, multi-name GET, RANGE paging):
    `"+..." lines + "\x00"` in one encrypted frame, `+<total>` emitted before
    the RANGE rows, server holds the socket until client FIN (30s idle cap).
+
+## The per-entry blob is a named 5-u32 struct (decoded 2026-08-17)
+
+The `<base64-blob>` on each entry (and the `leaderboard-update` trailing
+metadata) is NOT opaque. Decoded live against the on-screen leaderboard columns
+(Supply Raid / board 406; board 404 shares the layout; clan board 405 reuses the
+slots but leaves the stats zero, its score being MAX CLAN SIZE):
+
+| offset | field | Supply-Raid column |
+|---|---|---|
+| +0x00 u32 | `best_game`       | BEST GAME |
+| +0x04 u32 | `time_played_sec` | TIME PLAYED (e.g. 4533s = 1h 15m) |
+| +0x08 u32 | `executions`      | EXECUTIONS |
+| +0x0c u32 | `deaths`          | DEATHS |
+| +0x10 u32 | `rank`            | the `//` RANK badge |
+
+Derived columns: `K/D = executions/deaths` (80/13 = 6.15), `PARTS/MIN = score/100`.
+
+The struct is **trailing-zero-truncated on the wire** (client keeps >=1 byte),
+so a player at **rank 0** ships only 4 fields (the rank u32 is all-zero and
+dropped) - which is exactly why mgnomad2's rows are 16 bytes and comradesean's
+(rank 1) are 20. Re-encode = pack 5 BE-u32, `rstrip(b"\x00") or b"\x00"`;
+verified byte-identical to every captured blob. `tools/ticket_server_stub.py`
+now stores these as named columns and re-encodes on read (commit 7e8e345).
+
+Display note: the RANK badge is drawn from the blob's `rank` field for OTHER
+players, but from the viewer's own PROFILE for their own row; when an other
+player's blob has no rank field (rank 0), the FRIENDS view (leaderboard-get,
+which carries an explicit rank field) falls back to that field while the GLOBAL
+view (leaderboard-range, no such field) shows 0. Hence a rank-0 player reads 0
+on global but 1 on a peer's friends filter - purely client-side rendering; the
+served data is correct and identical to both clients.
