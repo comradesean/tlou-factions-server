@@ -11,9 +11,11 @@ unknown is message D's *content* (never observed) - still a zero-filled
 placeholder, but now wrapped in a real, correctly-tagged encrypted frame the
 client should actually accept, instead of raw unencrypted zero bytes.
 """
+import base64
 import os
 import socket
 import sqlite3
+import struct
 import sys
 import datetime
 import threading
@@ -37,9 +39,49 @@ LEADERBOARD_DB = os.environ.get(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "leaderboard_scores.sqlite"))
 
 
+# The leaderboard "blob" (the <base64-metadata> in leaderboard-update / the
+# trailing field of each reply row) is NOT opaque: it is a 5-field big-endian
+# u32 struct, trailing-zero-truncated on the wire (the client keeps >=1 byte).
+# Fields, verified against the on-screen Supply Raid columns (board 406; board
+# 404 shares the layout; the clan board 405 reuses the slots but leaves the
+# stats zero, its score being MAX CLAN SIZE):
+#   [0] best_game  [1] time_played_sec  [2] executions  [3] deaths  [4] rank
+# So we decode it into named columns and re-encode byte-exact on read. The
+# round-trip (pack 5 u32, strip trailing zero bytes, keep >=1) was verified
+# reproducing every live row identically - e.g. rank 0 truncates the 5th field
+# away, exactly as the client sends it. `extra` carries any bytes beyond the 5
+# fields (none observed) so an unexpected longer blob still round-trips lossless.
+BLOB_FIELDS = ("best_game", "time_played_sec", "executions", "deaths", "rank")
+
+
+def decode_blob(b64):
+    """base64 blob -> ({field: u32, ...}, extra_bytes). Missing trailing fields
+    read back as 0 (the client inflates a memset-0 struct the same way)."""
+    try:
+        raw = base64.b64decode(b64) if b64 else b""
+    except (ValueError, TypeError):
+        raw = b""
+    extra = raw[20:]
+    vals = struct.unpack(">IIIII", raw.ljust(20, b"\x00")[:20])
+    return dict(zip(BLOB_FIELDS, vals)), extra
+
+
+def encode_blob(fields, extra=b""):
+    """Named fields -> the exact wire blob: pack 5 BE-u32, append any extra,
+    strip trailing zero bytes (keep >=1), base64."""
+    raw = struct.pack(">IIIII", *(int(fields.get(k, 0)) for k in BLOB_FIELDS)) + extra
+    raw = raw.rstrip(b"\x00") or b"\x00"
+    return base64.b64encode(raw).decode("ascii")
+
+
 class ScoreStore:
-    """Tiny thread-safe score store keyed by (board_id, player). One row per
-    player per board; leaderboard-update upserts, get/range read back."""
+    """Thread-safe leaderboard store keyed by (board_id, player). One row per
+    player per board, holding the score plus the blob's DECODED named fields
+    (best_game / time_played_sec / executions / deaths / rank) - no opaque blob.
+    leaderboard-update decodes into these columns; get/range re-encode the exact
+    wire blob from them."""
+
+    _COLS = BLOB_FIELDS + ("extra",)
 
     def __init__(self, path):
         self._lock = threading.Lock()
@@ -49,18 +91,61 @@ class ScoreStore:
             " board_id INTEGER NOT NULL,"
             " player   TEXT    NOT NULL,"
             " score    INTEGER NOT NULL,"
-            " blob     TEXT    NOT NULL DEFAULT '',"
+            " best_game       INTEGER NOT NULL DEFAULT 0,"
+            " time_played_sec INTEGER NOT NULL DEFAULT 0,"
+            " executions      INTEGER NOT NULL DEFAULT 0,"
+            " deaths          INTEGER NOT NULL DEFAULT 0,"
+            " rank            INTEGER NOT NULL DEFAULT 0,"
+            " extra    TEXT    NOT NULL DEFAULT '',"
             " PRIMARY KEY (board_id, player))")
+        self._migrate()
         self._db.commit()
 
+    def _migrate(self):
+        """Upgrade a pre-existing opaque-`blob` table: add the named columns and
+        backfill them by decoding each stored blob. Idempotent; the old `blob`
+        column is left in place (SQLite can't drop it) but no longer read."""
+        cols = {r[1] for r in self._db.execute("PRAGMA table_info(scores)")}
+        for name, decl in (("best_game", "INTEGER NOT NULL DEFAULT 0"),
+                           ("time_played_sec", "INTEGER NOT NULL DEFAULT 0"),
+                           ("executions", "INTEGER NOT NULL DEFAULT 0"),
+                           ("deaths", "INTEGER NOT NULL DEFAULT 0"),
+                           ("rank", "INTEGER NOT NULL DEFAULT 0"),
+                           ("extra", "TEXT NOT NULL DEFAULT ''")):
+            if name not in cols:
+                self._db.execute(f"ALTER TABLE scores ADD COLUMN {name} {decl}")
+        if "blob" in cols:
+            for board, player, blob in self._db.execute(
+                    "SELECT board_id, player, blob FROM scores").fetchall():
+                f, extra = decode_blob(blob)
+                self._db.execute(
+                    "UPDATE scores SET best_game=?, time_played_sec=?, executions=?, "
+                    "deaths=?, rank=?, extra=? WHERE board_id=? AND player=?",
+                    (f["best_game"], f["time_played_sec"], f["executions"],
+                     f["deaths"], f["rank"], base64.b64encode(extra).decode("ascii"),
+                     board, player))
+
     def update(self, board_id, player, score, blob):
+        f, extra = decode_blob(blob)
         with self._lock:
             self._db.execute(
-                "INSERT INTO scores (board_id, player, score, blob) VALUES (?,?,?,?) "
+                "INSERT INTO scores (board_id, player, score, best_game, "
+                "time_played_sec, executions, deaths, rank, extra) "
+                "VALUES (?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(board_id, player) DO UPDATE SET score=excluded.score, "
-                "blob=excluded.blob",
-                (board_id, player, score, blob))
+                "best_game=excluded.best_game, time_played_sec=excluded.time_played_sec, "
+                "executions=excluded.executions, deaths=excluded.deaths, "
+                "rank=excluded.rank, extra=excluded.extra",
+                (board_id, player, score, f["best_game"], f["time_played_sec"],
+                 f["executions"], f["deaths"], f["rank"],
+                 base64.b64encode(extra).decode("ascii")))
             self._db.commit()
+
+    def _blob_of(self, row):
+        """Re-encode the exact wire blob from a (best_game..rank, extra) row."""
+        f = dict(zip(BLOB_FIELDS, row[:5]))
+        extra = base64.b64decode(row[5]) if row[5] else b""
+        return encode_blob(f, extra)
 
     def lookup(self, board_id, player):
         """Return (rank0, score, blob) for one player, or None if absent.
@@ -68,11 +153,13 @@ class ScoreStore:
         parser stores rank = atoi(<wire>) + 1."""
         with self._lock:
             row = self._db.execute(
-                "SELECT score, blob FROM scores WHERE board_id=? AND player=?",
+                "SELECT score, best_game, time_played_sec, executions, deaths, "
+                "rank, extra FROM scores WHERE board_id=? AND player=?",
                 (board_id, player)).fetchone()
             if row is None:
                 return None
-            score, blob = row
+            score = row[0]
+            blob = self._blob_of(row[1:])
             rank0 = self._db.execute(
                 "SELECT COUNT(*) FROM scores WHERE board_id=? AND score>?",
                 (board_id, score)).fetchone()[0]
@@ -89,10 +176,13 @@ class ScoreStore:
         if end < start:
             return []
         with self._lock:
-            return self._db.execute(
-                "SELECT player, score, blob FROM scores WHERE board_id=? "
+            rows = self._db.execute(
+                "SELECT player, score, best_game, time_played_sec, executions, "
+                "deaths, rank, extra FROM scores WHERE board_id=? "
                 "ORDER BY score DESC, player ASC LIMIT ? OFFSET ?",
                 (board_id, end - start + 1, start)).fetchall()
+        return [(player, score, self._blob_of(rest))
+                for (player, score, *rest) in rows]
 
 
 STORE = ScoreStore(LEADERBOARD_DB)
