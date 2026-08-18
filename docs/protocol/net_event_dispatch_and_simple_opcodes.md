@@ -473,7 +473,7 @@ genuinely different resolution path. Hypothesis (not confirmed further):
 fallback for values outside that range or a sentinel (e.g. "no target").
 Modeled in the `.ksy` files via a leading bool field plus two mutually
 exclusive (`if:`-gated) sibling fields for the two widths - see
-`protos/0x2f_revive.ksy` / `protos/0x51_reset_melee_history.ksy`. (Kaitai
+— / —. (Kaitai
 note: comparing a `b1` field against an integer literal fails to compile
 with ksc 0.11 - `error: can't compare BitsType1(BigBitEndian) and
 Int1Type(true)` - use `== true`/`== false` instead.)

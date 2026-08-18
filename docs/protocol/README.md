@@ -33,47 +33,47 @@ reasoning and the opcode-65-vs-`0x65` numbering correction.
 
 | Opcode (hex) | Name | Status | Confidence | `.ksy` | Doc |
 |---|---|---|---|---|---|
-| 0x00 | `start_connection` | confirmed (empty payload) | high | `protos/0x00_start_connection.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x01 | `connection_done` | confirmed structurally; field semantics medium confidence | high (type) / medium (semantics) | `protos/0x01_connection_done.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x03 | `ready_to_start` | confirmed | high | `protos/0x03_ready_to_start.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x06 | `end_round` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | `protos/0x06_end_round.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x14 | `assign_team_done` | confirmed (empty payload) | high | `protos/0x14_assign_team_done.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x32 | `play_vox` | confirmed structurally; partial semantics | high (type) / medium (semantics) | `protos/0x32_play_vox.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x34 | `simple_snapshot_phys_fx` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | `protos/0x34_simple_snapshot_phys_fx.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x37 | `complete_task` | confirmed structurally; partial semantics | high | `protos/0x37_complete_task.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x38 | `start_net_task` | confirmed | high | `protos/0x38_start_net_task.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x3c | `coop_team_failed` | confirmed | medium-high | `protos/0x3c_coop_team_failed.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x3e | `spawn_entity` | confirmed | high | `protos/0x3e_spawn_entity.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x3f | `kill_entity` | confirmed | high | `protos/0x3f_kill_entity.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x40 | `animation_sync` | confirmed structurally; partial semantics | high (type) / medium (semantics) | `protos/0x40_animation_sync.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x4a | `deny_ownership_request` | confirmed structurally; partial semantics | high (type) / medium (semantics) | `protos/0x4a_deny_ownership_request.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x4b | `net_go` | confirmed (empty payload) | high | `protos/0x4b_net_go.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x55 | `debug` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | `protos/0x55_debug.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x09 | `kill_projectile_throwable` | confirmed | high | `protos/0x09_kill_projectile_throwable.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x0c | `grenade_start_fuse` | confirmed structurally; partial semantics | high (type) / medium (semantics) | `protos/0x0c_grenade_start_fuse.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x15 | `request_interact` | confirmed structurally; partial semantics | high (type) / medium (semantics) | `protos/0x15_request_interact.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x19 | `end_interact` | confirmed structurally; partial semantics | high (type) / medium (semantics) | `protos/0x19_end_interact.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x1b | `remove_interactable` | confirmed | high | `protos/0x1b_remove_interactable.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x1c | `set_interactable_ammo` | confirmed | high | `protos/0x1c_set_interactable_ammo.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x1e | `signal_respawn_player` | confirmed structurally; partial semantics | high (type) / medium (semantics) | `protos/0x1e_signal_respawn_player.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x20 | `secured_flag_score` | confirmed | high | `protos/0x20_secured_flag_score.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x22 | `stop_pack_or_deploy` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | `protos/0x22_stop_pack_or_deploy.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x23 | `spawn_carry_object` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | `protos/0x23_spawn_carry_object.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x27 | `npc_kill` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | `protos/0x27_npc_kill.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x2f | `revive` | confirmed structurally; partial semantics | high (type) / medium (semantics) | `protos/0x2f_revive.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x3d | `abort_interact` | confirmed structurally; partial semantics | high (type) / medium (semantics) | `protos/0x3d_abort_interact.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x4c | `swap_booster` | confirmed structurally; partial semantics | high (type) / medium (semantics) | `protos/0x4c_swap_booster.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x51 | `reset_melee_history` | confirmed structurally and semantically | high | `protos/0x51_reset_melee_history.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x53 | `melee_block` | confirmed | high | `protos/0x53_melee_block.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x5f | `npc_set_host` | confirmed structurally; partial semantics | high (type) / medium (semantics) | `protos/0x5f_npc_set_host.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x64 | `item_received` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | `protos/0x64_item_received.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x66 | `increment_score` | confirmed structurally; partial semantics | high (type) / medium (semantics) | `protos/0x66_increment_score.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x67 | `set_player_exposed` | confirmed | high | `protos/0x67_set_player_exposed.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x68 | `add_net_marker` | confirmed structurally; partial semantics | high (type) / medium (semantics) | `protos/0x68_add_net_marker.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x69 | `player_left` | confirmed | high | `protos/0x69_player_left.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x6b | `kill_all_mines` | confirmed (empty payload) | high | `protos/0x6b_kill_all_mines.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x6d | `sync_proxy_mine` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | `protos/0x6d_sync_proxy_mine.ksy` | net_event_dispatch_and_simple_opcodes.md |
-| 0x6f | `set_weapon_upgrade_level` | confirmed | high | `protos/0x6f_set_weapon_upgrade_level.ksy` | net_event_dispatch_and_simple_opcodes.md |
+| 0x00 | `start_connection` | confirmed (empty payload) | high | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x01 | `connection_done` | confirmed structurally; field semantics medium confidence | high (type) / medium (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x03 | `ready_to_start` | confirmed | high | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x06 | `end_round` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x14 | `assign_team_done` | confirmed (empty payload) | high | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x32 | `play_vox` | confirmed structurally; partial semantics | high (type) / medium (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x34 | `simple_snapshot_phys_fx` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x37 | `complete_task` | confirmed structurally; partial semantics | high | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x38 | `start_net_task` | confirmed | high | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x3c | `coop_team_failed` | confirmed | medium-high | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x3e | `spawn_entity` | confirmed | high | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x3f | `kill_entity` | confirmed | high | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x40 | `animation_sync` | confirmed structurally; partial semantics | high (type) / medium (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x4a | `deny_ownership_request` | confirmed structurally; partial semantics | high (type) / medium (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x4b | `net_go` | confirmed (empty payload) | high | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x55 | `debug` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x09 | `kill_projectile_throwable` | confirmed | high | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x0c | `grenade_start_fuse` | confirmed structurally; partial semantics | high (type) / medium (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x15 | `request_interact` | confirmed structurally; partial semantics | high (type) / medium (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x19 | `end_interact` | confirmed structurally; partial semantics | high (type) / medium (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x1b | `remove_interactable` | confirmed | high | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x1c | `set_interactable_ammo` | confirmed | high | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x1e | `signal_respawn_player` | confirmed structurally; partial semantics | high (type) / medium (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x20 | `secured_flag_score` | confirmed | high | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x22 | `stop_pack_or_deploy` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x23 | `spawn_carry_object` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x27 | `npc_kill` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x2f | `revive` | confirmed structurally; partial semantics | high (type) / medium (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x3d | `abort_interact` | confirmed structurally; partial semantics | high (type) / medium (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x4c | `swap_booster` | confirmed structurally; partial semantics | high (type) / medium (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x51 | `reset_melee_history` | confirmed structurally and semantically | high | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x53 | `melee_block` | confirmed | high | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x5f | `npc_set_host` | confirmed structurally; partial semantics | high (type) / medium (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x64 | `item_received` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x66 | `increment_score` | confirmed structurally; partial semantics | high (type) / medium (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x67 | `set_player_exposed` | confirmed | high | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x68 | `add_net_marker` | confirmed structurally; partial semantics | high (type) / medium (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x69 | `player_left` | confirmed | high | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x6b | `kill_all_mines` | confirmed (empty payload) | high | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x6d | `sync_proxy_mine` | confirmed structurally; semantics unconfirmed | high (type) / low (semantics) | — | net_event_dispatch_and_simple_opcodes.md |
+| 0x6f | `set_weapon_upgrade_level` | confirmed | high | — | net_event_dispatch_and_simple_opcodes.md |
 | 0x00–0x72 (all 115) | *(remaining ~74 opcodes)* | not yet payload-confirmed; every opcode has a known object size, ~57 have a known constructor address not yet used | — | — | `research/notes/2026-08-14-gameplay-opcode-mapping.md` (full per-opcode ledger) + `research/notes/2026-08-15-gameplay-opcode-schema-expansion.md` (this pass's worklist) |
 
 All 115 opcodes (confirmed and not-yet-confirmed alike) are peer-to-peer per the note above; `sync_stats`/`sync_stats_player` are not a wire-format exception to that.
