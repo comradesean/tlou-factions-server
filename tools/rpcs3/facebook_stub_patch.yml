@@ -1,0 +1,90 @@
+Version: 1.2
+
+PPU-9df60dc1aa5005a0c80e9066e4951dc0471553e6:
+
+  # ---------------------------------------------------------------------------
+  # 1. Make Facebook sign-in succeed offline (REQUIRED).
+  #
+  # ndlib/net/facebook.cpp's sign-in worker (FUN_00ac2324) calls a sign-in gate
+  # (FUN_00ac20f4 @ 0x00ac20f4) and only runs the /me + /me/friends Graph
+  # fetches if it returns 0. The gate acquires the FB access token via Sony's
+  # sceNpSns library (sceNpSnsFbCreateHandle + sceNpSnsFbGetLongAccessToken,
+  # app id 0x0001b6a7824b8012); RPCS3 stubs sceNpSns, so it fails and the
+  # fetches never fire ("Failed to get Facebook data"). The faithful fix is an
+  # sceNpSns that returns a token (see the note's "authentic path" - out of
+  # scope for now); this patch is the equivalent shortcut at the game level.
+  #
+  # It overwrites the gate's prologue to do exactly what a successful
+  # sceNpSnsFbGetLongAccessToken would cause: write a token "STUB\0" into the
+  # manager object's token buffer (obj+12), set the token-expiry field
+  # (obj+268, an f32) to a far-future value (0x7F000000 ~ 1.7e38) so the
+  # token-getter (FUN_00ac1ce8) treats it as valid and non-expired, and return
+  # 0. r3 = the manager object on entry. Gate body is 0x230 bytes; we use 36.
+  #
+  # Original bytes @ 0x00ac20f4: f8 21 ee 21 7c 08 02 a6 (stdu/mflr prologue).
+  # ---------------------------------------------------------------------------
+  "TLOU Factions - Facebook sign-in success (stub)":
+    Games:
+      "The Last of Us":
+        BCUS98174: [ 01.00 ]
+    Author: "tlou_factions"
+    Notes: "Local Facebook stub, part 1/2. Forces the FB sign-in gate FUN_00ac20f4 to succeed with a stub token so the game runs its real /me + /me/friends Graph fetches against facebook_stub.py. Requires part 2 (http scheme) + the RPCS3 IP/Hosts switch for graph.facebook.com + tools/facebook_stub.py running. See tools/facebook_stub.py and research/notes/2026-08-17-facebook-connect-flow.md."
+    Patch Version: "1.0"
+    Patch:
+      - [ be32, 0x00ac20f4, 0x3C005354 ]  # lis  r0, 0x5354
+      - [ be32, 0x00ac20f8, 0x60005542 ]  # ori  r0, r0, 0x5542   ; r0 = "STUB"
+      - [ be32, 0x00ac20fc, 0x9003000C ]  # stw  r0, 12(r3)        ; obj+12 = "STUB"
+      - [ be32, 0x00ac2100, 0x38000000 ]  # li   r0, 0
+      - [ be32, 0x00ac2104, 0x98030010 ]  # stb  r0, 16(r3)        ; NUL-terminate token
+      - [ be32, 0x00ac2108, 0x3C007F00 ]  # lis  r0, 0x7F00        ; f32 1.7e38
+      - [ be32, 0x00ac210c, 0x9003010C ]  # stw  r0, 268(r3)       ; obj+268 = far-future expiry
+      - [ be32, 0x00ac2110, 0x38600000 ]  # li   r3, 0             ; return success
+      - [ be32, 0x00ac2114, 0x4E800020 ]  # blr
+
+  # ---------------------------------------------------------------------------
+  # 2. Route the friend-name Graph calls to the local stub (REQUIRED).
+  #
+  # The two name-fetch URL format strings are the ONLY https:// URLs the game
+  # uses for Facebook (everything else it fetches is plain http). Rewriting the
+  # scheme to http:// sends them through the game's normal plain-http path, so
+  # facebook_stub.py on port 80 can answer them - no TLS MITM needed. http:// is
+  # one byte shorter than https://, so each entry writes the shifted string then
+  # a NUL byte to re-terminate (the old trailing 's' from "%s" is left dead
+  # after the NUL). Pair with the RPCS3 IP/Hosts switch that points
+  # graph.facebook.com at the stub host.
+  # ---------------------------------------------------------------------------
+  "TLOU Factions - Facebook Graph http scheme, names (stub)":
+    Games:
+      "The Last of Us":
+        BCUS98174: [ 01.00 ]
+    Author: "tlou_factions"
+    Notes: "Local Facebook stub, part 2/2. Rewrites the /me and /me/friends Graph URL format strings from https:// to http:// so they reach facebook_stub.py without TLS. Requires part 1 (sign-in success) + IP/Hosts switch + the stub running."
+    Patch Version: "1.0"
+    Patch:
+      - [ utf8, 0x00ed7120, "http://graph.facebook.com/me?fields=name,id&access_token=%s" ]
+      - [ byte, 0x00ed715b, 0x00 ]        # re-terminate (was 's')
+      - [ utf8, 0x00ed7160, "http://graph.facebook.com/me/friends?fields=name,id&access_token=%s" ]
+      - [ byte, 0x00ed71a3, 0x00 ]        # re-terminate (was 's')
+
+  # ---------------------------------------------------------------------------
+  # 3. Route friend/profile PICTURES to the stub too (OPTIONAL).
+  #
+  # Only needed if you want avatar loads to resolve locally instead of failing
+  # an https connection to the (redirected) graph host. facebook_stub.py returns
+  # empty images for these, so survivors get names but no faces. Leave this entry
+  # disabled if you only care about names. Same https->http rewrite + NUL trick.
+  # ---------------------------------------------------------------------------
+  "TLOU Factions - Facebook Graph http scheme, pictures (stub, optional)":
+    Games:
+      "The Last of Us":
+        BCUS98174: [ 01.00 ]
+    Author: "tlou_factions"
+    Notes: "Optional. Rewrites the three profile-picture Graph URLs from https:// to http:// so avatar loads hit facebook_stub.py (which returns empty images). Names work without this."
+    Patch Version: "1.0"
+    Patch:
+      - [ utf8, 0x00e7b660, "http://graph.facebook.com/%lld/picture?width=116&height=116&access_token=%s" ]
+      - [ byte, 0x00e7b6ab, 0x00 ]
+      - [ utf8, 0x00e7d860, "http://graph.facebook.com/%lld/picture?type=square&access_token=%s" ]
+      - [ byte, 0x00e7d8a2, 0x00 ]
+      - [ utf8, 0x00e7db28, "http://graph.facebook.com/me/picture?type=square&access_token=%s" ]
+      - [ byte, 0x00e7db68, 0x00 ]

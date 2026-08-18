@@ -1,0 +1,24 @@
+# Fake Facebook friends for the local Facebook-Connect stub.
+# One friend per line. Blank lines and lines starting with '#' are ignored.
+# These names populate your clan of survivors in the camp when you click
+# "CONNECT TO FACEBOOK" in-game (with facebook_stub.py running and the RPCS3
+# IP/hosts switch + patch in place - see tools/facebook_stub.py header).
+#
+# Optional: "Name | <numeric_id>" to pin a specific Facebook id; otherwise the
+# stub assigns sequential ids starting at 1000000000000001.
+#
+# The FIRST non-comment line is treated as YOU (the account holder, returned
+# for /me); the rest are your friends (returned for /me/friends).
+
+Joel Miller
+Ellie Williams
+Tess Servopoulos
+Tommy Miller
+Bill
+Marlene
+Henry Burrell
+Sam Burrell
+Maria Miller
+Riley Abel
+David
+Robert
