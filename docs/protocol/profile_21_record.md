@@ -20,9 +20,18 @@ LZF( [BE u32 version][BE u32 enc_len][ Blowfish-ECB( payload(0x5000) || pad(4) |
 - LZF-decompresses to a fixed **0x5028** bytes.
 - The encrypted body (`enc_len` = 0x5018) is Blowfish-ECB under the solved
   static key; an HMAC-SHA1 (net-drm key) covers the 0x5004 bytes before it.
-- The container is fully implemented and round-trips in
-  `server/lib/psarc_crypt.py`. `protos/profile_21.ksy` models the
-  **decrypted + decompressed plaintext** only.
+- **No server module currently implements this container as a unit.**
+  `server/lib/psarc_crypt.py` and `userdata_crypt.py` handle the different
+  `.psarc.crypt` / `.txt.crypt` format (no LZF layer; the HMAC is plaintext and
+  placed *before* the ciphertext, not in-band as the last 20 bytes) and share
+  only the Blowfish-ECB primitive and the two static keys. Decoding a real
+  profile.21 requires LZF + that Blowfish core + the in-band HMAC — a standalone
+  codec that is an **open want** (it is not needed at runtime, see below).
+  `protos/profile_21.ksy` models the **decrypted + decompressed plaintext** only.
+- At runtime `server/http_gateway.py` serves and stores profile.21 as a
+  byte-exact pass-through — the client signs its own record and the server
+  returns it unchanged, so the container is never re-derived server-side and the
+  self-HMAC stays valid.
 
 ## Endianness
 

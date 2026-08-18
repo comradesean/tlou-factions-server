@@ -8,8 +8,15 @@ doc: |
   The ~0x5028-byte NetPlayerData progression record, version 21. This .ksy
   models the DECRYPTED+DECOMPRESSED plaintext. On the wire the file is
   LZF( [u32 ver][u32 enc_len][ Blowfish-ECB( payload || pad || HMAC ) ][8] );
-  the container crypto is solved in server/lib/psarc_crypt.py and is out of
-  scope for this schema.
+  that container framing is out of scope for this schema. NOTE: no server/ module
+  currently implements the profile.21 container as a unit - server/lib/psarc_crypt.py
+  and userdata_crypt.py handle the DIFFERENT .psarc.crypt/.txt.crypt format (no LZF
+  layer; HMAC placed/scoped differently) and only share the Blowfish-ECB primitive
+  and the two static keys. A standalone profile.21 codec (LZF + that Blowfish core +
+  the in-band HMAC over the 0x5004 bytes) is an open want. It is not needed at
+  runtime: server/http_gateway.py serves/stores profile.21 as a byte-exact
+  pass-through (the client signs its own record), so the container is never
+  re-derived server-side.
 
   Big-endian throughout (PPC target; version reads `00 00 00 15`, and every
   field is assembled BE in the decompile). Layout from FUN_003cb818 (init),

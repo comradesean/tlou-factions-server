@@ -11,13 +11,17 @@ doc: |
   same ip:port as ticket-server (192.168.1.100:7320 live). AFTER the hello,
   every payload is wrapped in the shared encrypt-then-MAC 0x33 frame (magic
   0x33, pad, BE u16 plaintext_len, 16-byte tag, ciphertext — see
-  docs/protocol/0x11_ticket_server_hello.md and tools/ticket_cipher.py, keyed by
-  the same per-connection rolling counter). THIS spec models the DECRYPTED
+  docs/protocol/0x11_ticket_server_hello.md and server/lib/ticket_cipher.py, keyed
+  by the same per-connection rolling counter). THIS spec models the DECRYPTED
   PLAINTEXT of a server->client response; the requests are documented below.
-  The client opens one TCP connection per command and treats the connection
-  CLOSE (EOF) as end-of-response. Full decode + evidence:
-  research/notes/2026-08-17-leaderboard-server-protocol.md and the working stub
-  in tools/ticket_server_stub.py (build_leaderboard_response).
+  The client opens one TCP connection per command and reads until a TRAILING NUL
+  (0x00), then closes the connection ITSELF. A server-initiated EOF before the
+  NUL is the client's ERROR path (recv() failed -> "disconnected from game
+  servers"); no-NUL-no-EOF hangs the spinner. So a response is '+'-rows followed
+  by a single 0x00, and the server must hold the socket open until the client
+  FINs (LIVE-DISPROVED the earlier "EOF = end-of-response" reading). Full decode
+  + evidence: research/notes/2026-08-17-leaderboard-server-protocol.md and the
+  working handler in server/ticket_server.py (build_leaderboard_response).
 
   REQUESTS (client->server, one printf-built line, space-delimited, '\n'-term):
     leaderboard-get   <board:int> 1 <name0> <name1> ...   (<=16 names/line; batch lookup by name)
@@ -47,7 +51,7 @@ seq:
   - id: rows
     type: response_row
     repeat: eos
-    doc: "Zero or more '+'-prefixed response rows, terminated by connection close."
+    doc: "Zero or more '+'-prefixed response rows. The response is terminated by a trailing NUL (0x00) that the server appends after the last row, at which point the client closes the connection itself (a server-initiated close BEFORE the NUL is the client's error path — see top-level doc)."
 types:
   response_row:
     seq:
