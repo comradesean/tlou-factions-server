@@ -1,7 +1,8 @@
 # --- Copyrighted game data / large binaries (never commit) ---
 *.elf
 EBOOT.*
-server/data/served_content/       # S3 content mirror (game assets, player profiles)
+# S3 content mirror (game assets, player profiles)
+server/data/served_content/
 research/net1bin/
 ref/
 
@@ -14,7 +15,8 @@ __pycache__/
 
 # --- Server runtime output (live, not source) ---
 server/logs/
-server/data/leaderboard_scores.sqlite   # runtime leaderboard store
+# runtime leaderboard store
+server/data/leaderboard_scores.sqlite
 
 # --- Packet captures & live logs (unfiltered; keep local) ---
 captures/*.pcap
