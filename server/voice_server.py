@@ -39,7 +39,10 @@ import datetime
 import threading
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 7313
-LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else "/mnt/f/ClaudeHole/tlou_factions/captures/tcp_catch.log"
+import os
+_LOGS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+os.makedirs(_LOGS, exist_ok=True)
+LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else os.path.join(_LOGS, "voice_server.log")
 
 GUESSED_REPLY = b"+OK\n"
 

@@ -33,10 +33,15 @@ import threading
 import urllib.request
 import urllib.error
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_DATA = os.path.join(_HERE, "data")
+_LOGS = os.path.join(_HERE, "logs")
+os.makedirs(_LOGS, exist_ok=True)
+
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 80
-LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else "/mnt/f/ClaudeHole/tlou_factions/captures/http_catch.log"
+LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else os.path.join(_LOGS, "http_gateway.log")
 FALLBACK_STATUS = sys.argv[3] if len(sys.argv) > 3 else "200 OK"
-SERVED_DIR = sys.argv[4] if len(sys.argv) > 4 else "/mnt/f/ClaudeHole/tlou_factions/tools/served_content"
+SERVED_DIR = sys.argv[4] if len(sys.argv) > 4 else os.path.join(_DATA, "served_content")
 
 UPSTREAM_PROXY_ENABLED = os.environ.get("TLOU_HTTP_PROXY_UPSTREAM", "1") != "0"
 UPSTREAM_TIMEOUT = 20
@@ -110,7 +115,7 @@ def build_put_response(request_line, text, body):
 # game's "Connect to Facebook" flow names the clan locally. See
 # research/notes/2026-08-17-facebook-connect-flow.md and tools/facebook_stub.py.
 FB_HOSTS = {"graph.facebook.com", "api.facebook.com", "graph-video.facebook.com"}
-_FB_DIR = os.path.dirname(os.path.abspath(__file__))
+_FB_DIR = _DATA
 FB_FRIENDS_PATH = os.path.join(_FB_DIR, "facebook_friends.txt")
 # Optional real photos: drop <id>.png/.jpg or me.png/.jpg in tools/facebook_pics/.
 FB_PICS_DIR = os.path.join(_FB_DIR, "facebook_pics")

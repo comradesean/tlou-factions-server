@@ -26,7 +26,9 @@ import os
 import time
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 7314
-LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else "/mnt/f/ClaudeHole/tlou_factions/captures/tcp_catch.log"
+_LOGS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+os.makedirs(_LOGS, exist_ok=True)
+LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else os.path.join(_LOGS, "session_manager.log")
 
 CLIENT_HELLO_OPCODE = 0x12d
 SERVER_HELLO_OPCODE = 0x12e

@@ -69,16 +69,17 @@ import socket
 import sys
 import threading
 
+_DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 80
-FRIENDS_PATH = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "facebook_friends.txt")
+FRIENDS_PATH = sys.argv[2] if len(sys.argv) > 2 else os.path.join(_DATA, "facebook_friends.txt")
 
 # Base id the stub hands out when a friends.txt line pins no explicit id.
 # 15-digit range mirrors real Facebook numeric ids (the game parses id as %lld).
 BASE_ID = 1000000000000001
 
 
-_PICS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "facebook_pics")
+_PICS_DIR = os.path.join(_DATA, "facebook_pics")
 
 
 def _picture_bytes(base):

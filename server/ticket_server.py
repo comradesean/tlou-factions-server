@@ -20,13 +20,17 @@ import sys
 import datetime
 import threading
 
-sys.path.insert(0, ".")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_DATA = os.path.join(_HERE, "data")
+_LOGS = os.path.join(_HERE, "logs")
+sys.path.insert(0, os.path.join(_HERE, "lib"))
 import ticket_cipher
 
 CANDIDATE_KEY = bytes.fromhex("78 56 34 12 32 54 76 98 88 ef cd ab ef cd ab 89".replace(" ", ""))
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 7320
-LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else "/mnt/f/ClaudeHole/tlou_factions/captures/tcp_catch.log"
+os.makedirs(_LOGS, exist_ok=True)
+LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else os.path.join(_LOGS, "ticket_server.log")
 
 # Persistent leaderboard score store (see research/notes/
 # 2026-08-17-leaderboard-server-protocol.md). leaderboard-server multiplexes on
@@ -35,8 +39,7 @@ LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else "/mnt/f/ClaudeHole/tlou_faction
 # existing frame path already decrypts. We only need to parse the verb and answer
 # with real '+'-prefixed rows instead of the zero placeholder.
 LEADERBOARD_DB = os.environ.get(
-    "TLOU_LEADERBOARD_DB",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "leaderboard_scores.sqlite"))
+    "TLOU_LEADERBOARD_DB", os.path.join(_DATA, "leaderboard_scores.sqlite"))
 
 
 # The leaderboard "blob" (the <base64-metadata> in leaderboard-update / the

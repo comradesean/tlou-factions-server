@@ -1,52 +1,45 @@
-# Never commit the analysis target itself (copyrighted game data)
+# --- Copyrighted game data / large binaries (never commit) ---
 *.elf
 EBOOT.*
-tools/served_content/
+server/data/served_content/       # S3 content mirror (game assets, player profiles)
 research/net1bin/
 ref/
 
-# Vendored/cloned external tooling — referenced by URL + commit hash in docs instead
-tools/external/
-tools/.venv/
+# --- Vendored/cloned external tooling (referenced by URL+commit in docs) ---
+research/tools/external/
 
-# Ghidra project (binary, not diffable) and large raw dumps — keep distilled findings, not raw output
+# --- Virtualenvs / caches ---
+**/.venv/
+__pycache__/
+
+# --- Server runtime output (live, not source) ---
+server/logs/
+server/data/leaderboard_scores.sqlite   # runtime leaderboard store
+
+# --- Packet captures & live logs (unfiltered; keep local) ---
+captures/*.pcap
+captures/*.pcapng
+captures/*.log
+*-run.log
+*_debug.log
+
+# --- Ghidra project + raw RE dumps (keep distilled findings, not raw output) ---
 research/ghidra/*.gpr
 research/ghidra/*.rep/
 research/ghidra/*.lock
 research/ghidra/*.lock~
-research/disasm/*.asm
-
-# Raw packet captures - unfiltered captures include unrelated machine traffic
-# (other apps, general browsing). Keep locally; commit only deliberately-trimmed
-# exports containing just the relevant streams, if ever needed.
-captures/*.pcap
-captures/*.pcapng
-
-# Local server/watcher runtime output (live logs, not research artifacts)
-backend/rpcn-run.log
-tools/*-run.log
-captures/*.log
-
-# OS/editor cruft
-.DS_Store
-*.swp
-__pycache__/
-
-# Generated Kaitai parsers (build artifacts of protos/*.ksy)
-protos/*.py
-
-# leaderboard-server stub runtime score store
-tools/leaderboard_scores.sqlite
-
-# --- Reverse-engineering scratch dumps (not committed) ---
-# Raw Ghidra/objdump decompile + disassembly exports
 research/ghidra/*.log
 research/ghidra/*.txt
 research/disasm/
-# Live server run logs and debug logs
-*-run.log
-tools/*_debug.log
-# Stray Ghidra export blobs written to the repo root
+
+# --- Generated Kaitai parsers (build artifacts of protos/*.ksy) ---
+protos/*.py
+
+# --- OS / editor cruft ---
+.DS_Store
+*.swp
+
+# --- Stray Ghidra export blobs written to the repo root ---
 /003433d0
 /012bc660
 /0x00ad33d8
