@@ -34,6 +34,15 @@ doc: |
     RANGE(blob) total:+<total>
     RANGE(clan):      +<total>   and   +<a> <b>
   A minimal legal answer is a single "+0\n" (empty board) or an empty response.
+
+  The trailing `<b64>` token is NOT opaque: it is standard base64 of a
+  big-endian 5-u32 secondary-stat struct (best_game, time_played_sec,
+  executions, deaths, rank), trailing-zero-truncated on the wire. Decoded
+  layout is the `leaderboard_blob` type below; the server stub round-trips it
+  with `struct.unpack(">IIIII", ...)` and the field order was verified live
+  against the on-screen leaderboard columns
+  (research/notes/2026-08-17-leaderboard-server-protocol.md). base64 LUT @
+  0x00f022c0, space delimiter @ 0x00e79948, '\n' terminator @ 0x00f0b170.
 seq:
   - id: rows
     type: response_row
@@ -48,5 +57,29 @@ types:
         eos-error: false
         doc: |
           One response line including its leading '+'. Tokenize on space; shape
-          depends on the request (see the top-level doc). Empty/no rows = empty
-          board (the client tolerates zero entries).
+          depends on the request (see the top-level doc). The last token of a
+          GET/RANGE(blob) row is base64 of a `leaderboard_blob` (below).
+          Empty/no rows = empty board (the client tolerates zero entries).
+  leaderboard_blob:
+    doc: |
+      The decoded form of a row's trailing base64 token: five big-endian u32
+      secondary stats, trailing-zero-truncated on the wire (a shorter decoded
+      blob means the tail fields are 0). This is a structural spec for the
+      DECODED bytes - Kaitai does not base64-decode inline, so a consumer
+      base64-decodes the token first, then parses it with this type.
+    seq:
+      - id: best_game
+        type: u4be
+        doc: "Best single-game score."
+      - id: time_played_sec
+        type: u4be
+        doc: "Total time played, seconds."
+      - id: executions
+        type: u4be
+        doc: "Execution count."
+      - id: deaths
+        type: u4be
+        doc: "Death count."
+      - id: rank
+        type: u4be
+        doc: "Rank / progression value (trailing field; absent when the wire blob is truncated before it)."

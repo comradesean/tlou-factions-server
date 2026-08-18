@@ -52,5 +52,7 @@ seq:
     type: u8
     doc: "Offset 8:16. Compared against `*(s64*)(room_obj+0x10)` for each of the 4 room slots."
   - id: data_block
+    type: strz
     size: 128
-    doc: "Offset 16:144. Generic 128-byte block, strcpy'd into `room_obj+0x18` - the same field the client itself fills before sending 0x143/SetRoomDataBlock, and the same block RoomCreate (0x12f) carries at its own wire offset 0x28. Observed content is always a NUL-terminated `<npid>.<unix-timestamp>` string; MUST contain a NUL within these 128 bytes regardless of content."
+    encoding: ASCII
+    doc: "Offset 16:144. A NUL-terminated ASCII string within a 128-byte field, NOT an opaque binary block: the handler is a plain strcpy into `room_obj+0x18` (`bl 0xe45b10`, two arguments, no length - see doc), so embedded 0x00 is impossible by construction. Same field the client fills before sending 0x143/SetRoomDataBlock, and the same block RoomCreate (0x12f) carries at wire offset 0x28. Observed content is a `<npid>.<unix-timestamp>` string; a server MUST place a NUL within these 128 bytes or the client-side strcpy overruns room_obj+0x18 into +0x98."

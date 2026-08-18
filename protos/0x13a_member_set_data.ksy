@@ -2,6 +2,8 @@ meta:
   id: member_set_data
   endian: be
   license: CC0-1.0
+  imports:
+    - common/member_data
 doc: |
   Direction: client-to-server
 
@@ -40,25 +42,20 @@ seq:
   - id: blob_length
     type: u1
     doc: "Offset 4. The client's own declared length of the member blob that follows at offset 16. Live-constant 0x20 = 32 across every capture. This is the value the server must echo as 0x13b's length byte and seed as Member entry offset 39 - the rank/loadout UI getter (_opd_FUN_00ad2650) accepts the blob ONLY if it is exactly 32. (Earlier this whole 4-byte span was recorded as one constant 0x2026e00c; newer captures show byte 4 fixed at 0x20 and bytes 5-7 varying, so byte 4 is the length and 5-7 are a separate per-send field.)"
-  - id: send_tag
+  - id: uninit_5
     size: 3
-    doc: "Offset 5:8. Varies every send (e.g. 3a e1 48 / 9f a9 6c / 27 0e 9c / 3e 6d 94). Unidentified - a per-send sequence, checksum, or hash. Not consumed by the server relay."
+    doc: "Offset 5:8. NEVER WRITTEN by the sender - uninitialised stack. The full sender body FUN_00ad6148 (buffer base r1+0x70) writes exactly four things: opcode (r1+112), length byte (r1+116), room id (r1+120), and the memcpy to r1+128; bytes 5:7 (r1+117..119) get no store. The varying values seen across captures (e.g. 3a e1 48 / 9f a9 6c) are stack residue, not a per-send sequence/checksum. Same class as 0x13e/0x140/0x142."
   - id: room_id
-    size: 8
-    doc: "Offset 8:16. The currently-open room's room_id (matches the value the server assigned via Member's header). Used by the stub to route the relay to that room's members. Low 4 bytes coincide with the room-object pointer because the stub derives room_id from RoomCreate's wire bytes; that is a stub artifact, not a wire requirement."
+    type: u8
+    doc: "Offset 8:16. The currently-open room's room_id (the value the server assigned via Member's header), sourced from room+0x10 (`std r9,120(r1)` @ 0xad6264). Used by the stub to route the relay to that room's members. Low 4 bytes coincide with the room-object pointer only because the stub derives room_id from RoomCreate's wire bytes; that is a stub artifact, not a wire requirement."
   - id: member_blob
-    size: 32
+    type: member_data
     doc: |
-      Offset 16:48. The 32-byte per-member data blob - the SAME structure the
-      lobby UI reads for a remote player (see protos/0x131_member.ksy
-      data_blob and protos/0x13b's blob). Decoded from live captures:
-      byte 8 = flags, byte 9 = title index, bytes 10..13 = the host map-picker's
-      recent-level ring (CORRECTED 2026-08-17 — was "four loadout item-ids"; NOT
-      loadout, it is NetGameManager+0x4982 recently-played map indices, see
-      protos/common/member_data.ksy; 0xff = unset, live `00 0e ff ff` in a game
-      room vs `ff ff ff ff` fresh), u16 at
-      byte 14 = the rank-widget value, remaining bytes = a stat region that
-      is zero on an empty profile. The server relays these 32 bytes verbatim.
+      Offset 16:48. The 32-byte per-member data card (see
+      protos/common/member_data.ksy for the full field decode). The SAME
+      structure the lobby UI reads for a remote player (also carried by 0x131
+      roster entries and re-delivered via 0x13b). The server relays these 32
+      bytes verbatim.
   - id: tail
     size: 32
-    doc: "Offset 48:80. Beyond the declared 32-byte blob length. In live captures this holds leaked stack (e.g. a 0x0137d700 player-array pointer) - uninitialised, not meaningful. (An older capture happened to show four IEEE-754 floats 1.0/~0.729/~0.710/~0.650 here; treated as coincidental stack residue given the blob length is 32, not evidence of scoring coefficients.)"
+    doc: "Offset 48:80. Beyond the 32-byte member_data card. Confirmed uninitialised stack from the sender body: the memcpy copies only `blob_length` (=32) bytes to offset 16, and nothing writes r1+160..191. Live captures show leaked stack here (e.g. a 0x0137d700 player-array pointer). Send zero."

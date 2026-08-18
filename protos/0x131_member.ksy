@@ -4,6 +4,7 @@ meta:
   license: CC0-1.0
   imports:
     - common/member_data
+    - common/np_id
 doc: |
   Direction: server-to-client
 
@@ -138,14 +139,14 @@ types:
   member_entry:
     seq:
       - id: attributes
-        size: 36
-        doc: "Offset 0 within entry. Copied byte-by-byte (0x00ad786c-0x00ad79a8) into the local struct's +4..+0x27 that is handed to `_opd_FUN_00ad33d8` as param_2. CONFIRMED 2026-08-16: the FIRST 16 BYTES ARE THIS MEMBER'S SceNpId HANDLE - that is the key `_opd_FUN_00ad33d8` dedupes on (`_opd_FUN_00e459bc(slot, param_2+4)`, the same 16-byte NpId comparator used elsewhere in the binary), and the value the non-local branch feeds to the signaling-connection resolve at 0x00ad34a4. Bytes 16..35 remain unmapped."
+        type: np_id
+        doc: "Offset 0:36 within entry (the 36-byte SceNpId - see common/np_id.ksy). Copied byte-by-byte (0x00ad786c-0x00ad79a8) into the local struct's +4..+0x27 handed to `_opd_FUN_00ad33d8` as param_2. CONFIRMED 2026-08-16: the FIRST 16 BYTES ARE THIS MEMBER'S ONLINE-ID HANDLE - the key `_opd_FUN_00ad33d8` dedupes on (`_opd_FUN_00e459bc(slot, param_2+4)`) and the value the non-local branch feeds to the signaling-connection resolve at 0x00ad34a4. The remaining 20 bytes are the SceNpId term/opt/reserved tail; their readers past the handle are untraced."
       - id: member_id
         type: u2
         doc: "Offset 36 within entry. This entry's own id, XOR-compared against the header's owner_ref_id/local_ref_id (0x00ad795c-0x00ad79bc: `xor` then `addi -1` then `srdi 63`, i.e. is_x = (member_id == x_ref_id)) to derive the is_local/is_owner arguments to `_opd_FUN_00ad33d8`. Those two flags are what set room_obj+0x19ec (my member id) and room_obj+0x19f0 (the owner's member id). Note they are only applied on FIRST registration of this NpId - see the doc-level first-write-wins note."
       - id: unknown_byte
         type: u1
-        doc: "Offset 38 within entry. Read (local_98) but not further traced. Unconfirmed."
+        doc: "Offset 38 within entry. Traced 2026-08-18 two hops but no reader found: `lbz r0,2(r7)` @ 0x00ad7858 (r7 = entry+36) -> registration-struct+0x40, then `_opd_FUN_00ad33d8` widens it `lbz r0,64(r29)` @ 0x00ad34f4 -> member_slot+0xEC (`stw r0,236(r31)` @ 0x00ad34f8). A sweep of the SessionManager band (0xad0000-0xada000) finds no load of displacement 236, so it is either dead or read from game code via computed offsets. Send 0."
       - id: member_data_length
         type: u1
         doc: |

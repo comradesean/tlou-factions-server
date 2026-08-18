@@ -55,5 +55,7 @@ seq:
     type: u8
     doc: "Offset 8:16. Raw (unswapped) copy of the room object's own +0x10 room-id field."
   - id: data_block
+    type: strz
     size: 128
-    doc: "Offset 16:144. Generic 128-byte block, strcpy'd from `room_obj+0x18` (`_opd_FUN_00e45b10`, confirmed to be a plain two-argument strcpy - word-at-a-time NUL scan then a byte tail). Observed content is always a NUL-terminated `<npid>.<unix-timestamp>` string, but the wire format itself imposes no other constraint - the field is named for its structural role (a block mirrored to/from room+0x18), not its currently-observed content. The server's confirmation (0x144) strcpy's this straight back into the same field."
+    encoding: ASCII
+    doc: "Offset 16:144. A NUL-terminated ASCII string within a 128-byte field, NOT an opaque binary block: the transfer is a plain two-argument strcpy from `room_obj+0x18` (`_opd_FUN_00e45b10`, word-at-a-time NUL scan then a byte tail, no length argument), so by construction the content cannot contain an embedded 0x00 and is always NUL-terminated. Observed content is a `<npid>.<unix-timestamp>` string (that particular format is a content convention, not a wire constraint). The server's confirmation (0x144) strcpy's this straight back into the same field; a server MUST ensure a NUL appears within 128 bytes or the client-side strcpy overruns."

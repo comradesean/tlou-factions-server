@@ -2,6 +2,8 @@ meta:
   id: member_updated_data
   endian: be
   license: CC0-1.0
+  imports:
+    - common/member_data
 doc: |
   Direction: server-to-client
 
@@ -47,18 +49,15 @@ seq:
   - id: room_id
     type: u8
     doc: "Offset 8:16. Compared against `*(s64*)(room_obj+0x10)` for each of the connection's 4 room slots (slot i's room-object pointer is at `this + i*0x9000 + 0x50`; verified by raw disasm this pass, the `addis r11,r11,1 / addi r11,r11,-28672` idiom is a 0x9000 stride). Silently dropped if no slot matches - and room_obj+0x10 is set ONLY by Member's (0x131) handler, so this message must follow a Member. Same room_id-echo pattern used throughout this opcode family."
-  - id: blob
-    size: 64
+  - id: member_data
+    type: member_data
     doc: |
-      Offset 16:80. Copied (blob_length bytes) into the matched member's
-      struct at +0xfc. CONFIRMED 2026-08-17: this is the remote player's
-      32-byte rank/loadout card (blob_length is 32 in practice, and the UI
-      getter _opd_FUN_00ad2650 requires exactly 32). Structure (see
-      protos/0x131_member.ksy data_blob and protos/0x13a member_blob): byte 8
-      = flags, byte 9 = title index, bytes 10..13 = the host map-picker's
-      recent-level ring (CORRECTED 2026-08-17 — was "four loadout item-ids"; NOT
-      loadout, it is NetGameManager+0x4982 recent-map indices, see
-      protos/common/member_data.ksy; 0xff = unset), u16 at byte 14 = rank-widget
-      value, rest = stat region.
-      The packet is always 80 bytes regardless of blob_length, so bytes past
-      blob_length (i.e. 48:80 when length is 32) are unused padding."
+      Offset 16:48. The remote player's 32-byte rank/faction card, copied
+      (blob_length bytes) into the matched member's struct at +0xfc.
+      blob_length is 32 in practice and the UI getter _opd_FUN_00ad2650
+      requires exactly 32. Full field decode in protos/common/member_data.ksy
+      (also carried by 0x131 roster entries and supplied by the client via
+      0x13a).
+  - id: blob_padding
+    size: 32
+    doc: "Offset 48:80. The packet is always 80 bytes regardless of blob_length; with the live length of 32 these trailing bytes are unused padding (only the first blob_length bytes are copied into member+0xfc)."
