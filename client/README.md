@@ -30,18 +30,18 @@ log-verified set plus optional belt-and-suspenders extras — is in the
 it into the IP/Hosts switches field and replace the placeholder IP with your
 backend's LAN IP.
 
-Hosts involved:
+Hosts involved (the switch matches **hostnames only** — it hooks DNS resolution):
 
 - **S3 content + Naughty Dog** (`*naughtydog.com`, `*naughty-dog.com`,
   `t1.patch.s3.amazonaws.com`, `t1.campaign.config.s3.amazonaws.com`,
   `t1.final.*.s3.amazonaws.com`, `s3.amazonaws.com`) — served by `http_gateway`.
-- **Hardcoded `net1.bin` IPs** (`50.18.104.153`, `50.18.47.114`,
-  `174.129.210.135`) — the dead ticket/matchmaking server addresses baked into
-  `net1.bin`; redirecting them points those services at your backend without
-  editing `net1.bin`. The sibling services behind them are `ticket`/`leaderboard`/
-  `facebook-server` (:7320), `session_manager` (:7314), `location` (:7312),
-  `voice` (:7313).
 - **Facebook** (`graph.facebook.com`, `api.facebook.com`, `graph-video.facebook.com`).
+
+The ticket/matchmaking server is **not** redirected here — its address is a
+literal IP baked into `net1.bin` that the game connects to directly (no DNS
+lookup), so no IP/Hosts entry can reach it. That redirect happens at the content
+layer instead: `http_gateway` serves an IP-patched `net1.bin.psarc.crypt` (see
+the top-level README step 2). Never put IP addresses in the IP/Hosts field.
 
 Entries are `hostname=ip` joined by `&&`, the hostname side a whole-string regex
 (`*` → `.*`, `.` → literal dot); **never prefix a scheme** like `http://`, or the

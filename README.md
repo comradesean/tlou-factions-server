@@ -53,6 +53,14 @@ upstream S3 buckets automatically where they still respond. How to capture these
 from your own client is described in
 **[docs/capture-howto.md](docs/capture-howto.md)**.
 
+**Important:** `net1.bin.psarc.crypt` carries the ticket/matchmaking server's IP
+as a literal string, and the game connects to it directly (bypassing the DNS
+redirect in step 3). Your served copy must have that IP patched to your
+backend's IP and be correctly repacked/re-encrypted — the served file is used
+verbatim; the server does not patch it on the fly. The repack/patch procedure is
+in **[research/notes/net1bin-server-list.md](research/notes/net1bin-server-list.md)**.
+This is the fiddliest part of setup.
+
 ## 3. Point RPCS3 at your backend
 
 The game reaches its backends by hostname (and a few hardcoded IPs). Redirect
@@ -61,18 +69,24 @@ switches**. Paste this into that one field, **replacing `192.168.1.100` with
 your backend's LAN IP** (use `127.0.0.1` if RPCS3 and the backend are the same
 machine). Entries are `hostname=ip` joined by `&&`; `*` is a wildcard.
 
-This is the minimal set — every entry here is confirmed in the server request
-logs (five hostnames the game actually fetched, plus the one `net1.bin` server
-IP it actually connected to):
+This is the minimal set — five hostnames, every one confirmed as a real request
+in the server logs. The switch only matches **hostnames** (it hooks DNS
+resolution), so only hostnames go here:
 
 ```
-t1.patch.s3.amazonaws.com=192.168.1.100&&t1.campaign.config.s3.amazonaws.com=192.168.1.100&&t1.final.*.s3.amazonaws.com=192.168.1.100&&s3.amazonaws.com=192.168.1.100&&graph.facebook.com=192.168.1.100&&50.18.104.153=192.168.1.100
+t1.patch.s3.amazonaws.com=192.168.1.100&&t1.campaign.config.s3.amazonaws.com=192.168.1.100&&t1.final.*.s3.amazonaws.com=192.168.1.100&&s3.amazonaws.com=192.168.1.100&&graph.facebook.com=192.168.1.100
 ```
 
 - The four `*.s3.amazonaws.com` hosts — content-delivery files `http_gateway` serves.
 - `graph.facebook.com` — the clan feature's Graph calls (local Facebook stand-in).
-- `50.18.104.153` — the ticket/matchmaking server address hardcoded in `net1.bin`;
-  redirecting it points those services at your backend without editing `net1.bin`.
+
+**The ticket/matchmaking server is redirected a different way.** Its address is a
+literal IP hardcoded inside `net1.bin` (`50.18.104.153:7320`) that the game
+connects to directly — no DNS lookup happens, so the IP/Hosts switch can't touch
+it. Instead, `http_gateway` serves a `net1.bin.psarc.crypt` whose IP is already
+patched to your backend, and the game reads that (see step 2 and
+`research/notes/net1bin-server-list.md`). Do **not** put IP addresses in the
+IP/Hosts field — they never match.
 
 ### Optional extra entries
 
@@ -84,7 +98,6 @@ than required — add them if a future capture or client build reaches them:
 |---|---|
 | `*naughtydog.com` | The game assembles `t1.final.prod.naughtydog.com` at runtime as its "Content Delivery" host (`research/notes/dynamic-hostname-construction.md`); in testing it reached the S3 equivalents above instead. |
 | `*naughty-dog.com` | Era-known ND domain (`*.tlou.ps3.naughty-dog.com`); resolves but is dead. |
-| `50.18.47.114`, `174.129.210.135` | The other two `net1.bin` fallback server IPs; only `.153` was observed being tried. |
 | `api.facebook.com`, `graph-video.facebook.com` | Referenced in the binary's social-sharing / video features; not observed in the Graph flow so far. |
 
 ## 4. RPCN and game patches
