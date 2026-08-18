@@ -1,8 +1,8 @@
 # Leaderboards: current state and gap analysis (2026-08-17)
 
 Scope: "what happens today and what's missing" for in-game leaderboards.
-The leaderboard-server **wire protocol** decode from the EBOOT is owned by a
-separate agent (forthcoming
+The leaderboard-server **wire protocol** decode from the EBOOT is covered
+separately (forthcoming
 `research/notes/2026-08-17-leaderboard-server-protocol.md`, not present at
 time of writing). This note is the current-state + gap-list half.
 
@@ -53,7 +53,7 @@ decrypted plaintext (58 bytes): b'leaderboard-update 406 comradesean 43937 AAADo
     board (seen `0 9`, i.e. top 10).
   - `leaderboard-update <board_id> <playername> <score> <base64_blob>` -
     submit my score. **This fires at match end** (updates are interleaved
-    with the get/range reads across the session, three board IDs seen: 404,
+    with the get/range reads across the capture, three board IDs seen: 404,
     405, 406 - distinct stat categories).
 - **Outcome:** no crash, no error dialog. `-get`/`-range` render an empty
   board (client parses `+`-prefixed reply lines; a zero-filled frame yields
@@ -75,7 +75,7 @@ big-endian u32s (verified):
 Writer-defined length (0, 3, or 4 u32 secondary/tiebreaker stats). So gap (e)
 "auth/signing" does **not** exist - nothing to forge or sign. (Per the
 project's no-opaque-blob rule these u32 fields should be named in the
-protocol proto; that's the other agent's decode job.)
+protocol proto; that's the protocol-decode note's job.)
 
 ## 2. Address resolution status: SOLVED (already pointed at us)
 
@@ -139,7 +139,7 @@ ticket/heartbeat. **Missing:**
      delimited fields, fields 3/4 base64-decoded to a per-entry record), then
      encrypt it as the message-4 frame (keyed by `client_nonce`, via the
      existing `ticket_cipher.encrypt_frame`). Exact field order/delimiter is
-     the one item still owed by the protocol-decode agent's note.
+     the one item still owed by the protocol-decode note.
   3. For `-update`: store the row and return whatever minimal ack the client
      accepts (it doesn't parse the body, so an empty/short frame is fine).
 This is where nearly all remaining work is. It is a modification of an
@@ -177,7 +177,7 @@ wanted it would be a bespoke addition, not something the protocol requires.)
 3. **Blocker before b can be finished:** the exact `+`-line reply grammar for
    `-get`/`-range` (field order, delimiter, which fields are base64, the
    per-entry record layout the client's 4-symbol/3-byte decoder expects).
-   That is the deliverable of the concurrent protocol-decode agent
+   That is the deliverable of the parallel protocol-decode note
    (`research/notes/2026-08-17-leaderboard-server-protocol.md`). Handshake/
    crypto/transport need nothing further from that note.
 
@@ -189,6 +189,5 @@ wanted it would be a bespoke addition, not something the protocol requires.)
 2. **No score store** - updates are discarded; need a small sqlite table
    (new).
 3. **`+`-line reply grammar not yet byte-mapped** - structurally identified
-   only; the exact field/delimiter/base64 layout is owed by the protocol
-   agent before (1) can be finalized.
-```
+   only; the exact field/delimiter/base64 layout is owed by the
+   protocol-decode note before (1) can be finalized.

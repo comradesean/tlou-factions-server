@@ -1,6 +1,7 @@
 # find-match host/joiner coordination: root cause, verified timings, and the serialized-election design
 
-Deep trace (Opus agent, 2026-08-17) answering the handoff's unsolved blocker:
+Deep trace (2026-08-17) answering the blocker left open in
+`2026-08-17-session-handoff.md`:
 why two clients never resolve into one host + one joiner at the end of lobby
 creation. Extends `2026-08-17-find-match-flow.md`. Every address below was read
 off disassembly of the decrypted EBOOT, not guessed.
@@ -271,7 +272,7 @@ RPCS3 log exists — comradesean's (32× `mgnomad2 is offline`, 0×
 | 00:23:39.77 | 60 s timeout → `1112 GOTO NET_SM_CHOOSE_HOST_JOIN` → `596 GOTO NET_SM_LEAVE_GAME` ×2 — last `GOTO` in the file |
 
 **Divergence from the known-working path.** The reference success (TTY
-59936–59946, earlier session) reads `1107 GAME_LIST_PICK → "*********** Joining
+59936–59946, earlier capture) reads `1107 GAME_LIST_PICK → "*********** Joining
 Room mgnomad2 1 players" → 1194 CONNECT_TO_HOST → MUTUAL_ACTIVATED → Ping =
 0 ms → 1327 CLIENT_RESERVE_SLOTS_WAIT`, with a `0x130` on the wire. In the
 final run neither `Joining Room` nor `CONNECT_TO_HOST` ever appears and the

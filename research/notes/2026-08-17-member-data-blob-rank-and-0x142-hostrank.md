@@ -41,7 +41,7 @@ ad610c:  bl   0xacb93c            ; send(this+0x25060, buf, 16 + count*2, 1)
 ```
 
 **Wire offset 6:7 is never written — uninitialised stack.** That is the whole
-explanation for the `00 60` the task brief flagged as "=96?": live captures show
+explanation for the `00 60` previously flagged as "=96?": live captures show
 `00 00` in one variant and `00 60` in another with everything else identical.
 
 Live confirmation (`captures/tcp_catch.log`):
@@ -248,12 +248,12 @@ So blob offsets `14, 16, 18, 20, ...` are a UI-selectable array of per-member
 numeric stats, and the rank display is one of them. (Only indices 0..3 are ever
 written by the producer; 4..8 fall in the uninitialised tail.)
 
-Sibling reads confirm the rest of the blob is also lobby display data:
+Companion traces confirm the rest of the blob is also lobby display data:
 `blob[9]` → a title/badge string index (`0x3c2ad0`), `blob[8]` → a room-wide
 AND-reduced boolean (`0xad2b6c`), `blob[10..13]` → the 4 loadout ids
 (`0x3a262c`), `blob[0..7]` → the party grouping id (`0x3b71f4`).
 
-**Both symptoms in the brief — missing remote rank AND "randomized" remote
+**Both reported symptoms — missing remote rank AND "randomized" remote
 customization — are the same single failure: `FUN_00ad2650` returning `NULL`
 for every remote member.** Consumers that bail leave the widget at whatever it
 last held; consumers that don't check leave stale/garbage selections.

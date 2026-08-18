@@ -372,7 +372,7 @@ global (`0x01382082`)**, not from the profile — see §6.
 ## 6. The 32-byte member data blob, decoded field by field
 
 Companion to `2026-08-17-member-data-blob-rank-and-0x142-hostrank.md`
-(sibling agent); see also `2026-08-16-factions-metagame-reference.md` for the
+(parallel workstream); see also `docs/factions-metagame-reference.md` for the
 game-design meaning of the counters these fields carry. That note establishes the transport (`0x13a` →
 `0x13b`/Member, `FUN_00ad2650`'s `len == 32` gate). This section adds the
 **producer's exact byte-by-byte sources**, read off `FUN_003b15bc`'s raw
@@ -392,7 +392,7 @@ disassembly (`0x3b15bc`-`0x3b17f8`). Stack buffer base is `r1+120`.
 Sent to both room objects via `FUN_00ad1fc0(room, r1+120, 32)` at `0x3b17cc`
 (party room, slot `-32764`) and `0x3b17e0` (game room, slot `-32740`).
 
-### Decoding the coordinator's live captures
+### Decoding the live captures
 
 The UI reads `*(u16*)(blob + 14 + index*2)` where `index` is a UI-supplied
 byte (`0x3c27a0`), so indices 0..3 map to blob `14/16/18/20`.
@@ -450,7 +450,7 @@ sequence number. Treat as don't-care; a relay must not attempt to reproduce
 or validate them. Bytes 48..79 of the 80-byte frame are junk for the same
 reason.
 
-**Correction to the framing given in the task brief**: wire `[8:12]` is not
+**Correction to an earlier framing**: wire `[8:12]` is not
 a correlation id and `[12:16]` is not a separate room pointer — a single
 `std` writes `[8:16]` as one big-endian u64 room id. In the captures that
 u64 is `0x00000000_01387f58` (party) and `0x012723d8_01383bd8` (game); its
@@ -656,7 +656,7 @@ just the file on disk.
 * `P+0x1E34`/`P+0x1E38` = matches played (= in-game *days*) per game mode,
   and `blob[14..15]` = `weeks_survived + journeys*1000`. The code gives
   `(P[0x1E34] + P[0x1E38]) / 7` capped at 999, plus `P[0x1E44]` capped at 9;
-  `2026-08-16-factions-metagame-reference.md` independently establishes from
+  `docs/factions-metagame-reference.md` independently establishes from
   external sources that **one completed match = one in-game day, 7 days = 1
   week, and a Journey is 12 weeks = 84 matches**. The `/7` and the two caps
   are exactly that rule, arrived at from opposite directions.

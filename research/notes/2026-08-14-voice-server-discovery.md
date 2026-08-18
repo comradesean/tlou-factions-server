@@ -74,7 +74,7 @@ receive/dispatch loop start to finish:
 
 ## How port 7313 was found
 
-1. Correlated the user's live "connecting... bar filled, hanging, no errors" report
+1. Correlated the live "connecting... bar filled, hanging, no errors" symptom
    against the RPCS3 TTY log (`/mnt/f/rpcs3_testing/.../log/TTY.log`, small and
    human-readable - much faster to work with than the multi-GB `RPCS3.log` for this).
    Right after `Nat Type = 2`, the log showed a `connect to 192.168.1.100:7313 ...`

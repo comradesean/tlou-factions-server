@@ -10,7 +10,7 @@ absent in one attempt:
   **33 ms** — it was previously a no-timeout permanent stall on 3rd+
   attempts and an intermittent first-attempt failure).
 - No 10-15s post-load boot (`net-game-manager.cpp:1358` `team >= 0` assert —
-  1090 occurrences across the prior marathon log, zero this run).
+  1090 occurrences across the prior marathon log (`research/logs/2026-08-16-marathon-tty-asserts.txt`), zero this run).
 - No first-attempt "Lobby Server Error" id-gate race.
 - Local player has a real identity: TTY logs `comradesean joined match`
   (previously `' joined match'` with an empty name, and

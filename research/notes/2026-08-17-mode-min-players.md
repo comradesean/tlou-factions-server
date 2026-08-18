@@ -22,7 +22,7 @@ below are the addresses you type into RPCS3's debugger directly.
 
 ---
 
-## 1. The two accessors — confirmed, exactly as the brief predicted
+## 1. The two accessors — confirmed, exactly as predicted
 
 `FUN_0039f1e0` (MIN getter) and `FUN_0039f218` (EXPECTED getter) are trivial
 wrappers over the config-record getter `FUN_00349360`:
@@ -143,7 +143,7 @@ Anchors: SERVER_LOBBY handler r30 = `*(r2-31056)` = `0x01271b1c`
 ; --- teardown (0x3b7b64) -> ... -> 0xad0ca8  == LEAVE_GAME (net-matchmaking.cpp:1039) ---
 ```
 
-Teardown predicate matches the brief exactly:
+Teardown predicate matches the predicted form exactly:
 `count < min && (obj2[0x64]==0 || count < obj2[0x64])` → LEAVE. Otherwise the
 lobby proceeds to the start-gate and (if the state/team flags are set and teams
 balance) starts the match at `0x3b7920`.

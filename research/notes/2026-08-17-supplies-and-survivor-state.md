@@ -14,9 +14,9 @@ quoted EBOOT and re-verified, not guessed.
 
 ---
 
-## 0. TL;DR — the root cause is NOT what the brief assumed
+## 0. TL;DR — the root cause is NOT what was first hypothesised
 
-The brief's three prime hypotheses were (a) clan/journey not *started*, (b) a
+The three prime hypotheses going in were (a) clan/journey not *started*, (b) a
 game-mode/result guard, (c) a missing backend stats POST. **The decrypted live
 profiles falsify all three as the primary cause and point somewhere else:**
 
@@ -24,8 +24,8 @@ profiles falsify all three as the primary cause and point somewhere else:**
    **5 survivors** (`P+0xA38 = 5`), five real survivor name-seeds, and a
    population high-water of 5 (`P+0x1E30 = 5`). So an empty-roster / "clan not
    created" theory is dead — the clan-creation menu ran and persisted.
-2. **Every match-progression field is still ZERO** after the user finished a
-   Supply Raid *and* a Survivors match: matches-played `P+0x1E34 = P+0x1E38 = 0`,
+2. **Every match-progression field is still ZERO** after a completed
+   Supply Raid *and* a completed Survivors match: matches-played `P+0x1E34 = P+0x1E38 = 0`,
    wins `P+0x1E4C = P+0x1E50 = 0`, journeys `P+0x1E44 = 0`, clan-started
    `P+0x1E28 = 0`, and every population accumulator/high-water that
    `ClanManager::OnMatchEnd` touches *except* the menu-written one is 0
@@ -295,7 +295,7 @@ is frozen at its initial state until matches start counting.
 
 ---
 
-## 6. `userdata/<npid>.txt.crypt` — verdict for this task
+## 6. `userdata/<npid>.txt.crypt` — verdict
 
 Confirmed **not** a clan-init or supplies channel. Its consumer `FUN_00ada3ac`
 is a generic line-oriented text/config parser (calls the tokeniser `0xe56a2c`
@@ -326,7 +326,7 @@ call. Order of work:
 2. **Make the match count.** The fix is to drive the online-match state machine
    through the transition that latches `g_70[0x6C] = 1` (via `FUN_003abf70`).
    That transition is owned by the session/matchmaking flow the revival stubs —
-   i.e. the same `net-session-manager` path the sibling live-testing work is on.
+   i.e. the same `net-session-manager` path the parallel live-testing work is on.
    The likely missing signal is the server-side acknowledgement that this is a
    *ranked/counted* session rather than a private/unranked one. This wants
    confirmation against the session-manager stub's result/round-result handling

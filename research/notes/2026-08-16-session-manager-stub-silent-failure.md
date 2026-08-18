@@ -40,7 +40,7 @@ any kind. The handler goes silent between logging the parsed hello and the
 `(ConnectionError, socket.timeout, OSError)` - not a bare `except Exception`. If
 something else threw, Python prints the traceback to stderr by default.
 
-That process had been started earlier in the session as
+That process had been started earlier that day as
 `python3 session_manager_stub.py 7314 2>&1 | head -5 &` - `head -5` exits after
 its first 5 lines and closes its read end. By the time (if) a later exception
 fired, that pipe was long broken, so any traceback aimed at stderr would have

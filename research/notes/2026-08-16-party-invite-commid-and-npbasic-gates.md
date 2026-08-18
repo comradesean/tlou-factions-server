@@ -1,6 +1,6 @@
 # Party invites, part A: every gate on the sceNpBasic receive path, and where the commId actually comes from
 
-> **VERDICT SUPERSEDED 2026-08-16 (later, by marathon-log evidence) — read
+> **VERDICT SUPERSEDED 2026-08-16 (later, by marathon-log evidence (assert-filtered extract: `research/logs/2026-08-16-marathon-tty-asserts.txt`)) — read
 > `2026-08-16-party-invite-event2-inbox-and-roomsize-assert.md` first.**
 > The gate analysis below is accurate and still worth having, but its two
 > candidate causes are both now dead:
@@ -28,7 +28,7 @@ testing in this block - everything below is from RPCS3's real source (shallow
 clone, `2f3c0f0`, not vendored) plus Ghidra on the EBOOT. Cross-refs:
 `2026-08-15-createparty-trace.md`, `2026-08-16-party-invite-sender-assert-corrected.md`.
 
-## Loud correction: the handoff's commId theory is *half* wrong
+## Loud correction: the handoff note's commId theory is *half* wrong
 
 The handoff note says the mismatch may be "two independent client-side values
 that happen to differ". The first half of that is wrong, and it matters:
@@ -164,7 +164,7 @@ if (iVar2 == 0) { **(u32**)(TOC_0x012fde9c - 0x7ec4) = 0; }
 Both of those RPCS3 HLE functions are hard stubs that unconditionally write
 `*count = 0` (`sceNp.cpp`, both tagged `sceNp.todo`). So any game UI fed by
 that global will read zero forever regardless of what our server does.
-**Confidence this is what the user saw: low** - it is the *custom data /
+**Confidence this explains the live symptom: low** - it is the *custom data /
 custom invitation* counter (type 4), not the `MAIN_TYPE_INVITE` basic-event
 path, and the party-invite list is much more likely driven by gate 6's event
 dispatch. Recorded so it is not rediscovered as a red herring - but if the
@@ -208,7 +208,7 @@ Behaviour:
   whole set (required, since the payload can now differ per recipient).
 
 Build: `cargo build --release` in `backend/rpcn` **succeeded** (incremental,
-~15s - the "always a 7-minute clean rebuild" note in the handoff did not hold
+~15s - the "always a 7-minute clean rebuild" note in the handoff note did not hold
 this time). Binary is fresh at `backend/rpcn/target/release/rpcn`.
 **The running rpcn process was deliberately not touched.** To pick this up:
 kill the running pid and relaunch from `backend/rpcn`.

@@ -153,7 +153,7 @@ host→joiner "here is everyone" sync. Not decompiled field-by-field this pass.
 Because these are P2P, the **local** player's own attributes on machine A are
 set by A's *local* code (its menu/equip/team state), while **remote** player B's
 attributes on A are set by the *received* `player_info`/`sync_players` from B.
-**That is the self-vs-remote source split the coordinator described** — two
+**That is the self-vs-remote source split behind the reported symptom** — two
 different code paths writing the same player-object fields.
 
 ### 2b. Our server relays only the 32-byte lobby member blob — and it reaches a
@@ -209,10 +209,10 @@ remote member's `member_slot+0xF8` becomes 64, the gate fails, and
 This is *precisely* the reported symptom shape: **self (local branch, len 32) is
 correct = X; every remote (relay branch, len 64 → NULL) is the same default =
 Y; X≠Y, symmetric and consistent, not garbage** (it's a real default, not
-uninitialised stack — matching the coordinator's "consistent wrong value, not
-random" observation).
+uninitialised stack — matching the live-test observation of a "consistent
+wrong value, not random").
 
-**Answering the coordinator's (a)/(b)/(c):** it is **(a)+(b) combined, not
+**Among the candidate explanations (a)/(b)/(c):** it is **(a)+(b) combined, not
 pure (c)**. We *are* transmitting the blob (a), but at the **wrong length**
 (64 vs 32), which the client's own getter treats as "absent" (b) — so the
 remote-player data path is silently disabled while the local path is fine.
@@ -233,7 +233,7 @@ fallback" case in the sense of being beyond server reach — the fallback fires
 
 Confidence: **high** that the 64→32 length bug produces a self-correct /
 remote-consistently-wrong split for everything gated behind `FUN_00ad2650`;
-**medium** that this is the *3D model* the user is describing vs. the in-match
+**medium** that this covers the reported wrong *3D model* vs. the in-match
 nameplate/rank/loadout card; **medium** that a faction/team-consistency issue is
 the residue if the 3D model still mismatches after the length fix.
 
@@ -276,7 +276,7 @@ mismatch *remains* is the 3D-model residue below.
 * **Faction/team model** rides P2P (`player_info`/`sync_players`/`assign_team`)
   and originates from host-authoritative team assignment. Our influence is the
   `RoomCreate 0xb0` team field and the member/room-attr data the host reads; the
-  open item (multiple prior sessions) is *what feeds the NetGameManager team
+  open item (standing across prior passes) is *what feeds the NetGameManager team
   array* (`+0x4b1c`), with `0x144`/HostRank the standing never-sent lead
   (`2026-08-16-team-selection-field-confirmed.md`,
   `2026-08-16-net-sm-server-lobby-dispatch.md`). This is genuinely unresolved
@@ -308,7 +308,7 @@ get team assignment consistent).
   (`assign_team` Execute `0x0038e6bc`, call site `0x0038e7e4`), not only UI.
 
 **Medium:**
-- Whether the user's "wrong character *model*" is the in-match nameplate/rank/
+- Whether the reported "wrong character *model*" is the in-match nameplate/rank/
   loadout card (blob-gated, fixed by 4a) vs. the 3D faction skin (team-gated,
   4b). The blob's consumption in `assign_team` reads as roster/name display in
   the traced path; the 3D-model link is not proven.

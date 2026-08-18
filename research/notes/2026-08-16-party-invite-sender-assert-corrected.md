@@ -1,6 +1,6 @@
 # Party invites, part B: the sender-side assert — caller loop found, and the 2026-08-15 mechanism was WRONG
 
-> **CORRECTION 2026-08-16 (later, from the marathon RPCS3 log) — the assert
+> **CORRECTION 2026-08-16 (later, from the marathon RPCS3 log (assert-filtered extract: `research/logs/2026-08-16-marathon-tty-asserts.txt`)) — the assert
 > analysed in this note NEVER FIRED.** Grepping the full 3.4 GB log for
 > `*** ASSERTION:` banners yields exactly three distinct texts:
 > `team >= 0 && team < NetInfo::kMaxNetTeams` (1090x,
@@ -31,7 +31,7 @@ note corrects), `2026-08-16-party-invite-commid-and-npbasic-gates.md`.
 ## Correction 1: the two `this` pointers are not stale, corrupt, or garbage
 
 `2026-08-15-createparty-trace.md` describes hit 2's `param_1` as "a
-garbage-looking address ... that does NOT match this session's actual room_id,
+garbage-looking address ... that does NOT match the run's actual room_id,
 `ROOM_PTR`, or anything else recognizable", and recommends re-testing after a
 clean RPCS3 restart to see whether it is leftover state. **That test is not
 worth running - both pointers are statically initialised globals.**

@@ -2,7 +2,7 @@
 
 Follow-up to `2026-08-14-room-create-joined.md`. Live result: the guessed `RoomJoined`
 reply didn't crash or disconnect the client (it kept sending `Ping` normally for
-minutes after), but produced **zero visible effect** and the user still got "Lobby
+minutes after), but produced **zero visible effect** and live testing still produced "Lobby
 Server Error". This note traces why a `RoomJoined` message can be received and fully
 consumed by the client's dispatch loop while doing *nothing* - no crash, no further
 network traffic, no observable state change.
@@ -64,7 +64,7 @@ by the time our reply arrives. Two attempts to locate this by string/data
 cross-reference (`e6aa18 "Host NET_SM = %i"`, and `FUN_00ad5ab0`/`FUN_00ad0c90`'s own
 callers) came back empty - the call is almost certainly indirect (through a vtable on
 an object reached via TOC-relative addressing), which is the same class of lookup
-that needed `ResolveTocStrings.java`/manual disassembly tracing in earlier sessions
+that needed `ResolveTocStrings.java`/manual disassembly tracing in earlier passes
 rather than plain xref search. If a future pass confirms the slot genuinely doesn't
 exist yet when `RoomCreate` is sent, then no `RoomJoined` reply content can fix this
 - the real gap would be architectural (the room slot might only get created reactively

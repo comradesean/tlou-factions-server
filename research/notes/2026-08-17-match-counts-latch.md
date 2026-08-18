@@ -33,7 +33,7 @@ task-manager-online unit small-data base `r30 = *(0x01305870-30960) = 0x01272f78
    on the exact meaning of the `>4500` magnitude — see §2.)
 
 3. **The decisive live-log finding: even a fully-completed, normally-ended match
-   credits nothing here, because every match the user ran is a CUSTOM game.** The
+   credits nothing here, because every live-tested match is a CUSTOM game.** The
    RPCS3 log shows the lobby always routes through
    `NET_SM_CUSTOM_GAME_HOST_WAIT_INFO` (lobby-flow.cpp:1539) — i.e. the *Custom
    Game* menu path — and a complete 4-round Survivors match that reached
@@ -167,7 +167,7 @@ that fails for a non-counting game (see confidence note below).
 
 **Inputs that decide (a)/(b):**
 - **Lobby route** — `NET_SM_CUSTOM_GAME_*` (Custom Game menu) vs
-  `NET_SM_START_MATCHMAKING` (public playlist). This is chosen by the user's menu
+  `NET_SM_START_MATCHMAKING` (public playlist). This is chosen by the player's menu
   selection *and* is the only route the stub currently supports (custom).
 - **Win-condition reachability** — needs real opposing players (matters for solo).
 - **P2P/session liveness at match end** — an abnormal peer/session drop forces
@@ -187,13 +187,13 @@ that fails for a non-counting game (see confidence note below).
 
 Read directly off the RPCS3 TTY log (`GOTO NET_SM_*` and "Leaving Game…" lines):
 
-- **Every match is a custom game.** Counts over the session:
+- **Every match is a custom game.** Counts over the captured log:
   `NET_SM_CUSTOM_GAME_HOST_WAIT_INFO ×11`, `CUSTOM_GAME_LOAD_SCREEN ×13`, …,
   vs `NET_SM_START_MATCHMAKING ×1` (which produced **no** match). The lobby always
   goes `CREATE_GAME_WAIT → SERVER_LOBBY → CUSTOM_GAME_HOST_WAIT_INFO → …`.
 
-- **A completed custom match still credits nothing.** In the earlier session the
-  user played a full Survivors match:
+- **A completed custom match still credits nothing.** An earlier live test ran
+  a full Survivors match:
   `Leaving Game Normally → ROUND_RESULTS (1360)` four times, then
   `Leaving Game Normally → RESULTS (1236)`. Per the supplies note the served
   profiles remained all-zero. So reaching RESULTS is necessary but **not
@@ -224,7 +224,7 @@ No single server datum flips `g_70[0x6C]`. Verified levers and dead-ends:
 
 - **Not a RoomCreate/`SetRoomFlags` attribute.** The custom-vs-matchmade decision
   is a *client lobby-flow* branch (`NET_SM_CUSTOM_GAME_*` vs
-  `NET_SM_START_MATCHMAKING`), taken from the user's menu choice, not read back
+  `NET_SM_START_MATCHMAKING`), taken from the player's menu choice, not read back
   from a room attribute at settlement time. Echoing a different room flag will not
   move the branch that the completed-custom-match evidence shows is decisive.
 - **Not a results/settlement opcode we can inject.** The latch is written by the
@@ -325,7 +325,7 @@ Break/watch sequence for a match played to its end:
 - `FUN_003f208c` bails at `0x3f2194` when the three flags are 0.
 - In-match update routes RESULTS vs LEAVE_GAME via `FUN_003ee6b4`/`FUN_003ee9d8`
   (`task-manager-online.cpp` lines 1236 / 1526, log-confirmed).
-- The user's matches are custom games; a fully-completed custom match still
+- All live-tested matches are custom games; a fully-completed custom match still
   credited nothing; recent matches take the abnormal-leave exit.
 
 **Medium:**

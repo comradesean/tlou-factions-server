@@ -9,7 +9,7 @@ Builds on / corrects (cite, do not re-derive):
 
 **This note CORRECTS a load-bearing claim in both prior notes** (collapse §3, rootcause §1): that "the server is byte-identical across Invite and Join and the stub cannot tell them apart." The fresh controlled A/B disproves it — Invite never registers a party room in the session-manager; Join does. There *is* a clean server-observable discriminator.
 
-Fresh sources this pass (same live session as the A/B):
+Fresh sources this pass (same live run as the A/B):
 - `session_manager_stub-run.log` — the broken Join at wall-clock **09:53:55–09:54:21**, party room `0x1387f58` (lines 22987–23101). Read in full.
 - `backend/rpcn/rpcn-run.log` (715 KB) — SendMessage main_type diagnostics + churn counts.
 - Prior verified EBOOT chains (presence-discovery note) reused, not re-disassembled.
@@ -27,7 +27,7 @@ Fresh sources this pass (same live session as the A/B):
    friends-list Join code path (`FUN_0035ca28`) has **no lightweight-add alternative** — it
    always emits the 267 (presence-discovery note §2). So "what field steers it" is the wrong
    frame: the *menu affordance itself* is the fork. Presence only decides whether the friend
-   menu **offers** "Join" (and seeds the 267); once the user clicks Join, the heavy path is
+   menu **offers** "Join" (and seeds the 267); once the player clicks Join, the heavy path is
    the only path.
 
 2. **mgnomad2's presence DOES advertise a joinable session** — a be64 party room_id at
@@ -125,7 +125,7 @@ Invite never does this.
   = the party room `0x1387f58`; `+56..+87` = host signaling-address descriptors. Not a
   `sceNpMatching2` descriptor (Matching2 is linked-but-dormant — presence-discovery §1 box).
 - **RPCN carries it verbatim** (`cmd_misc.rs::set_presence`, data capped at 128 B; 96 fits) and
-  delivers to friends at login and on change. This session: **1285 SetPresence** succeed. RPCN
+  delivers to friends at login and on change. This run: **1285 SetPresence** succeed. RPCN
   does not author or mutate the blob.
 - **Invite vs Join presence content:** the blob is the same either way — mgnomad2 at the main
   menu with a party publishes room_id `0x1387f58` at +40 and the joinable byte at +7 in **both**
@@ -153,7 +153,7 @@ Ordering, from the 09:53 stub capture (wall-clock) + RPCN churn:
   the client's RoomCreate at **09:54:20** — a ~21–25 s idle gap on the stub side (log lines
   23010 -> 23011 contain no stub output).
 - The `ResetState -> Terminate -> Login -> re-RequestTicket -> re-SetPresence` churn (RPCN log:
-  81 ResetState, 94 Terminate, 112 Login, 10 os-error-104 across the session; interleaved with
+  81 ResetState, 94 Terminate, 112 Login, 10 os-error-104 across the run; interleaved with
   the party `SendMessage main_type=1` handshake per rootcause note §4) occurs in that
   pre-RoomCreate window as the client's own session-join bring-up.
 - RoomCreate 09:54:20 -> RoomJoin 09:54:20.47 -> collapse (0x133) 09:54:21.07.
@@ -199,7 +199,7 @@ is near-immediate). **This is an RPCN change and is explicitly out of scope here
 confined to `session_manager_stub.py` or the data the stub serves closes the gap.
 
 **Practical guidance for the revival, within scope:** friends-list "Join Party" cannot be made
-lightweight from our side; steer users to **"Invite to Party"** (the working, session-manager-
+lightweight from our side; steer players to **"Invite to Party"** (the working, session-manager-
 free, churn-free mechanism). Making friends-list Join robust requires the RPCN grace-window
 mitigation, which the project would have to accept as an RPCN patch.
 

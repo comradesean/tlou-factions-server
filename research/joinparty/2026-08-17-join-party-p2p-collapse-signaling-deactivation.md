@@ -154,7 +154,7 @@ The `0x8002a810` DEAD event = the emulated signaling keepalive for that peer
 stopped being satisfied. Given the npid-derived P2P address (§2), the peer link
 runs through RPCN's signaling layer, so **RPCN connection liveness is causally in
 the P2P keepalive path.** `rpcn-run.log` shows heavy client churn:
-- 55 `Disconnecting client(...)`, 63 Logins across the session.
+- 55 `Disconnecting client(...)`, 63 Logins across the run.
 - **4 abrupt `Connection reset by peer (os error 104)`** drops (comradesean lines
   242/826/1761, mgnomad2 line 2164) - not clean `Terminate`s.
 - On EVERY disconnect RPCN runs `client_infos.remove(user_id)` (`client.rs:377`),
@@ -186,7 +186,7 @@ are provably identical). No confirmed server fix closes the join-vs-invite gap.
   for a short grace window so a transient reset (os error 104) does not orphan an
   in-flight P2P link. Sketch: split `client_infos.remove` so `signaling_info`
   (and the friend online-state) survive ~5-10 s and are reclaimed by a reconnect,
-  and separately diagnose WHY the clients' RPCN TCP keeps resetting mid-session.
+  and separately diagnose WHY the clients' RPCN TCP keeps resetting mid-party.
   Deliberately left as a sketch: (a) it is not proven to be the join-specific
   cause, (b) it would need a rebuild + manual restart of the live RPCN, and (c)
   the running system must not be disturbed without the confirming capture below.

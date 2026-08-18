@@ -32,7 +32,7 @@ in two short bursts:
   server replies with a 198-byte then later 240-byte payload containing the
   room's per-member binary attributes (TLV fields `PL`/`PM`/`PS`/`PN`/`PO`/`PP`
   + country code `us` + IP/port-shaped 8-byte and 12-byte blobs - values not
-  decoded, out of scope per task brief).
+  decoded, out of scope for this pass).
 - **t=28.4s → t=533.9s (~505 seconds, the entire "play alone hosting" span)**:
   **zero packets** on ports 3478/3479/3480. Only unrelated keepalives (PSN
   presence heartbeat every ~60s to 174.129.16.161, port-5223 ping every ~40s).

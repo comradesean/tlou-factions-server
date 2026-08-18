@@ -41,8 +41,8 @@ material places).
    **`rand() % availableCount`** (`FUN_00340a6c` / `FUN_00340998`,
    re-run by `FUN_003433d0`). **That is the "different/random head every game,
    on my own screen too" symptom.**
-5. **SUPERSEDED by §6e — read §6e first, then §6.** The coordinator decoded both
-   real end-of-session `profile.21` files: they DO round-trip and both
+5. **SUPERSEDED by §6e — read §6e first, then §6.** Both real end-of-session
+   `profile.21` files were decoded: they DO round-trip and both
    customization blocks are populated, and **both persist `P+0xA28 == 1`**. That
    ground truth **FALSIFIES** §6b's "mgnomad2 fell into the randomise arm": both
    are on the deterministic NORMAL arm, the EBOOT never resets the latch to 0,
@@ -143,9 +143,9 @@ That single `bl 0x003b15bc` is the mechanism behind every live observation:
   `-1` ("no level") until `FUN_003a31dc` sets one; the shift propagates
   `0xFFFF` into the ring. `FUN_0035e06c` even has the guard
   `if (*(short*)(NGM+0x4980) < 0) FUN_003a31dc(NGM,0,0,0xc);`.
-* **both players often identical** — they played the same maps. (Per the
-  coordinator's correction this is *not* load-bearing evidence, but it is now
-  an explained coincidence rather than an anomaly.)
+* **both players often identical** — they played the same maps. (This is *not*
+  load-bearing evidence, but it is now an explained coincidence rather than an
+  anomaly.)
 
 The level-index setter is `FUN_003a31dc(NGM, levelIdx, pSettings, 0xC)`
 (`0x003a31dc`): on a change it writes `sth r4,0x4980(r3)` and `stw -1,0x497c(r3)`,
@@ -364,7 +364,7 @@ opcode 76 `swap_booster`. The rest of `player_info` is name (256B), two 64-byte
 strings, a float, a few selectors, and a 2 × (2 + 8) u32 stat table.
 
 Remaining candidates for character/emblem transport, **not decoded here**
-(deliberately, to stay off the sibling agent's turf):
+(deliberately, to avoid duplicating the parallel decode work):
 * **`sync_players` (71)**, ctor `FUN_0040a840`, object size `0x330` — the
   host→joiner "here is everyone" bulk sync; the only event large enough to hold
   8 × (16-byte descriptor + 32-byte emblem).
@@ -489,7 +489,7 @@ A second, confirmatory probe: after the profile round-trip lands, `blob[14..15]`
 
 ## 6. Reconciliation against the decoded `profile.21` ground truth (2026-08-17)
 
-The coordinator decoded both real end-of-session profiles. **Both round-trip
+Both real end-of-session profiles were decoded. **Both round-trip
 and both customization blocks are populated**, which falsifies the
 "empty/non-persisting profile" branch of §4. The decoded values:
 
@@ -547,7 +547,7 @@ becomes `desc[1]` (`li r11,0x0` @`0x00341494` → **`desc[1] = 0` if not found**
 `desc[1]` is then passed to **every one of the 13 slot resolvers** in
 `FUN_0034279c`, so it controls the whole character mesh, head included.
 
-Two facts follow directly, answering the coordinator's Q1 and Q3:
+Two facts follow directly, answering Q1 and Q3 (below):
 
 * **`P+0x66C` IS the render survivor — but only on the profile branch.** It is
   byte-identical across the two accounts because **nothing in the EBOOT writes
@@ -610,8 +610,8 @@ persisted** by `FUN_00346d44`'s sibling path.
 refreshes the cache from the profile via `FUN_00341a00` first — so whichever of
 `FUN_00341a00` (profile) or `FUN_003433d0` (random) ran **last** owns the cache.
 
-**`FUN_0033f9b4` (normal arm) is the item unlock gate the coordinator asked for
-in Q3, and it lives in the PROFILE, not in the render path:**
+**`FUN_0033f9b4` (normal arm) is the item unlock gate sought in Q3, and it
+lives in the PROFILE, not in the render path:**
 
 ```c
 for (i = 0x19A; i <= 0x19F; i++) {              // P+0x670 .. P+0x684
@@ -699,7 +699,7 @@ by rewriting the profile, not by refusing to draw).
 
 ## 6e. CORRECTION (2026-08-17, second pass): the single-latch hypothesis is FALSIFIED
 
-The coordinator supplied the decisive datum from §6c: **BOTH accounts persist
+The check prescribed in §6c produced the decisive datum: **BOTH accounts persist
 `P+0xA28 == 0x00000001`** (plain offset `0xA20`). Per the §6b table that lands
 on "*The latch is not it.*" The "mgnomad2 fell into the randomise arm"
 conclusion of §6b is **WRONG** and is retracted. This pass re-traced the full
@@ -923,11 +923,11 @@ New live observation that re-opens §7: mgnomad2 spawns **BALD (no headwear at
 all)** and **visibly DIFFERENT every match**, *on his own screen*, while his
 persisted profile is a coherent, stable, latch=1 loadout (hat=Default idx0 =
 industrial earmuffs / a real visible model, mask=Bandanna idx1, helmet=Riot
-idx0 — three deliberate, correctly-persisted picks; DC parse 100% validated by
-the user against the 39/9/8 item name lists). §7 said "idx0 = earmuffs, so he
+idx0 — three deliberate, correctly-persisted picks; DC parse 100% validated
+against the 39/9/8 item name lists). §7 said "idx0 = earmuffs, so he
 renders earmuffs stably." **He does not.** Bald+random cannot be a faithful
 render of a stable profile, so the render is bypassing the profile. This pass
-found the exact bypass and it is **not** what §7 or the reopening brief assumed.
+found the exact bypass and it is **not** what §7 assumed.
 All addresses below re-verified against decompile + objdump this pass.
 
 ### 8a. Linchpin CORRECTED: `desc==0` and `id→index-0` are the SAME outcome — neither is bald

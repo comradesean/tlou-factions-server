@@ -1,6 +1,10 @@
-# Session handoff — find-match, profiles, progression (2026-08-17)
+# Work-state summary (handoff) — find-match, profiles, progression (2026-08-17)
 
-Entry point for picking this up. Long live-testing session against two real
+> **Historical snapshot, not current status.** This records the work state as of
+> 2026-08-17; individual items may have been resolved or superseded by later
+> notes. Kept for the evidence chain, not as a live to-do list.
+
+Entry point for follow-up work. Status after a long live-testing run against two real
 RPCS3 clients (`comradesean` + `mgnomad2`). Most items below have a dedicated
 note with full evidence — read this first, then the referenced note.
 
@@ -21,8 +25,8 @@ note with full evidence — read this first, then the referenced note.
    relay (getter gates on length==32). See
    `2026-08-17-member-data-blob-rank-and-0x142-hostrank.md`.
 5. **Profile persistence** — the client PUTs its own signed `profile.21` to S3;
-   `tools/catch_http.py` accepts the PUT and round-trips it; the user added the
-   `s3.amazonaws.com` IP-swap in the RPCS3 GUI. Real profiles decrypt cleanly
+   `tools/catch_http.py` accepts the PUT and round-trips it; the
+   `s3.amazonaws.com` IP-swap is configured in the RPCS3 GUI. Real profiles decrypt cleanly
    with `tools/psarc_crypt.py` (Blowfish+HMAC+LZF, same keys as the PSARC work).
    `tools/fetch_real_cdn.py` fetches real objects from the live CDN (SigV2,
    creds auto-extracted from the EBOOT). See
@@ -42,7 +46,7 @@ but every match field at 0. The latch is set only on the COUNTED/matchmade path
 (entered via `NET_SM_START_MATCHMAKING`), reaching a NORMAL end (win condition
 met -> `NET_SM_RESULTS`). **So find-match is the ONLY path to any progression.**
 See `2026-08-17-match-counts-latch.md` and `2026-08-17-supplies-and-survivor-state.md`.
-(The user explicitly rejected patching custom games to count as an unacceptable
+(Patching custom games to count was rejected as an unacceptable
 hack — the real find-match path is required.)
 
 ## find-match: implemented, works up to CONNECT, blocked on 2-client coordination
@@ -70,7 +74,7 @@ member count (from our Member roster) stays 1 < the mode min. Roster-push
 band-aids (pushing both clients a 2-member Member roster) got them to briefly
 SEE each other in a shared lobby, but it "keeps rotating through searches and
 booting" — because the roster is a display illusion without a real P2P join.
-**Next session: solve the deterministic host/joiner designation.** The real
+**Next step: solve the deterministic host/joiner designation.** The real
 mechanism is P2P (no `0x130`), so the stub must make exactly ONE client host
 and steer the OTHER to PICK it from the list (become a joiner via
 CONNECT_TO_HOST) BEFORE it self-hosts — a timing/coordination problem the
@@ -85,7 +89,7 @@ commits) as the solution; they are papering over the missing real join.
 
 ## Other root-caused items (server-adjacent, mostly P2P)
 
-- **Join Party (friends-list): UNRELIABLE, OPEN — QUARANTINED.** This session's
+- **Join Party (friends-list): UNRELIABLE, OPEN — QUARANTINED.** The full
   investigation and all its conclusions are archived at `research/joinparty/` and
   deliberately kept out of a fresh attempt. Do NOT read them before forming your own
   read. Invite-to-Party works; friends-list Join is the unreliable direction.
@@ -125,15 +129,15 @@ always correct. See `2026-08-17-opcode-naming-shift-resolved.md`.
   parent pointer-bump. Rebuild `cargo build --release` (incremental ~15-25s,
   not the "7 min" old lore). Restart: `pkill -f target/release/rpcn; setsid
   ./target/release/rpcn ...`. Running RPCN carries the empty-npid soft-fail.
-- Concurrent-commit hazard: committing while a background agent also commits can
-  orphan a commit (the working tree is the source of truth; re-commit the file).
+- Concurrent-commit hazard: two commits landing concurrently can
+  orphan one (the working tree is the source of truth; re-commit the file).
   Avoid `git add -A`; stage specific paths.
 - EBOOT (decrypted): `/mnt/f/rpcs3_testing/rpcs3-v0.0.41-19598-357b7d44_win64_msvc/games/The Last of Us [BCUS98174]/PS3_GAME/USRDIR/EBOOT.elf`.
   Live RPCS3 log (multi-GB, `grep -a`; game diagnostics via `sys_tty_write`):
   `/mnt/f/rpcs3_testing/.../log/RPCS3.log`. Wire captures:
   `captures/tcp_catch.log`. HTTP: `captures/http_catch.log`.
 
-## Research notes produced this session
+## Research notes produced (2026-08-17)
 
 `2026-08-17-{find-match-flow, match-counts-latch, supplies-and-survivor-state,
 mode-min-players, member-data-blob-rank-and-0x142-hostrank, opcode-naming-shift-
@@ -143,8 +147,8 @@ the 2026-08-16 solo-host / two-player / profile / party-invite / metagame notes.
 
 ---
 **CORRECTION (2026-08-17):** the "Join Party (friends-list): UNRELIABLE, OPEN —
-QUARANTINED" line above is superseded — the root cause was found and fixed this
-session (the stub was replying to `0x137` with `0x138` Kickedout, telling the
+QUARANTINED" line above is superseded — the root cause was found and fixed
+later the same day (the stub was replying to `0x137` with `0x138` Kickedout, telling the
 host it had been kicked from its own party ~15ms after every join); friends-list
 Join Party, Invite-to-Party, Kick, and Promote are all now live-confirmed
 working, see 2026-08-17-party-system-working-and-opcode-corrections.md.

@@ -2,7 +2,7 @@
 
 Follow-up to `research/notes/ticket-server-first-capture.md`, which had one
 raw 88-byte capture and no idea what any of it meant beyond "opcode maybe 0,
-service name string visible." This session traced the client-side code that
+service name string visible." This pass traced the client-side code that
 builds, sends, and validates that packet - and found it's actually one leg
 of a 4-message handshake on a single TCP connection, not a standalone
 message. Full field-by-field evidence and the four `.ksy` schemas are in
@@ -25,7 +25,7 @@ this note is the narrative summary.
      (`"ticket-server"`), copied via a `strcpy`-equivalent with **no
      zero-fill**, so bytes after the NUL are more uninitialized garbage
 2. **This directly resolves the "pointer-looking values" question from the
-   original capture note and from this session's briefing.** They are not
+   original capture note.** They are not
    session tokens, not derived from the RPCN ticket, not encrypted/HMAC'd
    data - they're leftover stack contents, confirmed by the simple fact that
    no instruction anywhere in the sending function's disassembly writes to
@@ -49,15 +49,15 @@ this note is the narrative summary.
    capture note only saw the first message because the connection died
    before the client ever got here.
 5. **RPCN has no equivalent of this protocol** - grepped `backend/rpcn/` for
-   `ticket-server`, `7320`, and all four sibling service names found this
-   session; zero matches. This really is new server-side surface we need to
+   `ticket-server`, `7320`, and all four sibling service names found in this
+   pass; zero matches. This really is new server-side surface we need to
    build from scratch, not something to route into an existing RPCN
    endpoint.
 6. **Likely a shared pattern across several backend services**, not just
    this one: `FUN_00acc424` takes the service name as a plain argument, and
    the EBOOT's string table has siblings - `single-player-server`,
    `facebook-server`, `heartbeat-server`, `invite-server`,
-   `leaderboard-server` - none individually confirmed this session, but the
+   `leaderboard-server` - none individually confirmed in this pass, but the
    generic implementation makes it a reasonable bet that at least messages A
    and B of this handshake generalize to all of them.
 
@@ -87,7 +87,7 @@ this note is the narrative summary.
 3. Confirm the shared-handshake hypothesis against one sibling service
    (cheap: one more Ghidra call-site decompile).
 
-## Deliverables from this session
+## Deliverables from this pass
 
 - `protos/0x11_ticket_server_hello.ksy` - message A, confirmed high
   confidence, compiles clean (`ksc --outdir ... --target python`).

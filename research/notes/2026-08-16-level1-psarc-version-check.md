@@ -16,9 +16,9 @@ kicked back to lobby - see commit `515178b`). Decrypted/extracted
 content explains that split. **`HMAC OK`** - decrypts and unpacks cleanly with
 `tools/psarc_crypt.py`, same as every other `.crypt` file solved so far.
 
-## Provenance (not user-supplied - live CDN fetch)
+## Provenance (not locally supplied - live CDN fetch)
 
-Unlike `net1.bin.psarc.crypt` (user-supplied from their own game copy), this file was
+Unlike `net1.bin.psarc.crypt` (supplied from a local game copy), this file was
 never provided directly - it was **live-fetched by `tools/catch_http.py`'s
 upstream-proxy fallback from `t1.final.prod.s3.amazonaws.com`** (Naughty Dog's real,
 still-live production S3 bucket) and cached to `served_content/` on first request.

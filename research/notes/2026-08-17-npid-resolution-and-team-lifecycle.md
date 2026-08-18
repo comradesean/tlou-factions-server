@@ -229,7 +229,7 @@ mismatch**.
 
 ---
 
-## 2. Task 1 — every writer of engine `player+0x3c8`
+## 2. Every writer of engine `player+0x3c8`
 
 **There is exactly one writer: `FUN_0039f75c` @ `0x0039f75c`** ("acquire/initialise an
 engine player slot"), signature `(GM, PT, npidPtr, controllerIdx, isBot)`:
@@ -274,7 +274,7 @@ found via `FUN_00ad0ea4(PT, member_id)`.
 
 ---
 
-## 3. Task 2 — every writer of the tracker npid at `+0x668`
+## 3. Every writer of the tracker npid at `+0x668`
 
 **One writer: `FUN_00ad33d8` @ `0x00ad33d8`** (`AddMember(room, desc, is_local,
 is_owner)`), 12 slots of stride `0x180`:
@@ -321,7 +321,7 @@ word-at-a-time **strcmp** (verified previously; `research/ghidra/npid_compare.tx
 
 ---
 
-## 4. Task 3 — the `assign_team` broadcast lifecycle
+## 4. The `assign_team` broadcast lifecycle
 
 ### 4a. `FUN_0038b924` (builder) gating, corrected
 
@@ -395,7 +395,7 @@ i.e. puts the newcomer on the smaller team.
 
 ---
 
-## 5. Task 4 — `sync_players` (opcode 71) decoded
+## 5. `sync_players` (opcode 71) decoded
 
 Factory trampoline `0x00390088` (table `0x0038ec40`, index 71) → constructor
 **`FUN_0040a840`** @ `0x0040a840`, object size **`0x330`**, `obj+4 = 71`, vtable
@@ -441,7 +441,7 @@ bulk sync. It cannot repair or corrupt a team assignment.
 
 ---
 
-## 6. Task 5 — synthesis, and what the SessionManager must guarantee
+## 6. Synthesis, and what the SessionManager must guarantee
 
 **Which failure explains "remote team stayed −1 for a whole match while gameplay
 synced"? Most likely none — the premise is probably false** (§1e). The reported

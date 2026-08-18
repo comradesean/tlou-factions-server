@@ -95,7 +95,7 @@ pointers:
 
 - Hit 1 (both test runs): `param_1` = `0x1383bd8` = the real, live `ROOM_PTR`. Valid.
 - Hit 2 (both test runs): `param_1` = a garbage-looking address (`0x1387f58` in
-  test 1, a `0x...53b8`-tail value in test 2) that does NOT match this session's
+  test 1, a `0x...53b8`-tail value in test 2) that does NOT match the run's
   actual room_id, `ROOM_PTR`, or anything else recognizable. Fails
   `_opd_FUN_00ad6148`'s internal 4-slot room search (`param_1+0x50`, stride
   `0x9000`, matching the same room-slot-array pattern `_opd_FUN_00ad65e8`'s

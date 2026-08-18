@@ -121,13 +121,13 @@ work, not further static reference search.
 2. If that's not available soon, worth checking whether the PS3 EBOOT's relocation
    section can be located and processed (even partially/manually) to fix up whatever
    pointer table backs this string family, then re-running
-   `tools/ghidra_scripts/ScanForPointers.java` (added this session, reusable) against
+   `tools/ghidra_scripts/ScanForPointers.java` (added in this pass, reusable) against
    the same address list.
 
-## Correction (2026-08-16, later same session): live observation contradicts the "missing MP pak" theory entirely
+## Correction (2026-08-16, later the same day): live observation contradicts the "missing MP pak" theory entirely
 
-The user has directly watched `catch_http.py`'s live traffic across many Checkpoint
-load attempts tonight and **never observed any HTTP request beyond the always-present
+Direct watching of `catch_http.py`'s live traffic across many Checkpoint
+load attempts on 2026-08-16 **never showed any HTTP request beyond the always-present
 `pak23/level-1.psarc.crypt`** - no second/different pak, no 404, nothing. That's
 stronger and more direct than anything in this note or `2026-08-16-level1-psarc-
 version-check.md`: it rules out "the client asks for a different pak and we're
@@ -136,7 +136,7 @@ failing to serve it," which was the leading theory both notes were built around.
 Given standard PS3-era game architecture, this makes sense in retrospect: base
 multiplayer map geometry for a retail disc game is almost certainly shipped **on the
 disc itself** (`PS3_GAME`/`dev_bdvd`), not streamed from a CDN - CDN paks like the
-ones this session decrypted are far more likely post-launch SP-campaign-content
+ones decrypted in this pass are far more likely post-launch SP-campaign-content
 patches/DLC delivery, unrelated to which maps are already on-disc. This reframes
 "Checkpoint loads as an empty skybox" as **probably not a content-delivery problem at
 all** - more likely a local asset/disc-image issue (an incomplete or non-matching

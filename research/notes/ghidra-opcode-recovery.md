@@ -1,6 +1,6 @@
-# Ghidra Setup Success + Opcode Recovery (session 1, continued)
+# Ghidra Setup Success + Opcode Recovery (initial pass, continued)
 
-Follow-up to `research/notes/static-recon-findings.md`, after the user manually applied the two outstanding Ghidra setup steps (cspec patch + extension install documented in `docs/ghidra-setup.md`).
+Follow-up to `research/notes/static-recon-findings.md`, after the two outstanding Ghidra setup steps were applied manually (cspec patch + extension install documented in `docs/ghidra-setup.md`).
 
 ## Setup validation
 
@@ -10,7 +10,7 @@ Follow-up to `research/notes/static-recon-findings.md`, after the user manually 
 - 190 syscall call sites resolved (1 unmapped: `syscall_988`).
 - Ghidra's "Decompiler Switch Analysis" and "Data Reference" analyzers ran, which matters because they resolve PPC64 TOC-relative addressing that a flat `objdump` disassembly can't (see the negative result in `static-recon-findings.md` about why raw grep for the opcode-assert strings' addresses came up empty - this is exactly the gap Ghidra closes).
 
-Custom scripts written this session (kept in `tools/ghidra_scripts/`, part of this repo - not vendored): `DumpOpcodeDispatchEvidence.java`, `ExploreNetEventStructure.java`, `FindNetEventTableRefs.java`, `FindCallersOf.java` (generic, takes a hex address + output path as script args). All run as `-postScript` against an already-imported project via `-process "EBOOT.elf" -noanalysis` (no need to re-import/re-analyze - seconds per run instead of minutes).
+Custom scripts written in this pass (kept in `tools/ghidra_scripts/`, part of this repo - not vendored): `DumpOpcodeDispatchEvidence.java`, `ExploreNetEventStructure.java`, `FindNetEventTableRefs.java`, `FindCallersOf.java` (generic, takes a hex address + output path as script args). All run as `-postScript` against an already-imported project via `-process "EBOOT.elf" -noanalysis` (no need to re-import/re-analyze - seconds per run instead of minutes).
 
 ## Negative result: the "Opcode" assert strings are not the network dispatcher
 
@@ -29,7 +29,7 @@ Result: **116 contiguous, ordered entries** recovered clean - 115 real `NetEvent
 
 Confirmed (not just inferred) by finding the accessor function that indexes this exact table: `FUN_00388b80(int id) { return table[id]; }` at `0x00388b80` - i.e. `GetNetEventName(NetEventType id)`. This is now encoded as the confirmed `net_event_type` enum in `protos/common/opcodes.ksy`.
 
-One name from the original strings-only catalog (`protos/pending/netevent_catalog.md`) - `NetEventCharacterMove` - is *not* one of these 116 table entries. Not investigated further; likely a related class name rather than a distinct enum value.
+One name from the original strings-only catalog (since superseded by `protos/common/opcodes.ksy`) - `NetEventCharacterMove` - is *not* one of these 116 table entries. Not investigated further; likely a related class name rather than a distinct enum value.
 
 ## Corroborating (not confirmed) evidence for wire format: 1-byte opcode
 

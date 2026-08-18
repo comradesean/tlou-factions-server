@@ -1,10 +1,10 @@
-# Gameplay opcode (`net_event_type`) dispatch + payload mapping session
+# Gameplay opcode (`net_event_type`) dispatch + payload mapping
 
 ## Goal / starting point
 
 Trace how individual `net_event_type` payloads (protos/common/opcodes.ksy,
-115 confirmed opcode IDs, no payloads reversed yet as of session start) get
-parsed/dispatched, starting from the task brief's confirmed entry points
+115 confirmed opcode IDs, no payloads reversed yet at the start of this pass) get
+parsed/dispatched, starting from the confirmed entry points
 `FUN_00ace694` (`0x00ace694`) and `FUN_00acecd0` (`0x00acecd0`) - the
 event-queue-processing functions already known to read a queued event's type
 via a 1-byte load. Goal: find the dispatch mechanism (likely a jump table
@@ -24,10 +24,10 @@ continuation bit + 1-byte opcode preceding every event's own payload, which
 also closes out `packet_header.ksy`'s previously-medium-confidence `opcode:
 u1` field to effectively proven) is in
 **`docs/protocol/net_event_dispatch_and_simple_opcodes.md`** - that doc is
-the primary evidence record for everything in this session; this note is the
+the primary evidence record for everything in this pass; this note is the
 status ledger and pointer to next steps.
 
-Tooling built this session (all under `tools/ghidra_scripts/`, reusable for
+Tooling built this pass (all under `tools/ghidra_scripts/`, reusable for
 future passes):
 - `DumpNetEventFactoryTable.java` - resolves and dumps the 115-entry
   dispatch table (opcode -> allocator trampoline address).
@@ -39,7 +39,7 @@ future passes):
   offset, resolves the vtable address and decompiles its virtual function
   slots (destructor / Deserialize / Serialize / Execute / shared-inherited
   slots), correctly handling the PPC32 double-indirection through `.opd`
-  descriptors (a real gotcha this session hit and had to debug - see the
+  descriptors (a real gotcha this pass hit and had to debug - see the
   companion doc's "Gotcha" callout). Output: `research/ghidra/vtables_final.txt`
   (+ a couple of earlier, partially-wrong-offset runs kept for the record:
   `vtables_base_and_simple.txt`, `vtables_base_and_simple2.txt`,
@@ -52,35 +52,35 @@ future passes):
 Every one of the 115 opcodes now has at least its **object allocation size**
 known, and for the ~82 opcodes with a dedicated constructor function, that
 **constructor's address** is known too (a concrete, addressable starting
-point for whoever picks up the next pass - no more "where do I even start"
+point for a follow-up pass - no more "where do I even start"
 for any opcode). 16 opcodes have a **fully confirmed payload schema**
 (`.ksy` file + evidence in the companion doc) - deliberately the simplest,
 highest-confidence subset rather than a scattershot attempt at breadth over
-all 115, per the task brief's explicit prioritization guidance.
+all 115, following the explicit prioritization guidance.
 
 | Opcode (dec/hex) | Name | Alloc size | Constructor (if not inline) | Status |
 |---|---|---|---|---|
-| 0 / 0x00 | `start_connection` | 0x10 | (inline) | **confirmed (this session)** |
-| 1 / 0x01 | `connection_done` | 0x1c | (inline) | **confirmed (this session)** |
+| 0 / 0x00 | `start_connection` | 0x10 | (inline) | **confirmed (this pass)** |
+| 1 / 0x01 | `connection_done` | 0x1c | (inline) | **confirmed (this pass)** |
 | 2 / 0x02 | `load_level` | 0x58 | FUN_0038918c | not attempted - size + constructor addr known only |
-| 3 / 0x03 | `ready_to_start` | 0x18 | (inline) | **confirmed (this session)** |
+| 3 / 0x03 | `ready_to_start` | 0x18 | (inline) | **confirmed (this pass)** |
 | 4 / 0x04 | `start_game` | 0x18 | (inline) | inline/simple - size known, fields not decoded |
 | 5 / 0x05 | `end_game` | 0x1c | (inline) | inline/simple - size known, fields not decoded |
-| 6 / 0x06 | `end_round` | 0x18 | (inline) | **confirmed (this session)** |
+| 6 / 0x06 | `end_round` | 0x18 | (inline) | **confirmed (this pass)** |
 | 7 / 0x07 | `emit_projectile_bullet` | 0xf0 | FUN_00412bbc | not attempted - size + constructor addr known only |
 | 8 / 0x08 | `spawn_projectile_throwable` | 0x60 | FUN_00413448 | not attempted - size + constructor addr known only |
 | 9 / 0x09 | `kill_projectile_throwable` | 0x14 | FUN_00412b70 | not attempted - size + constructor addr known only |
 | 10 / 0x0a | `emit_grenade` | 0x50 | FUN_00413240 | not attempted - size + constructor addr known only |
 | 11 / 0x0b | `spawn_explosion` | 0x130 | FUN_004132fc | not attempted - size + constructor addr known only |
 | 12 / 0x0c | `grenade_start_fuse` | 0x1c | FUN_00412b18 | not attempted - size + constructor addr known only |
-| 13 / 0x0d | `player_move` | 0x370 | FUN_003fd680 | not attempted - size + constructor addr known only (large - likely the highest-value remaining target, per task brief) |
+| 13 / 0x0d | `player_move` | 0x370 | FUN_003fd680 | not attempted - size + constructor addr known only (large - likely the highest-value remaining target) |
 | 14 / 0x0e | `npc_move` | 0x140 | FUN_003fd5cc | not attempted - size + constructor addr known only |
 | 15 / 0x0f | `attack_projectile` | 0x90 | FUN_00413e2c | not attempted - size + constructor addr known only |
 | 16 / 0x10 | `attack_explosion` | 0x50 | FUN_00413284 | not attempted - size + constructor addr known only |
 | 17 / 0x11 | `kill_info` | 0x70 | FUN_0041143c | not attempted - size + constructor addr known only |
 | 18 / 0x12 | `assign_team` | 400 | FUN_00388c94 | not attempted - size + constructor addr known only |
 | 19 / 0x13 | `assign_team_desc` | 0xa8 | (inline) | looked at (Deserialize 0x0038a1d4 / Serialize 0x0038a044) - large nested-array + 256-byte string field, out of "simple" scope this pass |
-| 20 / 0x14 | `assign_team_done` | 0x10 | (inline) | **confirmed (this session)** |
+| 20 / 0x14 | `assign_team_done` | 0x10 | (inline) | **confirmed (this pass)** |
 | 21 / 0x15 | `request_interact` | 0x1c | FUN_004069a8 | not attempted - size + constructor addr known only |
 | 22 / 0x16 | `approved_interact` | 0x20 | FUN_00406a30 | not attempted - size + constructor addr known only |
 | 23 / 0x17 | `denied_interact` | 0x30 | FUN_004069ec | not attempted - size + constructor addr known only |
@@ -110,21 +110,21 @@ all 115, per the task brief's explicit prioritization guidance.
 | 47 / 0x2f | `revive` | 0x1c | FUN_003d8e40 | not attempted - size + constructor addr known only |
 | 48 / 0x30 | `revive_finished` | 0x20 | FUN_003d8514 | not attempted - size + constructor addr known only |
 | 49 / 0x31 | `revive_credit` | 0x20 | FUN_003d8e98 | not attempted - size + constructor addr known only |
-| 50 / 0x32 | `play_vox` | 0x2c | (inline) | **confirmed (this session)** |
+| 50 / 0x32 | `play_vox` | 0x2c | (inline) | **confirmed (this pass)** |
 | 51 / 0x33 | `simple_snapshot` | 0x70 | (inline) | inline/simple - size known, fields not decoded |
-| 52 / 0x34 | `simple_snapshot_phys_fx` | 0x40 | (inline) | **confirmed (this session)** |
+| 52 / 0x34 | `simple_snapshot_phys_fx` | 0x40 | (inline) | **confirmed (this pass)** |
 | 53 / 0x35 | `npc_piecewise_health_depleted` | 0x18 | FUN_00402610 | not attempted - size + constructor addr known only |
 | 54 / 0x36 | `player_death_cleanup` | 0x50 | FUN_00409120 | not attempted - size + constructor addr known only |
-| 55 / 0x37 | `complete_task` | 0x20 | (inline) | **confirmed (this session)** |
-| 56 / 0x38 | `start_net_task` | 0x48 | (inline) | **confirmed (this session)** |
+| 55 / 0x37 | `complete_task` | 0x20 | (inline) | **confirmed (this pass)** |
+| 56 / 0x38 | `start_net_task` | 0x48 | (inline) | **confirmed (this pass)** |
 | 57 / 0x39 | `player_health` | 0x30 | FUN_0040d26c | not attempted - size + constructor addr known only |
 | 58 / 0x3a | `heal` | 0x20 | FUN_0040c524 | not attempted - size + constructor addr known only |
 | 59 / 0x3b | `kick_griefer` | 0x14 | (inline) | inline/simple - size known, fields not decoded (Deserialize/Serialize seen in passing: 3 fields, u32+u32+unconfirmed-width) |
-| 60 / 0x3c | `coop_team_failed` | 0x18 | (inline) | **confirmed (this session)** |
+| 60 / 0x3c | `coop_team_failed` | 0x18 | (inline) | **confirmed (this pass)** |
 | 61 / 0x3d | `abort_interact` | 0x1c | FUN_00406964 | not attempted - size + constructor addr known only |
-| 62 / 0x3e | `spawn_entity` | 0x80 | (inline) | **confirmed (this session)** |
-| 63 / 0x3f | `kill_entity` | 0x14 | (inline) | **confirmed (this session)** |
-| 64 / 0x40 | `animation_sync` | 0x1c | (inline) | **confirmed (this session)** |
+| 62 / 0x3e | `spawn_entity` | 0x80 | (inline) | **confirmed (this pass)** |
+| 63 / 0x3f | `kill_entity` | 0x14 | (inline) | **confirmed (this pass)** |
+| 64 / 0x40 | `animation_sync` | 0x1c | (inline) | **confirmed (this pass)** |
 | 65 / 0x41 | `sync_stats` | 0x18 | FUN_0040c4e0 | not attempted - size + constructor addr known only |
 | 66 / 0x42 | `sync_stats_player` | 0x14 | FUN_0040c49c | not attempted - size + constructor addr known only |
 | 67 / 0x43 | `sync_carry_objects` | 0x720 | FUN_003f671c | not attempted - size + constructor addr known only (largest object in the table) |
@@ -134,8 +134,8 @@ all 115, per the task brief's explicit prioritization guidance.
 | 71 / 0x47 | `sync_players` | 0x330 | FUN_0040a840 | not attempted - size + constructor addr known only |
 | 72 / 0x48 | `request_ownership` | 0x18 | (inline) | looked at (Deserialize 0x003895bc / Serialize 0x003892a4) - 3 fields, 2 confirmed u32-width, 1 unconfirmed-width (FUN_00a1b488/FUN_00a1be18 pair) |
 | 73 / 0x49 | `transfer_ownership` | 0x18 | (inline) | looked at (Deserialize 0x0038ac88 / Serialize 0x0038aaf4) - tagged union, a byte tag (0-3) selects float/int32 interpretation of the last field; real and decodable but needs the tag's meaning pinned down |
-| 74 / 0x4a | `deny_ownership_request` | 0x14 | (inline) | **confirmed (this session)** |
-| 75 / 0x4b | `net_go` | 0x80 | (inline) | **confirmed (this session)** |
+| 74 / 0x4a | `deny_ownership_request` | 0x14 | (inline) | **confirmed (this pass)** |
+| 75 / 0x4b | `net_go` | 0x80 | (inline) | **confirmed (this pass)** |
 | 76 / 0x4c | `swap_booster` | 0x1c | FUN_0040c458 | not attempted - size + constructor addr known only |
 | 77 / 0x4d | `start_melee` | 0xf0 | FUN_003ffb04 | not attempted - size + constructor addr known only |
 | 78 / 0x4e | `abort_melee` | 0x20 | FUN_003ff348 | not attempted - size + constructor addr known only |
@@ -145,7 +145,7 @@ all 115, per the task brief's explicit prioritization guidance.
 | 82 / 0x52 | `melee_assist` | 0x1c | FUN_00400388 | not attempted - size + constructor addr known only |
 | 83 / 0x53 | `melee_block` | 0x18 | FUN_003fec1c | not attempted - size + constructor addr known only |
 | 84 / 0x54 | `npd_stat` | 0x1c | (inline) | inline/simple - size known, fields not decoded (Deserialize/Serialize seen in passing: several fields incl. a string, more involved than the "simple" set) |
-| 85 / 0x55 | `debug` | 0x1c | (inline) | **confirmed (this session)** |
+| 85 / 0x55 | `debug` | 0x1c | (inline) | **confirmed (this pass)** |
 | 86 / 0x56 | `net_set` | 0x20 | (inline) | inline/simple - size known, fields not decoded (the sequential-TOC-slot pattern broke down starting here - see companion doc section 1; needs a fresh offset derivation, not guessed) |
 | 87 / 0x57 | `client_net_go` | 0x24 | (inline) | inline/simple - size known, fields not decoded |
 | 88 / 0x58 | `late_join_sync_done` | 0x14 | (inline) | inline/simple - size known, fields not decoded |
@@ -209,7 +209,7 @@ all 115, per the task brief's explicit prioritization guidance.
    int/uint/float from the call alone), `Read16`/`Write16`, `Write8`. Fields
    are **not byte-aligned** - plan accordingly when writing `.ksy` files
    (use Kaitai's `bN` bit-sized types + `meta.bit-endian: be`, as done in
-   this session's 16 files).
+   this pass's 16 files).
 3. **The common per-event wire envelope is confirmed**: a 1-bit "more events
    follow" continuation flag + 1-byte opcode, immediately followed by the
    opcode's own Serialize output, optionally followed by a 1-bit "has extra
@@ -217,8 +217,8 @@ all 115, per the task brief's explicit prioritization guidance.
    not opcode-specific). This closes the loop on `packet_header.ksy`'s
    previously-medium-confidence `opcode: u1` field - **recommend upgrading
    that file's confidence rating and adding the continuation-bit framing in
-   a follow-up pass** (deliberately left untouched this session since
-   `packet_header.ksy` itself was out of this task's stated scope, but the
+   a follow-up pass** (deliberately left untouched in this pass since
+   `packet_header.ksy` itself was out of scope here, but the
    evidence now exists in `docs/protocol/net_event_dispatch_and_simple_opcodes.md`
    section 2).
 4. **The vtable-resolution technique and its gotcha are documented** so the
@@ -228,12 +228,12 @@ all 115, per the task brief's explicit prioritization guidance.
    opcode in enum order, skipping opcodes that have their own dedicated
    constructor - naive linear extrapolation across a skipped opcode produces
    plausible-looking but wrong vtable addresses, which is exactly what
-   happened on the first attempt this session before it was caught and
+   happened on the first attempt in this pass before it was caught and
    corrected).
 
 ## Prioritized next steps
 
-1. **`player_move` (13) and `npc_move` (14)** - the task brief's explicitly
+1. **`player_move` (13) and `npc_move` (14)** - the explicitly
    flagged highest-payoff, hardest targets. Both have dedicated constructors
    now at known addresses (`FUN_003fd680`, `FUN_003fd5cc`) and are large
    objects (0x370, 0x140 bytes) - likely vectors/quaternions/animation
@@ -243,19 +243,19 @@ all 115, per the task brief's explicit prioritization guidance.
    confirmed inline opcodes - it's loaded inside the constructor function
    itself, from an as-yet-unmapped TOC region).
 2. **Finish the 12 remaining inline/simple opcodes** (4, 5, 51, 59, 84, 86,
-   87, 88, 89, 90, 92, 97) - same technique as this session's 16, just needs
+   87, 88, 89, 90, 92, 97) - same technique as this pass's 16, just needs
    the vtable resolution re-run with corrected sequential offsets past the
    `net_set` (86) break point (see companion doc).
 3. **Session-flow completion**: `assign_team` (18) and `assign_team_desc`
    (19) are the two remaining opcodes in the 0-20 "basic session flow" range
-   the task brief called out - both have known constructors/sizes now,
+   flagged for the 0-20 range - both have known constructors/sizes now,
    `assign_team_desc`'s Deserialize/Serialize were even already decompiled
-   this session (just not written up - see companion doc's "Ruled out"
+   in this pass (just not written up - see companion doc's "Ruled out"
    section) and would be a fast follow-up.
 4. **`message` (45)** - real opcode, tagged-union-shaped payload
    (4-bit type tag selecting between argument shapes), likely a chat/
    notification system with localized-string + substitution-param
    semantics. Worth a dedicated pass; partially decompiled already.
 5. Update `protos/common/packet_header.ksy` per finding #3 above (not done
-   this session - out of this task's stated scope, but the evidence is
+   in this pass - out of scope here, but the evidence is
    ready).

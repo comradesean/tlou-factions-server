@@ -3,13 +3,13 @@
 **Status: confirmed live, 2026-08-17.** Friends-list Join Party, Invite-to-Party,
 Kick, and Promote all work, repeatedly, against two real RPCS3 machines. This
 closes the "Join Party: UNRELIABLE, OPEN — QUARANTINED" item carried forward
-from the prior session's handoff note (`2026-08-17-session-handoff.md`) and
-its archived investigation (`research/joinparty/`) — this session did NOT read
+from the prior work-state note (`2026-08-17-session-handoff.md`) and
+its archived investigation (`research/joinparty/`) — this pass did NOT read
 that archive first (per its own README instruction), reached the answer
 independently via live PPU breakpoints, and only cross-checked afterward.
 
-Companion docs: `docs/protocol/session_manager_and_matchmaking.md` (owned by
-another agent this session, carries the renamed `.ksy` files and full opcode
+Companion docs: `docs/protocol/session_manager_and_matchmaking.md` (maintained
+in a parallel pass; carries the renamed `.ksy` files and full opcode
 table) and the renamed protos themselves
 (`protos/0x137_kickout.ksy`, `0x138_kickedout.ksy`, `0x139_room_closed.ksy`,
 `0x13e_set_host_flag.ksy`, `0x13f_host_flag_updated.ksy`,
@@ -55,10 +55,10 @@ reply-needing handshake opcode at all — see below for what it actually is.
 
 ## Corrected opcode tail (0x137-0x144)
 
-The prior session's opcode-naming-shift pass (`2026-08-17-opcode-naming-shift-
+The earlier opcode-naming-shift pass (`2026-08-17-opcode-naming-shift-
 resolved.md`) got the general +2 index-shift insight right but mislabeled
 several of the tail entries as a "room search info/result" family. Live
-Kick/Promote testing this session settled the real names:
+Kick/Promote testing settled the real names:
 
 | Opcode | Name | Direction | Payload / notes |
 |---|---|---|---|
@@ -96,7 +96,7 @@ housekeeping, not a player-initiated kick.
 **Promote.** On receiving `0x13c`, the stub broadcasts `0x13d`
 OwnerMemberChanged + `0x13f` HostFlagUpdated to the room.
 
-Both are now live-confirmed working repeatedly across the session.
+Both are now live-confirmed working repeatedly.
 
 ## Unique party room id (supporting fix, not the collapse cause)
 

@@ -1,7 +1,7 @@
 # Member (0x131) mapped, but NOT implemented - it needs a pointer we can't safely guess
 
 Follow-up to `2026-08-14-room-create-joined.md` and
-`2026-08-14-room-slot-gating.md`. Starting point: the user's own hypothesis,
+`2026-08-14-room-slot-gating.md`. Starting point: the working hypothesis,
 based on experience with similar projects - "there's a flag telling the
 client it's a client vs. a host, and we're sending the wrong one." That
 hypothesis pointed at the right mechanism, but the actual fix turned out to
@@ -69,7 +69,7 @@ Live-debugger session, not more static analysis: breakpoint at the client's
 own "Host" button handler (not yet located - `FindCallersOf` on the
 lobby-flow `"Host NET_SM = %i"` string and on `FUN_00ad5ab0` both came back
 empty in an earlier pass, indirect vtable call), or simpler, re-break at
-`FUN_00ad5ab0` (`0x00ad5ab0`) the same way as the earlier session and read
+`FUN_00ad5ab0` (`0x00ad5ab0`) the same way as the earlier pass and read
 `r3`/`r3+0x10` for the *current* run's room-slot address before ever
 constructing a `Member` message with it. Confirming this address fresh per
 run (rather than trusting a possibly-stale hardcoded value) is the safe path

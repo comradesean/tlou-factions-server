@@ -4,7 +4,7 @@ Small Python tools for analysing the decrypted TLOU EBOOT directly, for when the
 Ghidra project is locked/busy or when Ghidra's reference manager misses this
 binary's addressing idioms (it frequently does — see below).
 
-Target binary (not vendored; path is the user's RPCS3 game install):
+Target binary (not vendored; path is the local RPCS3 game install):
 
 ```
 /mnt/f/rpcs3_testing/rpcs3-v0.0.41-19598-357b7d44_win64_msvc/games/The Last of Us [BCUS98174]/PS3_GAME/USRDIR/EBOOT.elf

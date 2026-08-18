@@ -21,9 +21,9 @@ if the list is empty, the client is designated host and creates via `RoomCreate
 
 ---
 
-## Why this is on the metagame critical path (2026-08-17 coordinator update)
+## Why this is on the metagame critical path (2026-08-17 update)
 
-A sibling agent proved the "match counts" progression latch (`g_70[0x6C]`, which
+A parallel investigation proved the "match counts" progression latch (`g_70[0x6C]`, which
 gates supplies/rank/journeys/wins) arms ONLY for a **counted = matchmade / public
 playlist** game that reaches a normal end; **custom / private games never arm it**
 (shipped design). Invite-to-Party yields a CUSTOM game, so it can never credit
@@ -72,7 +72,7 @@ each handler's transitions are self-labelling:
 - **`NET_SM_CLIENT_START` handler = `_opd_FUN_003b5ff4`.** Builds/sends the
   search request through the SessionManager object's **vtable+0x14**
   (`(*(code*)*(*obj+0x14))(obj, …)`), then logs `GOTO NET_SM_CLIENT_GAME_LIST_WAIT`
-  at **line 0x35c = 860** (matches the brief) and sets the next state; the
+  at **line 0x35c = 860** (matching the live TTY) and sets the next state; the
   failure branch logs line 0x356 = 854 and jumps to an error state (calls
   `_opd_FUN_003b3ad0(1)` + the `_opd_FUN_00338678` error dialog).
 - **`NET_SM_CLIENT_GAME_LIST_WAIT` handler = `_opd_FUN_003b4bf4`.** This is the
@@ -384,8 +384,8 @@ different translation units (`net-matchmaking.cpp` = `0x003bxxxx` vs
 **Concrete in-memory marker:** `START_MATCHMAKING` sets `g_matchSession+0x7c = 1`
 (`FUN_003abe9c`) on entry; the custom entry does not. This `+0x7c` byte is the
 best current candidate for the "this is a matchmade/counted game" flag that the
-sibling agent's `g_70[0x6C]` arming site keys on — **candidate, not confirmed**:
-I did not cross-reference it against that arming reader (sibling's scope). Worth a
+`g_70[0x6C]` arming site (`2026-08-17-match-counts-latch.md`) keys on —
+**candidate, not confirmed**: not cross-referenced against that arming reader. Worth a
 direct check next: does the `g_70[0x6C]` arm-condition read `g_matchSession+0x7c`
 (or something it seeds)?
 
@@ -698,7 +698,7 @@ def build_search_entry(room_id, host_npid, cur, mx, ...):
   `FUN_003b2a9c` at the `host_rec[1..5]` copy, read what a working party-host
   connection would put there).
 
-## State-code caveat (for the next session)
+## State-code caveat (for follow-up work)
 
 The numeric argument to `_opd_FUN_00347160(code, name_str)` is **not** a direct
 index into the handler dispatch table at `0x012bd640` (8-byte stride,
@@ -736,7 +736,7 @@ it isn't needed for the flow.
 
 ---
 **CORRECTION (2026-08-17):** the "`0x137` RoomSearchInfo / `0x138`
-RoomSearchResult" labels above are stale — live-verified this session as
+RoomSearchResult" labels above are stale — live-verified this pass as
 `0x137` Kickout (C->S) and `0x138` Kickedout (S->C), unrelated to room search.
 Sending `0x138` as a reply to `0x137` was the root cause of the Join Party
 collapse; see 2026-08-17-party-system-working-and-opcode-corrections.md.

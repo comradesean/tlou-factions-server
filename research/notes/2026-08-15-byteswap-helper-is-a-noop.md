@@ -67,10 +67,10 @@ multiple already-published files:
 - `protos/netmatchmaking_server_hello.ksy`'s opcode field (same caveat, via
   `FUN_00ad55d8`) - **resolved, same conclusion.**
 - Every "byteswapped via `_opd_FUN_00a0e324`" note added across this
-  session's 12 new `.ksy` files (`0x130`, `0x134`, `0x136`, `0x139`, `0x13b`,
+  pass's 12 new `.ksy` files (`0x130`, `0x134`, `0x136`, `0x139`, `0x13b`,
   `0x13c`, `0x13d`, `0x13e`, `0x13f`, `0x142`, `0x143`, `0x144`) - all
   describe a real call that happens, but mischaracterize what it does.
-  Corrected in place (this session) to say the call is a confirmed no-op and
+  Corrected in place (same pass) to say the call is a confirmed no-op and
   the field is just native big-endian.
 
 **No live capture is needed to settle this** - unlike most open questions in

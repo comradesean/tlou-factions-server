@@ -19,7 +19,7 @@ ticket-server's message D** - ruled out definitively, not just deprioritized.
 
 ## How it was found (method notes for next time)
 
-1. The two log strings from the brief (`"g_pSessionManager->Init()() failed..."`
+1. The two known log strings (`"g_pSessionManager->Init()() failed..."`
    at VMA `0xe7a320`, `"ERROR NET INIT %x"` at `0xe7a4f8`) both resolve, via
    `FindCallersOf.java`, to exactly one code cross-reference each - and it's
    the *same* function, the already-known `FUN_003557a8` NetInit orchestrator.
@@ -28,7 +28,7 @@ ticket-server's message D** - ruled out definitively, not just deprioritized.
 2. Raw disassembly (`DumpRawDisasm.java`) around the string-load site found a
    `bctrl` virtual call (`this->vtable[0](this)`) whose negative return value
    triggers the log - i.e. `Init()` really is a C++ virtual method, matching
-   the brief's `->Init()()`-with-double-parens naming (a strong tell it's a
+   the `->Init()()`-with-double-parens naming (a strong tell it's a
    macro-wrapped virtual dispatch in the original source).
 3. New reusable tool: `tools/ghidra_scripts/DumpVtableAt.java` - given a raw
    vtable address, dumps+decompiles N slots (does the PPC32 ABI double-
@@ -67,9 +67,9 @@ New and solid:
   address) for this connection's own handshake.
 - Ruled out both "depends on message D" and "RPCN already has this".
 
-Still open, prioritized for whoever picks this up next:
-1. Stand up an actual stub listener on port 7314 (this session left the
-   "hands off" live-testing files untouched per the task brief).
+Still open, prioritized for follow-up:
+1. Stand up an actual stub listener on port 7314 (this pass left the
+   "hands off" live-testing files untouched).
 2. Full field-level `.ksy` schemas for the other 26 `NetMatchmaking*` opcodes -
    11 already have their handler decompiled in
    `research/ghidra/sessmgr_vtable_dump.txt`, ready for a focused pass.

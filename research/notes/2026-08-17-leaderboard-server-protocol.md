@@ -209,7 +209,7 @@ and **no** binary opcode at the logical layer.
   - board **`0x194`** — when game mode `== 3` (same shape as `0x196`, other mode).
   So `0x195` is the common board; `0x194`/`0x196` are the two mode-specific
   skill boards. Modes 2/3 correspond to the two Factions objective modes
-  (Supply Raid / Survivors — see `research/notes/2026-08-16-factions-metagame-reference.md`).
+  (Supply Raid / Survivors — see `docs/factions-metagame-reference.md`).
 - **READ, clan/overall summary:** `FUN_00348f18` (a menu state handler) calls
   `FUN_003ae944(job, 0x195)` when its state == 0 — i.e. opening the
   clan/post-match summary reads board `0x195`.

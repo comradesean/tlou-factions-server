@@ -48,7 +48,7 @@ located.**
 
 The rename-vs-delete decision is made by **`FUN_00ac52d4` (`0x00ac52d4`)**, the
 finalizer/destructor of the download-session object used by the custom Naughty Dog
-HTTP client (`DNTG-HTTPC`, confirmed in a live capture the coordinator supplied - not
+HTTP client (`DNTG-HTTPC`, confirmed in a live capture - not
 Sony's generic `libhttp` used by earlier titles like Uncharted 2). It compares a
 locally-computed digest against a stored expected value and only calls
 `cellFsRename()` on a match:
@@ -93,7 +93,7 @@ matches the live RPCS3 log exactly: the download target the orchestrator passes 
 literally named `net1.bin.psarc` (built from template `"%s/%s/%s.psarc"` - see below),
 and this object is the one appending `.dl` to get `net1.bin.psarc.dl`, downloading
 into that, and then either renaming or deleting it. This is consistent with the
-coordinator's timing observation that the whole decision happens inline on the
+timing observation that the whole decision happens inline on the
 NetInit thread in the ~1.8ms window between `sys_fs_close()` and `sys_fs_unlink()` on
 `net1.bin.psarc.dl` - there is no separate downstream consumer thread involved in the
 rejection; `FUN_00ac52d4` runs synchronously right after the HTTP body finishes
@@ -167,13 +167,13 @@ concrete class is constructed, not resolvable by a simple static address lookup)
 the timing and call shape strongly support it being where `_opd_FUN_00dc9768`
 (SHA1Update) actually gets called per-chunk, keeping the HMAC computation entirely
 inline with the download rather than a separate pass over the finished `.dl` file.
-This is consistent with the coordinator's ruling that everything happens in one tight
+This is consistent with the finding that everything happens in one tight
 inline window on the NetInit thread.
 
 ## Still open: where the *key* and the *expected digest* come from
 
 This is the actual blocker for reproducing a passing signature, and wasn't resolved
-this session.
+in this pass.
 
 **Key** (`FUN_00ac2590`'s `param_2`/`param_3` args, passed in from the constructor as
 `_opd_FUN_00acde4c()`'s return value and its length via `_opd_FUN_00e40ad8`):
@@ -193,7 +193,7 @@ during the NetInit handshake this project already runs its own RPCN/ticket-serve
 stand-in for. If true, this is actually good news: we may already control or can
 observe the key material at handshake time, since our own ticket server is the one
 negotiating it in this test setup. Static tracing of `0x012f6c88`'s write site did not
-succeed this session (`FindCallersOf`-style reference search only found a `<none>`
+succeed in this pass (`FindCallersOf`-style reference search only found a `<none>`
 DATA reference at `0x0124f200`, not a resolvable code write - likely because the
 write uses r2/r13-relative addressing that Ghidra's static analysis doesn't always
 resolve to a clean cross-reference). Next step: open `0x012f6c88` directly in the
@@ -206,8 +206,8 @@ site for this offset was found in `FUN_00ac59a0`, `FUN_00ac52d4`, or `FUN_00ac25
 it must be populated somewhere inside `FUN_00ac3af8`'s vtable-dispatched HTTP layer
 (most likely the header-parsing virtual call at vtable offset `+0x24`, or an internal
 manifest lookup keyed by resource name), neither of which was resolved to a concrete
-implementation this session. Two live pieces of negative evidence from the
-coordinator's real-capture cross-check rule out the simplest hypothesis: a real
+implementation in this pass. Two live pieces of negative evidence from the
+real-capture cross-check rule out the simplest hypothesis: a real
 Uncharted 2 (older Naughty Dog title, generic Sony `libhttp` client) capture fetching
 its own `.psarc.crypt` files shows **no `Content-MD5` or comparable integrity header**
 in the S3 response - only upload-tool metadata headers (`ETag`,
@@ -236,7 +236,7 @@ log line - the same delete-not-rename signature, on an empty/failed download thi
 time rather than a hash mismatch, but through the identical code path. This confirms
 the HMAC gate applies uniformly to all crypt-delivered content.
 
-## Ruled out this session
+## Ruled out in this pass
 
 - Any validation living in the FIOS/`fios::dearchiver` layer
   (`crypt_decrypt_report.txt`'s original lead) - confirmed via direct RPCS3 log
@@ -251,7 +251,7 @@ the HMAC gate applies uniformly to all crypt-delivered content.
   "netevent" queue documented in this project's ticket-server investigation), not
   anywhere near the download/content-delivery path.
 - Standard HTTP integrity headers (`Content-MD5`, `ETag`, etc.) as the source of the
-  expected digest - real captures (this session's Uncharted 2 cross-check) show S3
+  expected digest - real captures (this pass's Uncharted 2 cross-check) show S3
   doesn't send them for `.psarc.crypt` GET responses in a form a client would
   reasonably treat as authoritative.
 - (Carried over from `2026-08-14-blowfish-psarc-solve.md`, still valid): the
@@ -295,10 +295,10 @@ the HMAC gate applies uniformly to all crypt-delivered content.
 3. If the key does turn out to be static/derivable (not session-bound), it would be
    directly usable to forge a valid HMAC for a modified `net1.bin`; if it's genuinely
    session-negotiated and we don't control it, that's a hard blocker on this whole
-   approach and worth surfacing to the user explicitly rather than continuing to chase
+   approach and worth flagging explicitly rather than continuing to chase
    repacks that can never pass.
 
-## Files from this session
+## Files from this pass
 
 `tools/ghidra_scripts/ResolveTocStrings.java` (new - resolves the
 `PTR_DAT_xxx + offset` chains this binary's generated sprintf-style calls use, down to

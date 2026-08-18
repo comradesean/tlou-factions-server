@@ -13,7 +13,7 @@ Method: `tools/eboot_analysis` (raw-EBOOT, no Ghidra). VMA = file offset +
 - The feature is **additive/cosmetic**: it overwrites your already-populated
   clan survivors' procedural names with your Facebook friends' real names
   (and, separately, downloads their profile pictures). Per
-  `2026-08-16-factions-metagame-reference.md` it also grants a one-off **3
+  `docs/factions-metagame-reference.md` it also grants a one-off **3
   One-Use Boosters** — the only non-cosmetic effect.
 - The client does **not** do Facebook OAuth itself. There is **no** login /
   webview / `dialog/oauth` / `sceNpFacebook` string anywhere — the only

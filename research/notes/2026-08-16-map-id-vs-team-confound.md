@@ -12,8 +12,8 @@ summarized as a conclusion - so it can't be rechecked now.
 
 Live-testing `SetAttrFlags`/team-selection (see `docs/protocol/session_manager_and_matchmaking.md`
 row 19 and `research/notes/2026-08-16-net-sm-server-lobby-dispatch.md` for that
-thread), the user hosted three times in a row with **mode and map both held constant**
-(Supply Raid, Checkpoint - confirmed explicitly by the user, not assumed) and only
+thread), three hosting attempts were made in a row with **mode and map both held constant**
+(Supply Raid, Checkpoint - explicitly verified at the console each time, not assumed) and only
 **team** changing:
 
 | Attempt | Team | `RoomCreate` offset `0xc` value |

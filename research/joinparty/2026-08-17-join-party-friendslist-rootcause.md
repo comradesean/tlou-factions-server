@@ -5,10 +5,10 @@ Third pass, building on (cite, do not re-derive):
 - `2026-08-17-join-party-p2p-collapse-signaling-deactivation.md` ("note A") — the collapse = `PEER_DEACTIVATED` errorCode `0x8002a810` with blank NpId → wholesale kick.
 - `2026-08-14-room-create-joined.md`, `2026-08-14-signaling-crash-npid-trace.md` — the 0x132/0x130 stub layout and the earlier (now-fixed) malformed-signaling crash class.
 
-Sources this pass (all fresh, same live session):
+Sources this pass (all fresh, same live run):
 - `tools/session_manager_stub.py` + `session_manager_stub-run.log` (Aug 17, through 08:42).
 - `backend/rpcn/src/server/{client.rs, udp_server.rs, client/cmd_misc.rs}` (source read this pass).
-- `backend/rpcn/rpcn-run.log` (5143 lines, same session).
+- `backend/rpcn/rpcn-run.log` (5143 lines, same run).
 - RPCS3 log `/mnt/f/rpcs3_testing/.../log/RPCS3.log` (5.1 GB, single-pass marker extraction).
 
 ---
@@ -16,7 +16,7 @@ Sources this pass (all fresh, same live session):
 ## TL;DR
 
 1. **The friends-list Join-Party handshake fully completes** and is byte-for-byte the
-   invite path's terminal step. Confirmed AGAIN live this session: at stub-clock
+   invite path's terminal step. Confirmed AGAIN live this pass: at stub-clock
    `04:32:37` mgnomad2 hosts PARTY room `0000000001387f58` (room_ptr=`0x1387f58`),
    comradesean sends `0x130` and is **`JOINED ... as member_id=2`**
    (`session_manager_stub-run.log:17509,17537`). This is not the break.
@@ -33,7 +33,7 @@ Sources this pass (all fresh, same live session):
 
 3. **The residual break is a genuine client-to-client sceNpSignaling keepalive collapse**
    (`0x8002a810` `PEER_DEACTIVATED`, blank NpId → wholesale "lost connection to party
-   member" kick — note A). It is real and still present: the current-session RPCS3 log
+   member" kick — note A). It is real and still present: the current run's RPCS3 log
    has **121,643 kick-spam lines / 103 `PEER_DEACTIVATED` / 202 `0x8002a810`**, yet the
    SAME log also holds parties that survive **30 minutes** (last `joined party` for BOTH
    players at in-game `[1801.4167]`). Intermittent, not deterministic → a robustness/race,
@@ -90,14 +90,14 @@ stub then correctly stands back. The Invite vs Join divergence in *establishment
 (note A §2) and the divergence in *stub handling* is now nil too. **The only remaining
 difference is timing/robustness of the post-join P2P link, not a protocol path.**
 
-Confidence: **HIGH** (live stub log this session + note A/B verified chains).
+Confidence: **HIGH** (live stub log this pass + note A/B verified chains).
 
 ## 2. Layer of the break: SIGNALING (P2P keepalive), not presence, not matchmaking
 
 - **Presence layer — ruled out.** Note B proved RPCN stores/delivers the 96-byte blob
   verbatim at login + on change; the `0x130`'s room_id comes from the host's authoritative
   268 reply, not the presence read, so presence is not load-bearing for the join packet.
-  This session: 1103 `SetPresence` succeed, presence flows.
+  This run: 1103 `SetPresence` succeed, presence flows.
 - **Matchmaking layer — ruled out for this path.** RPCN handles **zero** room/Matching2
   commands (`grep` of `rpcn-run.log`: 0 CreateRoom/JoinRoom/SearchRoom/Matching2); the
   `0x130` is entirely SessionManager-stub territory and the stub pairs it correctly (§1).
@@ -149,7 +149,7 @@ Disconnecting client(comradesean)      <-- mid-party drop
 … Terminate → Disconnecting client(mgnomad2) → Login   <-- other console too
 ```
 
-Session totals: 90 `Terminate`, 93 `Disconnecting`, 107 `Login`, 9
+Run totals: 90 `Terminate`, 93 `Disconnecting`, 107 `Login`, 9
 `Connection reset by peer (os error 104)`. The *bulk* of the churn is boot-time NP
 sign-in retry (`Login→GetNetworkTime→RequestTicket→Terminate`, lines ~190-430, before any
 party traffic) — but a material amount is **interleaved with live party signaling** as
@@ -166,7 +166,7 @@ Two sub-vectors, both downstream of this churn, either of which produces the obs
   friend-status flip to offline can make that manager treat the member as gone —
   independent of P2P UDP state.
 - **(B) signaling re-query gap:** RPCS3 re-queries `RequestSignalingInfos` periodically
-  (312 this session, both directions). If a re-query for the peer lands while the peer is
+  (312 this run, both directions). If a re-query for the peer lands while the peer is
   in its `Terminate→Login` gap, `cmd_misc.rs` `client_infos.get(user_id).is_none()`
   returns **NotFound** (silently — no distinctive log line), and RPCS3 cannot refresh the
   peer address → signaling drops.

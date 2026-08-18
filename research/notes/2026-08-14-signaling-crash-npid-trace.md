@@ -2,7 +2,7 @@
 
 Follow-up to `2026-08-14-room-slot-gating.md`. That pass's fix (send `RoomJoined`
 with a zeroed id field instead of echoing `RoomCreate`'s id) worked - live-confirmed
-this session: the client now logs brand-new lines (`joined match`, `NpId  connId 1`,
+in this pass: the client now logs brand-new lines (`joined match`, `NpId  connId 1`,
 `Activate Connection  4660 1`) it had never reached before. Immediately after,
 RPCS3 itself crashes (100% reproducible, same stopping point every time):
 

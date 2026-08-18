@@ -2,12 +2,12 @@
 
 This supersedes the open question in
 `2026-08-16-party-invite-commid-and-npbasic-gates.md`. Driven by new evidence
-from the marathon RPCS3 log
+from the marathon RPCS3 log (assert-filtered extract: `research/logs/2026-08-16-marathon-tty-asserts.txt`)
 (`/mnt/f/rpcs3_testing/rpcs3-v0.0.41-19598-357b7d44_win64_msvc/log/RPCS3.log`,
 3.4 GB, comradesean's machine) plus raw-disassembly work against the decrypted
 EBOOT at
 `/mnt/f/rpcs3_testing/rpcs3-v0.0.41-19598-357b7d44_win64_msvc/games/The Last of Us [BCUS98174]/PS3_GAME/USRDIR/EBOOT.elf`.
-Ghidra was not used (project locked by another agent); everything is
+Ghidra was not used (project locked by a concurrent headless run); everything is
 `powerpc64-linux-gnu-objdump -b binary -m powerpc:common64 -EB
 --adjust-vma=0x10000` plus small Python readers, now kept in
 `tools/eboot_analysis/`. Cross-refs:
@@ -316,7 +316,7 @@ the empty `%s` in `" joined match"` / `"Removing User ''"` says the member
 record the client built had no npid. All three symptoms are consistent with
 one cause: **the joining client was given a room with no valid roster.**
 
-### Cross-check against `776bd51` (landed concurrently, by the other agent)
+### Cross-check against `776bd51` (landed concurrently, in a parallel workstream)
 
 `776bd51` ("parse real room_ptr and max_players from RoomCreate") lands right
 on top of this, from the opposite direction, and the two findings agree:
@@ -335,7 +335,7 @@ on top of this, from the opposite direction, and the two findings agree:
   which is exactly the observed
   `m_roomId != 0` + `m_roomSize > 0` assert pair.
 
-**So the first thing to check next session is whether `m_roomSize > 0` still
+**So the first thing to check in follow-up work is whether `m_roomSize > 0` still
 fires at all after `776bd51`** - it may already be fixed. If it does still
 fire, the invite-join path (RoomJoined without a preceding Member) is the
 remaining suspect and the spec below applies.
@@ -343,7 +343,7 @@ remaining suspect and the spec below applies.
 ## Recommended server fix (spec only - not applied here)
 
 `tools/session_manager_stub.py` was deliberately **not edited** in this block:
-another agent is working the protocol surface, and the stub is live. Spec:
+the stub was live and concurrent work on the protocol surface was in flight. Spec:
 
 1. On the invite-driven join, send a `0x131` **Member** packet to the joining
    client *before* (or instead of) a bare `0x132`, with:

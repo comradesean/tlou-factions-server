@@ -1,11 +1,15 @@
-# Session handoff — solo-host live-testing marathon (2026-08-16)
+# Work-state summary (handoff) — solo-host live-testing marathon (2026-08-16)
 
-Long live-testing session against a real RPCS3 client (`comradesean`), later
+> **Historical snapshot, not current status.** This records the work state as of
+> 2026-08-16; its open items have since been resolved or superseded by later
+> notes. Kept for the evidence chain, not as a live to-do list.
+
+Long live-testing run against a real RPCS3 client (`comradesean`), later
 joined by a second real account (`mgnomad2`) for genuine 2-player testing. This
 note is the entry point for picking this up again — read it before re-deriving
 anything below, most of which has its own dedicated note with full evidence.
 
-## Confirmed and fixed this session
+## Confirmed and fixed in this pass
 
 1. **Id-gate staleness from leftover refresher threads** — `session_manager_stub.py`'s
    `start_member_refresher()` background thread never stopped itself, so a prior
@@ -41,8 +45,8 @@ anything below, most of which has its own dedicated note with full evidence.
 - Echoing the *real* captured team value (finding #2 above) into that same slot
   instead of a guess — also no effect. The 10-15s post-load boot is not caused
   by this field. See `2026-08-16-team-selection-field-confirmed.md`'s update.
-- Firewall/NAT theory for the 2-player find-match abandon — user applied inbound
-  UDP allow rules on both machines, room still abandoned via the same `0x133`
+- Firewall/NAT theory for the 2-player find-match abandon — inbound UDP allow
+  rules were applied on both machines, room still abandoned via the same `0x133`
   mechanism as every solo-host abandon. Not the (sole) cause.
 
 ## Still open, with concrete next steps
@@ -53,11 +57,11 @@ anything below, most of which has its own dedicated note with full evidence.
    object, NOT the SessionManager's room object) but only located a map-config
    *default-seed* write, not the real per-player assignment write. **Important
    correction, recorded loudly in `2026-08-16-team-selection-field-confirmed.md`**:
-   an earlier framing of this as "outside server reach" was wrong and was called
-   out directly by the user — this is shipped, working retail code, so if it
+   an earlier framing of this as "outside server reach" was wrong — this is
+   shipped, working retail code, so if it
    fails under our server, something we're not sending/doing is the actual cause.
    Next step: live breakpoint/watchpoint on `param_1+0x4b1c`/`+0x4b20` writes
-   during an actual solo-host session (static tracing hit a wall — needs live
+   during an actual solo-host run (static tracing hit a wall — needs live
    debugging now).
 
    **New data point 2026-08-16:** this assert fired **1090 times** across the
@@ -77,13 +81,13 @@ anything below, most of which has its own dedicated note with full evidence.
    `2026-08-16-team-selection-field-confirmed.md`.
 
 3. **Party invite boots the sender fully offline.** Real mechanism (from a
-   *prior* session, `2026-08-15-createparty-trace.md`): a client-side assertion
+   *prior* pass, `2026-08-15-createparty-trace.md`): a client-side assertion
    trap, not anything we send. Tonight's live 2-player test with `mgnomad2`
    surfaced a much more promising, DIFFERENT angle though: RPCN's own
    `SendMessage`/`MessageReceived` path (real Sony `sceNpBasic` messaging, not
    the custom `NetMatchmaking` family) — a real invite was sent and delivered
-   (confirmed via RPCN's own log and RPCS3's real source, cloned to `/tmp` this
-   session, not vendored), but the receiving client's Invites screen stayed
+   (confirmed via RPCN's own log and RPCS3's real source, cloned to `/tmp` for
+   this pass, not vendored), but the receiving client's Invites screen stayed
    empty. Root cause per RPCS3's actual source
    (`Emu/NP/np_handler.cpp:1283-1285`): event delivery is gated on
    `strncmp(msg.commId, basic_handler.context)` matching, where `commId` comes
@@ -96,7 +100,7 @@ anything below, most of which has its own dedicated note with full evidence.
    settles whether the mismatch is something we control or purely two
    independent client-side values that happen to differ for an unrelated reason.
    **Do not conclude "client-internal, unfixable" again without new evidence** -
-   that framing was wrong multiple times tonight, called out directly twice.
+   that framing was wrong multiple times tonight and had to be retracted twice.
 
    **UPDATE 2026-08-16 (static follow-up), both halves now have dedicated
    notes with live-test checklists:**
@@ -138,8 +142,8 @@ anything below, most of which has its own dedicated note with full evidence.
   repo. Rebuilding it (`cargo run --release`) after any source change appears to
   trigger a full clean rebuild (~7 minutes), not an incremental one - budget for
   that when testing a Rust-side change live.
-- Root-cause discipline lesson from tonight, worth internalizing for next
-  session: this is shipped, working retail code. "It's client-internal / the
+- Root-cause discipline lesson from tonight, worth internalizing for future
+  passes: this is shipped, working retail code. "It's client-internal / the
   emulator / outside our reach" is very rarely the right stopping point - it was
   wrong on the team-assert bug, wrong (initially) on the party-invite crash
   framing, and almost wrong on the RPCN message-delivery investigation. Trace

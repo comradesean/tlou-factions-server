@@ -76,4 +76,5 @@ not "a server responsibility".
   wording).
 - Every confirmed `net_event_type` `.ksy` (41 files) now states this in its
   own `doc:` block as a `Direction: peer-to-peer (...)` line, consistent with
-  the `direction:`-field pass done across all three families this session.
+  the `direction:`-field pass done across all three families in this
+  investigation.

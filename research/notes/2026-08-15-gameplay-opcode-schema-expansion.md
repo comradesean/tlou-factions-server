@@ -8,7 +8,7 @@ deliberately the simplest subset (opcodes with **inline construction**,
 reachable via a sequential-TOC-slot vtable trick). The other ~82 opcodes
 have a dedicated **external constructor function** whose address was known
 but whose vtable (and therefore Deserialize/Serialize/Execute) had not been
-resolved. This session's task: work through as many of those ~82 as could be
+resolved. Goal of this pass: work through as many of those ~82 as could be
 honestly confirmed in one pass, without rushing shallow schemas just to
 inflate a count.
 
@@ -131,14 +131,14 @@ in the companion doc's new "Set aside this pass" subsection):
    literal (`if: some_bool == 1`) fails to compile under `ksc` 0.11 with
    `error: can't compare BitsType1(BigBitEndian) and Int1Type(true)` - use
    `== true` / `== false` instead.
-5. **Ghidra project-lock contention with the concurrent session**: this
-   session ran alongside another agent working on the invite-server
-   dead-code task, which also runs headless Ghidra scripts against the same
+5. **Ghidra project-lock contention with concurrent work**: this
+   pass ran alongside the parallel invite-server dead-code
+   investigation, which also runs headless Ghidra scripts against the same
    `research/ghidra/tlou_factions.gpr` project. Two `analyzeHeadless`
    invocations against the same project directory can't run concurrently
    (`LockException: Unable to lock project!`) - the fix was just to poll for
    the other process to exit and retry, no corruption or lost work resulted.
-   Worth remembering if multiple sessions overlap again.
+   Worth remembering whenever parallel Ghidra work overlaps again.
 
 ## What's left as a clean worklist for the next pass
 
@@ -162,12 +162,12 @@ in the companion doc's new "Set aside this pass" subsection):
 - **`player_move` (13) / `npc_move` (14)** remain the highest-payoff, hardest
   targets (large objects, 0x370/0x140 bytes) - not attempted this pass
   either, consistent with the first pass's assessment that they deserve a
-  dedicated session.
+  dedicated pass of their own.
 - The first pass's other leftovers (`message`/45, `event`/46,
   `assign_team`/18, `assign_team_desc`/19, `transfer_ownership`/73) are
-  still open and untouched by this session.
+  still open and untouched by this pass.
 
-## Files touched this session
+## Files touched in this pass
 
 - New: `protos/0x09_kill_projectile_throwable.ksy`,
   `0x0c_grenade_start_fuse.ksy`, `0x15_request_interact.ksy`,

@@ -1,7 +1,7 @@
 # `RoomCreate` wire offset `0xb0:0xb2`: team selection, confirmed via live capture diffing
 
 **Status: confirmed, high confidence.** Found by brute-force diffing ~24 real
-`RoomCreate` captures across a deliberate sweep (the user hosted every available
+`RoomCreate` captures across a deliberate sweep (hosting every available
 Supply Raid map with both Red and Blue explicitly selected, plus several
 default/spectator attempts), after the `map_id` field investigation
 (`research/notes/2026-08-16-map-id-vs-team-confound.md`) turned up a genuine
@@ -65,7 +65,7 @@ never diffed on its own until a fully controlled map×team sweep forced it into 
 
 This is a **client→server** field - it's what the host told us they selected, not
 proof of what fixes anything on the receiving end. Two live-tested speculative
-fixes this session (`build_member`'s entry offset 16 first with a blind `team=0`
+fixes in this pass (`build_member`'s entry offset 16 first with a blind `team=0`
 guess, `docs`/code has the full history) did not resolve the `NET_SM_SERVER_LOBBY`
 stall or the `net-game-manager.cpp:1358` team-assert boot. Whether echoing the
 *real* captured value into that same slot (now implemented, see

@@ -1,6 +1,6 @@
 # "Join Party" (friend-menu discovery join): the full data path, and why the invite works but the discovery-join is fragile
 
-Mission: reverse the friend-menu **"Join Party"** flow (mgnomad2 selects comradesean
+Goal: reverse the friend-menu **"Join Party"** flow (mgnomad2 selects comradesean
 and asks to join HIS party — no direct invite message) so the revival can support it.
 Contrast with **"Invite to Party"** (already working: host pushes the room_id to the
 joiner in an NP message).
@@ -116,7 +116,7 @@ Same offset both directions. That is the strongest single confirmation of the la
 
 RPCN caps `data` at 128 bytes; 96 fits, no truncation.
 
-> **Answer to task 1:** Yes — the presence blob carries a joinable room descriptor:
+> **Q1 — does presence carry a joinable room descriptor?** Yes — the presence blob carries one:
 > a **be64 party room_id at blob offset 40**, plus a joinable-state byte at +7 and
 > host signaling-address descriptors at +56..+87. It is **not** a `sceNpMatching2`
 > room descriptor (Matching2 is dead code — see the box below).
@@ -197,13 +197,13 @@ Confirmations:
 - **`FUN_0035b2c8` @ `0x35b358` calls `FUN_00ad2768`**, which dispatches **vtable+0x18**
   (`lwz r9,0(obj); lwz r9,24(r9); bctrl` @ `0xad2928/0xad2954`). vtable+0x18 was
   read directly: vtable `0x01243b38` slot `+0x18` = `0x012e9c78` → OPD → **`0x00ad6718`
-  = the `0x130` RoomJoin sender.** ✔ (Task's `FUN_00ad6718, vtable+0x18` is exactly right.)
+  = the `0x130` RoomJoin sender.** ✔ (The hypothesized `FUN_00ad6718, vtable+0x18` is exactly right.)
 
 So the entire "Join Party clicked → presence read → room descriptor extracted → join
 sent" chain resolves to real, verified code, and it terminates in the same `0x130` the
 invite-accept path uses.
 
-> **Answer to task 2:** Join Party reads the selected friend's presence via
+> **Q2 — how does the joiner use the descriptor?** Join Party reads the selected friend's presence via
 > `sceNpBasicGetFriendPresenceByNpId`, extracts the room_id from data blob +40, and
 > emits a **tag-267 NP message to the host**, not a direct `0x130`. The host answers
 > tag-268, and *that* reply drives the joiner's `0x130` through the same

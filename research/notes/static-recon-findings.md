@@ -1,4 +1,4 @@
-# Static Recon Findings (session 1)
+# Static Recon Findings (initial pass)
 
 Source: `strings -n 6 -t x EBOOT.elf` (40,923 lines, `research/strings/strings_ascii.txt`) and a full `powerpc64-linux-gnu-objdump -d` (144MB, gitignored — regenerate via the command in `docs/tooling.md` if needed). UTF-16BE pass (`strings_utf16be.txt`) came back with only 61 lines, nothing relevant (checked, not worth a separate writeup).
 
@@ -33,7 +33,7 @@ Attempted to find what code references these three string addresses via `grep` o
 
 ## NetEvent* / NET_SM_* catalogs
 
-116 `NetEvent*` names and 38 `NET_SM_*` names extracted and catalogued — see `protos/pending/netevent_catalog.md` and `protos/pending/net_sm_states_catalog.md`. Raw lists: `research/notes/netevent_names.txt`, `research/notes/net_sm_states.txt`.
+116 `NetEvent*` names and 38 `NET_SM_*` names extracted and catalogued — catalogued in `protos/common/opcodes.ksy` and `protos/pending/net_sm_states_catalog.md`. Raw lists: `research/notes/netevent_names.txt`, `research/notes/net_sm_states.txt`.
 
 ## Non-game-server hosts found (patch/config/analytics infra, not gameplay servers)
 

@@ -38,7 +38,7 @@ guessed address.
    rank data, not team. The server's only levers are **indirect**: make both
    players resolvable-by-NpId engine players on both clients (roster NpIds +
    is_local/is_owner → P2P signaling), and don't advance the host into the team
-   broadcast before the joiner's P2P player exists. Both overlap the sibling
+   broadcast before the joiner's P2P player exists. Both overlap the parallel
    Join-Party/signaling investigation.
 
 ---
@@ -234,8 +234,8 @@ provable, not a give-up:**
   observe nor relay their contents.
 
 **What WOULD make the two clients agree** (and the only server-reachable levers,
-both already in the roster's remit — coordinate with the Join-Party/signaling
-agent, do not duplicate their work):
+both already in the roster's remit — they overlap the Join-Party/signaling
+work; do not duplicate it):
 
 1. **Guarantee both peers are resolvable-by-NpId engine players on both clients
    *before* the host broadcasts.** Concretely, the roster the stub already sends is

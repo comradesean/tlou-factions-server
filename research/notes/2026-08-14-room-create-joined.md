@@ -69,8 +69,8 @@ Wire offsets relative to the message's own opcode field (offset 0):
 **Confirmed by decompile, not by guessing**: total consumed size is `0x78` = 120 bytes
 - the dispatch code's own buffer-shift amount
 (`_opd_FUN_00e3e064(puVar21, param_1+0x240d0, received-0x78)`) is authoritative and
-contradicts the earlier session's "declared size 160" from the opcode/size debug-log
-table. Third instance this session of that debug table being wrong for a specific
+contradicts the earlier pass's "declared size 160" from the opcode/size debug-log
+table. Third instance in this pass of that debug table being wrong for a specific
 opcode (after `ClientHello2` and `Ping`'s opcode corrections) - **the size/opcode
 table should not be trusted for any opcode without an independent check**, only the
 11 already-cross-referenced switch-statement literals (`0x131`-`0x144`) and the two
@@ -102,7 +102,7 @@ here's why" instead of just a raw hexdump, to save the next person from wonderin
    "us", counts, what look like port numbers and 1000/1000-shaped limits) but the
    offsets don't line up 1:1 between the two message layouts, so no direct mapping was
    attempted this pass - flagged rather than guessed.
-3. **Whether a second real player can actually join** - this session only exercises
+3. **Whether a second real player can actually join** - this pass only exercises
    the solo-host path. `RoomSearch`/`RoomSearchResult`/`RoomJoin`/`MemberJoined` are
    still completely unimplemented; a real second connection would need those.
 4. Many fields in the real captured `RoomCreate` payload look like raw PS3 heap

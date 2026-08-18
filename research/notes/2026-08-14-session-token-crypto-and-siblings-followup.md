@@ -5,7 +5,7 @@ and `docs/protocol/0x11_ticket_server_hello.md`. Two goals this pass: (1)
 resolve the two open items flagged there (`session_token`'s consumer,
 message D's consumer), (2) map the five sibling `*-server` names to confirm
 whether they share ticket-server's handshake. Goal 1 produced a much bigger
-result than expected - a live capture arrived mid-session that disproved
+result than expected - a live capture arrived mid-pass that disproved
 the existing message-C schema outright, and chasing that down uncovered a
 whole encrypted-frame layer this investigation didn't previously know
 existed. Full evidence in `docs/protocol/0x11_ticket_server_hello.md`
@@ -89,8 +89,8 @@ the decompiled prototype.**
 
 ## What triggered the correction
 
-Mid-pass, the coordinator reported the first-ever live capture of message
-C (a real 272-byte client send, obtained after the coordinator's
+Mid-pass, the first-ever live capture of message
+C arrived (a real 272-byte client send, obtained after
 `tools/ticket_server_stub.py` correctly got past message B for the first
 time). The captured bytes' first two bytes, read under the then-current
 schema as a big-endian length field, gave a nonsensical 13058 - far larger
@@ -114,8 +114,8 @@ Summary:
   build.
 - Per-service plaintext payload shapes were traced structurally (buffer
   sizes, loop counts, helper functions used) but not byte-mapped to the
-  same depth as ticket-server, per the coordinator's "breadth over depth"
-  instruction - and given the encrypted-frame-layer discovery, byte-mapping
+  same depth as ticket-server, following the "breadth over depth"
+  priority - and given the encrypted-frame-layer discovery, byte-mapping
   the plaintext for these is lower priority than finishing the cipher
   reimplementation for ticket-server first (the frame layer has to be
   crackable before any of these payloads are recoverable from a real
@@ -169,7 +169,7 @@ Summary:
 
 ## Addendum (same day, third pass): cipher reimplemented and verified - decrypt not yet working
 
-Coordinator follow-up ask: reimplement the ARX cipher in Python, actually
+Follow-up work: reimplement the ARX cipher in Python, actually
 decrypt the real 272-byte capture, verify via the frame's own auth_tag
 (not just eyeballing plaintext), resolve two specific ambiguities
 (`FUN_00db5ec0`'s exact key-mixing mechanism, and whether `FUN_00db7e08`
@@ -180,7 +180,7 @@ derive a real message-D response.
 `FUN_00db5ec0` and `FUN_00db7e08` directly (raw PPC, not decompiled C,
 which drops parameters here like everywhere else in this call chain) - see
 the "Encrypted frame layer" section of `docs/protocol/0x11_ticket_server_hello.md`
-for the full derivation. Headline: the coordinator's specific worry about
+for the full derivation. Headline: the specific concern about
 decrypt/encrypt asymmetry was correct and confirmed real -
 `FUN_00db7e08`'s CFB feedback uses the ORIGINAL ciphertext word for the
 next round, not the recovered plaintext, unlike a naive symmetric
@@ -249,8 +249,8 @@ and should work here too.
 
 ## Addendum 2 (same day, fourth pass): SOLVED - key confirmed live, bug found via emulation, real ticket decrypted
 
-The coordinator broke into a live RPCS3 process at `FUN_00db5ec0`'s entry
-during a real NetInit run and confirmed, directly from process memory: `r3`
+A live-debugger break into an RPCS3 process at `FUN_00db5ec0`'s entry
+during a real NetInit run confirmed, directly from process memory: `r3`
 (key pointer) = `0xed7a50` on both call sites within one frame, and the 16
 bytes actually AT that address matched the candidate key byte-for-byte;
 `r4` (counter) = `0` on both hits. This independently confirmed the key two

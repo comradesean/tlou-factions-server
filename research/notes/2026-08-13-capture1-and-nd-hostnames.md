@@ -2,7 +2,7 @@
 
 ## Capture: `captures/2026-08-13_auth-server-connect-fail.pcapng`
 
-23,324 packets, 27-second window, unfiltered on the Windows host's main interface. User hit "Error connecting to authentication server" in RPCS3 during this session.
+23,324 packets, 27-second window, unfiltered on the Windows host's main interface. The client showed "Error connecting to authentication server" in RPCS3 during the capture window.
 
 **Finding: zero network activity related to RPCN or Naughty Dog at all.** Checked:
 - DNS queries for `np.rpcs3.net` (the configured RPCN host, per `.../config/rpcn.yml`) - none. Only 3 DNS queries total in the whole capture (`t1.final.prod.s3.amazonaws.com`, `spade.twitch.tv`, `p2p-ord1.discovery.steamserver.net` - unrelated background apps).
@@ -15,7 +15,7 @@
 
 ## Naughty Dog backend hostnames
 
-User surfaced two specific candidate hostnames from prior knowledge: `prod.usa.tlou.ps3.naughty-dog.com` and `auth.usa.tlou.ps3.naughty-dog.com`. Checked against everything available:
+Two specific candidate hostnames known from the game's original era: `prod.usa.tlou.ps3.naughty-dog.com` and `auth.usa.tlou.ps3.naughty-dog.com`. Checked against everything available:
 
 - **Not present** in `EBOOT.elf`'s strings, full disassembly, or as template fragments (checked for `%s`-style patterns that could construct the hostname at runtime) - see `research/strings/strings_ascii.txt`, `research/disasm/full.asm`.
 - **No other executable modules exist** in the game install to check - `PS3_GAME/USRDIR/` contains only `EBOOT.BIN` (encrypted original) and `EBOOT.elf` (decrypted, what we've been analyzing). No separate `.sprx`/`.self` network modules.

@@ -1,6 +1,6 @@
 # `.crypt` File Decryption: Investigation (Not Fully Cracked)
 
-Follow-up to `research/notes/net1bin-server-list.md`'s "real fix" section - attempted to find and characterize the decryption routine EBOOT.elf uses for `*.crypt` content-delivery downloads (`net1.bin.psarc.crypt`, `patch.psarc.crypt`, `campaign.config.txt.crypt`), well enough to write a standalone decrypt/re-encrypt implementation. **Not achieved this session** - documenting confirmed findings and the concrete next steps, per this task's own instructions that honest partial progress is a valid outcome.
+Follow-up to `research/notes/net1bin-server-list.md`'s "real fix" section - attempted to find and characterize the decryption routine EBOOT.elf uses for `*.crypt` content-delivery downloads (`net1.bin.psarc.crypt`, `patch.psarc.crypt`, `campaign.config.txt.crypt`), well enough to write a standalone decrypt/re-encrypt implementation. **Not achieved in this pass** - documenting confirmed findings and the concrete next steps.
 
 ## Confirmed: the download/decrypt/write pipeline
 
@@ -17,7 +17,7 @@ Follow-up to `research/notes/net1bin-server-list.md`'s "real fix" section - atte
 
 ## Confirmed: the read path goes through Sony's FIOS middleware, not custom Naughty Dog crypto
 
-`FUN_00b5cc1c` (reached via `FUN_009b8bd8`) contains an explicit magic-number check: `*param_3 ^ 0x46494f53`, where `0x46494f53` is literal ASCII **`'FIOS'`**. Combined with extensive `fios*`-prefixed strings already known from earlier sessions (`fiosSndStreamFile...`, `FIOS cache couldn't resolve...`) and a `"fios mediathread 2"` thread name observed live in RPCS3's logs, this confirms the read/decrypt/decompress path is Sony's licensed **FIOS** (File I/O Scheduler) PS3 SDK middleware, not bespoke game code. All functions decompiled so far in this path (`FUN_009bb00c`, `FUN_009b9068`, `FUN_009b8bd8`, `FUN_009b822c`, `FUN_00b5cc1c`, `FUN_00b554f4`) are generic FIOS async-op/buffer-management plumbing (bitflag-driven open modes, timestamp conversion, buffer queues) - no visible cipher operations (no XOR loops, no S-box tables, no key material) in any of them.
+`FUN_00b5cc1c` (reached via `FUN_009b8bd8`) contains an explicit magic-number check: `*param_3 ^ 0x46494f53`, where `0x46494f53` is literal ASCII **`'FIOS'`**. Combined with extensive `fios*`-prefixed strings already known from earlier passes (`fiosSndStreamFile...`, `FIOS cache couldn't resolve...`) and a `"fios mediathread 2"` thread name observed live in RPCS3's logs, this confirms the read/decrypt/decompress path is Sony's licensed **FIOS** (File I/O Scheduler) PS3 SDK middleware, not bespoke game code. All functions decompiled so far in this path (`FUN_009bb00c`, `FUN_009b9068`, `FUN_009b8bd8`, `FUN_009b822c`, `FUN_00b5cc1c`, `FUN_00b554f4`) are generic FIOS async-op/buffer-management plumbing (bitflag-driven open modes, timestamp conversion, buffer queues) - no visible cipher operations (no XOR loops, no S-box tables, no key material) in any of them.
 
 ## Confirmed: a "dearchiver" component sits on top of FIOS, and is shared with Uncharted 3
 
@@ -31,7 +31,7 @@ Brute-forced every single-byte XOR key against the first 64 bytes of `net1.bin.p
 
 ## Open lead, not validated: possible length-prefix header
 
-The first 4 bytes of `net1.bin.psarc.crypt` are `00 00 fe 6d`. As a big-endian `u32`, `0xfe6d` = 65,133 decimal - suspiciously close to the file's own total size (65,160 bytes; 65,160 − 65,133 = 27 bytes of apparent overhead). Not yet confirmed as a real length field (could be coincidence, or could be counting something else - e.g. the file size minus this same 4-byte header minus a fixed-size IV/nonce of unusual length). Worth checking against `patch.psarc.crypt`/`campaign.config.txt.crypt` (both of which we also have, in `tools/served_content/`... actually only `net1.bin.psarc.crypt` was saved there this session - the other two were only ever proxied through the empty/200 catcher, never saved to disk) if/when copies of those become available, since a consistent header-encodes-total-size pattern across multiple files would confirm this quickly.
+The first 4 bytes of `net1.bin.psarc.crypt` are `00 00 fe 6d`. As a big-endian `u32`, `0xfe6d` = 65,133 decimal - suspiciously close to the file's own total size (65,160 bytes; 65,160 − 65,133 = 27 bytes of apparent overhead). Not yet confirmed as a real length field (could be coincidence, or could be counting something else - e.g. the file size minus this same 4-byte header minus a fixed-size IV/nonce of unusual length). Worth checking against `patch.psarc.crypt`/`campaign.config.txt.crypt` (both of which are also available, in `tools/served_content/`... actually only `net1.bin.psarc.crypt` was saved there - the other two were only ever proxied through the empty/200 catcher, never saved to disk) if/when copies of those become available, since a consistent header-encodes-total-size pattern across multiple files would confirm this quickly.
 
 ## What was NOT achieved
 
@@ -42,10 +42,10 @@ The first 4 bytes of `net1.bin.psarc.crypt` are `00 00 fe 6d`. As a big-endian `
 ## Recommended next steps, in priority order
 
 1. **Search for Uncharted 3 FIOS/dearchiver prior art** - the `u3.beta` string strongly suggests this format is shared and may already be documented/cracked by that game's community.
-2. **Check for SPU-side code.** Sony's Edge zlib (`edgezlib_inflate_queue.cpp`, confirmed present via strings in an earlier session) typically runs decompression on SPU threads for performance on Cell - if decryption is similarly SPU-offloaded, it would live in an embedded SPU ELF blob within `EBOOT.elf` that the current Ghidra project (analyzed as PPU-only) doesn't cover. Would need identifying and extracting SPU program blobs (Ghidra has separate SPU processor support) and re-analyzing those specifically.
+2. **Check for SPU-side code.** Sony's Edge zlib (`edgezlib_inflate_queue.cpp`, confirmed present via strings in an earlier pass) typically runs decompression on SPU threads for performance on Cell - if decryption is similarly SPU-offloaded, it would live in an embedded SPU ELF blob within `EBOOT.elf` that the current Ghidra project (analyzed as PPU-only) doesn't cover. Would need identifying and extracting SPU program blobs (Ghidra has separate SPU processor support) and re-analyzing those specifically.
 3. **Trace the dearchiver's function-pointer/vtable setup** to find where the actual per-block transform callback gets registered - `FUN_009bdfb8`/`FUN_009b9868` were dead ends but weren't traced exhaustively (their own callees weren't decompiled).
 4. **Validate the length-prefix hypothesis** against additional `.crypt` file samples if any become available.
 
-## Files/scripts from this session
+## Files/scripts from this pass
 
 `tools/ghidra_scripts/FindCryptDecryptRoutine.java`, `FindDearchiver.java`, `DecompileByAddresses.java` (generic, reusable - decompile a fixed address list, takes `outPath addr1 addr2 ...` as script args). Reports: `research/ghidra/crypt_decrypt_report.txt`, `crypt_helpers_report.txt`, `crypt_deep_report.txt`, `dearchiver_report.txt`, `dearchiver_decomp.txt`.

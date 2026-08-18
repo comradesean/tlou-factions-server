@@ -93,7 +93,7 @@ The entry loop above it looks members up **by npid compare** (`FUN_00e459bc(slot
 confirming member identity is npid-keyed. So an is_local==1 slot **never** opens
 signaling regardless of whether its npid field is filled — which is also why the
 **solo host works** (populate_self_npid=True + is_local=1, no self-signal crash,
-live-confirmed prior sessions).
+live-confirmed in prior passes).
 
 ### 2c. The actual bytes the stub sends the HOST — reconstructed and correct
 Regenerated offline from the live stub's own `build_member` (no code edits;

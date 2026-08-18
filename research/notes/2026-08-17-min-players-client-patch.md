@@ -32,7 +32,7 @@ one comparison.
 
 **The number it overrides is 6.** Both live Factions playlists — Supply Raid
 (`deathmatch`) and Survivors (`elimination`) — ship `min = 6`, `expected = 8`,
-`teamSize = 4`. The user's guess was right. Full derivation and the on-disc
+`teamSize = 4`. The working hypothesis was right. Full derivation and the on-disc
 bytes in §3.
 
 **And if you would rather not patch code at all:** the game ships a developer
