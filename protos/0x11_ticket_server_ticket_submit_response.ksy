@@ -51,10 +51,17 @@ doc: |
   (correct magic byte, correct auth_tag - verified by round-tripping it back
   through the module's own decrypt) for this message. The all-zero 16-byte
   reply this project's stub previously sent is essentially confirmed invalid
-  now (wrong magic byte at minimum). What remains open is ONLY this
-  message's *content* semantics (see plaintext_len/ciphertext fields below) -
-  never captured, so still a placeholder/guess even though the wrapper
-  around it is now real.
+  now (wrong magic byte at minimum).
+
+  CONTENT RESOLVED 2026-08-18: the decrypted PLAINTEXT is client-ignored. In
+  the ticket flow FUN_003557a8 the reply is received into a stack buffer
+  (auStack_500) and only the recv RETURN VALUE is tested (a validly-framed
+  message arrived); the decrypted buffer is then discarded and reused as the
+  output buffer for cellGameContentPermit - no byte of the plaintext is parsed
+  or branched on. So the frame must still be VALID (correct 0x33 magic and a
+  correctly-keyed auth_tag, or the client closes the connection), but the
+  plaintext content inside is unconstrained server-choice. A capture cannot
+  'define' the content because the client imposes no structure on it.
 doc-ref: ../docs/protocol/0x11_ticket_server_hello.md
 seq:
   - id: frame_magic
@@ -71,4 +78,4 @@ seq:
     doc: "Keyed tag, independently recomputed by the client via `_opd_FUN_00db5ec0(static_key, *(conn+0x4c), state)` + digest, then compared via memcmp against this field - any mismatch is treated as fatal (FUN_00a0f6b8(conn,2) + FUN_00acbad0(conn), connection closed). Keyed by client_nonce (conn+0x4c), NOT session_token - see doc-level note above."
   - id: ciphertext
     size: plaintext_len + pad_count
-    doc: "The response payload, XOR-keystream-decrypted in place by the client via FUN_00db7e08 before the tag is even checked (decrypt-then-verify, not verify-then-decrypt - worth noting for a real implementation, though the end result the client acts on is the same either way since a bad tag closes the connection regardless). Content semantics completely unknown - never captured, never explained by any other code path this or the prior pass could find."
+    doc: "The response payload, XOR-keystream-decrypted in place by the client via FUN_00db7e08 before the tag is even checked (decrypt-then-verify, not verify-then-decrypt - worth noting for a real implementation, though the end result the client acts on is the same either way since a bad tag closes the connection regardless). CONTENT is client-ignored (RESOLVED 2026-08-18): the decrypted plaintext is discarded by the receiver FUN_003557a8 (buffer reused for cellGameContentPermit), so its internal layout is unconstrained server-choice - only the frame's magic byte and auth_tag must be valid. No capture is needed to define the content."
