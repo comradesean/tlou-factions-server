@@ -24,11 +24,77 @@ import threading
 import struct
 import os
 import time
+import json
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 7314
 _LOGS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 os.makedirs(_LOGS, exist_ok=True)
 LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else os.path.join(_LOGS, "session_manager.log")
+
+# --- Raw wire tap (2026-08-18) --------------------------------------------
+# A complete, machine-parseable record of EVERY packet in BOTH directions,
+# separate from the human-readable session_manager.log. One JSON object per
+# line: {"t": iso8601, "dir": "in"|"out", "conn": <int>, "hex": "<fullhex>"}.
+# The client->server ("in") side is the one that matters for discovery - it is
+# where the retail client might put meaning in a field we call padding. The
+# stream may fragment/coalesce across recv() calls; the verifier reassembles
+# per-connection per-direction and re-frames by opcode, so this just records
+# raw recv/sendall events faithfully. Consumed by research/tools/verify_wire.py.
+WIRE_PATH = os.path.join(_LOGS, "wire.jsonl")
+_wire_lock = threading.Lock()
+_wire_fp = open(WIRE_PATH, "a", buffering=1)
+_conn_seq = 0
+_conn_seq_lock = threading.Lock()
+
+
+def _next_cid():
+    global _conn_seq
+    with _conn_seq_lock:
+        _conn_seq += 1
+        return _conn_seq
+
+
+def _wire(cid, direction, data):
+    if not data:
+        return
+    line = json.dumps(
+        {"t": datetime.datetime.now().isoformat(), "dir": direction,
+         "conn": cid, "hex": data.hex()},
+        separators=(",", ":"))
+    with _wire_lock:
+        _wire_fp.write(line + "\n")
+
+
+class _TapSock:
+    """Transparent socket proxy: mirrors every recv/sendall to wire.jsonl.
+
+    Wrapping the accepted socket once (in main) means every existing
+    conn.recv / conn.sendall - including cross-connection sends via the room
+    registry, which store this wrapped object - is tapped with no other code
+    change. All other socket methods (settimeout, close, getpeername, ...) are
+    transparently proxied.
+    """
+
+    def __init__(self, sock, cid):
+        self._s = sock
+        self._cid = cid
+
+    def recv(self, n, *a, **k):
+        data = self._s.recv(n, *a, **k)
+        _wire(self._cid, "in", data)
+        return data
+
+    def sendall(self, data, *a, **k):
+        _wire(self._cid, "out", data)
+        return self._s.sendall(data, *a, **k)
+
+    def send(self, data, *a, **k):
+        _wire(self._cid, "out", data)
+        return self._s.send(data, *a, **k)
+
+    def __getattr__(self, name):
+        return getattr(self._s, name)
+# --------------------------------------------------------------------------
 
 CLIENT_HELLO_OPCODE = 0x12d
 SERVER_HELLO_OPCODE = 0x12e
@@ -1737,6 +1803,7 @@ def main():
     with open(LOG_PATH, "a", buffering=1) as log:
         while True:
             conn, addr = srv.accept()
+            conn = _TapSock(conn, _next_cid())   # raw wire tap (both directions)
             t = threading.Thread(target=handle, args=(conn, addr, log_lock, log), daemon=True)
             t.start()
 
