@@ -24,6 +24,7 @@ doesn't strictly need. Don't default this back to 404 without re-testing.
 Not a real HTTP server - no range requests, no query-string handling
 (matches on path only), no persistent connections.
 """
+import base64
 import socket
 import sys
 import datetime
@@ -116,37 +117,42 @@ FB_PICS_DIR = os.path.join(_FB_DIR, "facebook_pics")
 FB_BASE_ID = 1000000000000001
 
 
-def _make_png(w=116, h=116, rgb=(84, 110, 122)):
-    """A valid solid-colour PNG built in-memory (no deps), so /picture returns a
-    real decodable image instead of empty bytes (empty = icon loader spins)."""
-    import struct
-    import zlib
-
-    def chunk(typ, data):
-        body = typ + data
-        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xffffffff)
-
-    sig = b"\x89PNG\r\n\x1a\n"
-    ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)  # 8-bit truecolour RGB
-    row = b"\x00" + bytes(rgb) * w                        # filter byte 0 + pixels
-    idat = zlib.compress(row * h, 9)
-    return sig + chunk(b"IHDR", ihdr) + chunk(b"IDAT", idat) + chunk(b"IEND", b"")
-
-
-_FB_PLACEHOLDER_PNG = _make_png()
+# The game picks the image decoder from the URL's last 3 chars (facebook.cpp
+# FUN_00ac719c @ 0xac7384: strcmp(url_end-3, "png") -> PNG loader, else JPEG).
+# Our /me/picture URL ends in "...access_token=STUB", so the game always uses
+# its JPEG decoder - therefore /picture MUST return JPEG bytes, not PNG (a PNG
+# body silently fails to decode -> the icon spins and re-fetches every 5s).
+# Solid-colour 116x116 placeholder JPEG, embedded so the stub stays stdlib-only.
+_FB_PLACEHOLDER_JPEG = base64.b64decode(
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcU"
+    "FhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgo"
+    "KCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAB0AHQDASIA"
+    "AhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQA"
+    "AAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3"
+    "ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWm"
+    "p6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEA"
+    "AwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSEx"
+    "BhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElK"
+    "U1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3"
+    "uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDn6KKK"
+    "6zzwooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKK"
+    "ACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAK"
+    "KKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAoooo"
+    "AKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAoo"
+    "ooAKKKKACiiigAooooAKKKKACiiigD/9k=")
 
 
 def _fb_picture_bytes(base):
-    """(content_type, body) for a /picture path. Serves a real override photo if
-    tools/facebook_pics/<key>.{png,jpg,jpeg} exists, else a generated placeholder.
-    key is the leading id, or 'me' for /me/picture."""
+    """(content_type, body) for a /picture path - always JPEG (see note above).
+    Serves a real override photo if tools/facebook_pics/<key>.{jpg,jpeg} exists,
+    else the placeholder. key is the leading id, or 'me' for /me/picture."""
     key = "me" if base.startswith("me/") else base.split("/", 1)[0]
-    for ext, ctype in ((".png", "image/png"), (".jpg", "image/jpeg"), (".jpeg", "image/jpeg")):
+    for ext in (".jpg", ".jpeg"):
         path = os.path.join(FB_PICS_DIR, key + ext)
         if os.path.isfile(path):
             with open(path, "rb") as f:
-                return ctype, f.read()
-    return "image/png", _FB_PLACEHOLDER_PNG
+                return "image/jpeg", f.read()
+    return "image/jpeg", _FB_PLACEHOLDER_JPEG
 
 
 def fb_load_people():

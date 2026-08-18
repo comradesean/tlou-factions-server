@@ -78,20 +78,39 @@ FRIENDS_PATH = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
 BASE_ID = 1000000000000001
 
 
-def _make_png(w=116, h=116, rgb=(84, 110, 122)):
-    """A valid solid-colour PNG built in-memory (no deps), so /picture returns a
-    real decodable image instead of empty bytes (empty = icon loader spins)."""
-    import struct
-    import zlib
+_PICS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "facebook_pics")
 
-    def chunk(typ, data):
-        body = typ + data
-        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xffffffff)
 
-    sig = b"\x89PNG\r\n\x1a\n"
-    ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)  # 8-bit truecolour RGB
-    row = b"\x00" + bytes(rgb) * w                        # filter byte 0 + pixels
-    return sig + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(row * h, 9)) + chunk(b"IEND", b"")
+def _picture_bytes(base):
+    """JPEG bytes for a /picture path. The game picks its decoder from the URL's
+    last 3 chars (facebook.cpp @0xac7384: "png" -> PNG, else JPEG), and our URL
+    ends in the access token, so it always uses the JPEG decoder - /picture MUST
+    return JPEG, not PNG. Serve tools/facebook_pics/<key>.jpg if present, else a
+    solid-colour placeholder."""
+    import base64
+    key = "me" if base.startswith("me/") else base.split("/", 1)[0]
+    for ext in (".jpg", ".jpeg"):
+        path = os.path.join(_PICS_DIR, key + ext)
+        if os.path.isfile(path):
+            with open(path, "rb") as f:
+                return f.read()
+    return base64.b64decode(
+        "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcU"
+        "FhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgo"
+        "KCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAB0AHQDASIA"
+        "AhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQA"
+        "AAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3"
+        "ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWm"
+        "p6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEA"
+        "AwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSEx"
+        "BhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElK"
+        "U1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3"
+        "uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDn6KKK"
+        "6zzwooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKK"
+        "ACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAK"
+        "KKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAoooo"
+        "AKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAoo"
+        "ooAKKKKACiiigAooooAKKKKACiiigD/9k=")
 
 
 def load_people():
@@ -143,10 +162,11 @@ def route(method, path):
     if base == "me":
         return "application/json", json_body(me)
 
-    # /me/picture, /<id>/picture -> avatar. Serve a valid image (an empty body
-    # makes the game's icon loader retry forever -> spinner next to your name).
+    # /me/picture, /<id>/picture -> avatar, always JPEG (the game uses its JPEG
+    # decoder for this URL - see _picture_bytes). An empty/PNG body makes the
+    # icon loader retry forever -> spinner next to your name.
     if base == "me/picture" or re.fullmatch(r"\d+/picture", base):
-        return "image/png", _make_png()
+        return "image/jpeg", _picture_bytes(base)
 
     # /<id>?fields=name  -> single-person name lookup.
     m = re.fullmatch(r"(\d+)", base)
