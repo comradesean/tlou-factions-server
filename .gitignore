@@ -37,9 +37,10 @@ research/disasm/
 # --- Generated Kaitai parsers (build artifacts of protos/*.ksy) ---
 protos/*.py
 
-# --- OS / editor cruft ---
+# --- OS / editor / tooling cruft ---
 .DS_Store
 *.swp
+.claude/
 
 # --- Stray Ghidra export blobs written to the repo root ---
 /003433d0
