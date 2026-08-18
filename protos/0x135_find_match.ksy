@@ -47,27 +47,33 @@ seq:
   - id: opcode
     type: u4
     doc: "Fixed 0x135 (309 decimal). Confirmed live, big-endian."
-  - id: header_04
+  - id: uninitialised_4
     type: u4
-    doc: "Offset 4:8. A value/flags word (live `d0 04 01 a0`). Not independently decoded; mirrors the RoomCreate serialization shape."
+    doc: "Offset 4:8. NEVER WRITTEN by the sender - uninitialised stack. RESOLVED 2026-08-18: FUN_00ad6c70's buffer stores (base r1+144) are exactly at 144/152/156/160/164/166/168/172/174/176(r1); there is no store to 148(r1) = wire 4. The pointer-shaped live value `d0 04 01 a0` is stack residue. Was `header_04`."
   - id: search_obj_ptr
     type: u4
-    doc: "Offset 8:12. The client's own search-object pointer (live 0x01383bd8). This is the value the server's 0x136 RoomSearch reply MUST echo back at its own offset 8 - the 0x136 handler dereferences and writes the game list through it. See protos/0x136_room_search.ksy."
+    doc: "Offset 8:12. The client's own search-object pointer (live 0x01383bd8, `mr`/store from the search object). This is the value the server's 0x136 RoomSearch reply MUST echo back at its own offset 8 - the 0x136 handler dereferences and writes the game list through it. See protos/0x136_room_search.ksy."
   - id: field_0c
     type: u4
-    doc: "Offset 12:16. A small mode-shaped field (live 0x00000002). Corresponds to RoomCreate's room_field_0c (room_obj+0x0c)."
+    doc: "Offset 12:16. `*(u32*)(search_obj+0x0C)` (`lwz r11,12(r29)` @ 0xad6c90, `stw r11,156(r1)`) - literally the SAME struct offset as RoomCreate's room_field_0c (room_obj+0x0c), so it inherits the same map-vs-team dispute (research/notes/2026-08-16-map-id-vs-team-confound.md). Live 0x00000002. Resolving the writer of +0x0c settles both messages at once."
   - id: room_flags_10
     type: u4
-    doc: "Offset 16:20. Room/search flags (live `10 2c 50 3f`), same shape as RoomCreate's room_flags_e8."
+    doc: "Offset 16:20. `*(u32*)(search_obj+0xE8)` conditionally OR'd with 0x40000000 (`lwz r0,232(r29)` @ 0xad6cd0, `oris r0,r0,16384` @ 0xad6cf0) - identical construction to RoomCreate's room_flags_e8. Live `10 2c 50 3f`. (The oris gate compares r10, whose definition is outside the function body - gate condition untraced.)"
   - id: value_pair_14
     size: 4
-    doc: "Offset 20:24. The 0x03e8/0x03e8 (1000/1000) u16 pair, as in RoomCreate."
+    doc: "Offset 20:24. The 0x03e8/0x03e8 (1000/1000) u16 pair, same source as RoomCreate's value_20/value_22 (the two float out-params of _opd_FUN_00acb6bc, fctiwz->sth). Likely a default rating pair; disabled/constant in all live captures."
   - id: burst_marker
     type: u2
-    doc: "Offset 24:26 (wire 0x18). BURST/criteria marker. Steps 5, 10, 10, 0, 0 across the ~5 searches of one find-match burst. The stub keys its serialized election on marker==5 (criteria 0 = a fresh burst start) - see the doc note above."
-  - id: pad_1a
-    size: 6
-    doc: "Offset 26:32. Zero across captures."
+    doc: "Offset 24:26 (wire 0x18). BURST/criteria marker = the sender's own 3rd argument (`mr r31,r5` @ 0xad6cc8, `sth r31,168(r1)` @ 0xad6d28), a caller-supplied criteria index from the find-match state machine. Steps 5, 10, 10, 0, 0 across the ~5 searches of one burst. The stub keys its serialized election on marker==5 (criteria 0 = a fresh burst start) - see the doc note above."
+  - id: uninitialised_1a
+    size: 2
+    doc: "Offset 26:28. NEVER WRITTEN by the sender - uninitialised stack (happens to capture as 0). RESOLVED 2026-08-18 from the store enumeration above. Was the first 2 bytes of `pad_1a`."
+  - id: search_window_lo
+    type: u2
+    doc: "Offset 28:30. `max(0, param_5 - param_6)` when param_5 >= 0, else 0 (`subf/not/srawi/and` clamp @ 0xad6d90-0xad6dc4). The low end of a rating/filter window; 0 in all live captures (the window is disabled while searching). Was the middle of `pad_1a`."
+  - id: search_window_hi
+    type: u2
+    doc: "Offset 30:32. `param_5 + param_7` when param_5 >= 0, else 0 (same clamp). The high end of the rating/filter window; 0 in all live captures. Was the tail of `pad_1a`."
   - id: locale
     size: 4
-    doc: "Offset 32:36 (wire 0x20). Region/language, live `75 73 00 01` = 'us\\0' + language 1 (same as RoomCreate's region_language). Present on criteria-0 searches; later criteria in a burst send zeros here."
+    doc: "Offset 32:36 (wire 0x20). Region/language, zeroed by default (`stw r26,176(r1)` @ 0xad6d1c) and overwritten with region|language only when param_4 != 0. Live `75 73 00 01` = 'us\\0' + language 1 on criteria-0 searches (same as RoomCreate's region_language); later criteria in a burst send zeros here."

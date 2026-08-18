@@ -11,8 +11,9 @@ doc: |
   0x13f/HostFlagUpdated, the server's confirmation of the same flag change.
 
   RENAMED from `set_attr_flags` to match the disassembly-verified opcode
-  map's confirmed field shape: a single flag byte plus a fixed-constant
-  "kind" byte, not a generic attribute-flags word.
+  map's confirmed field shape: a single flag byte plus a "kind" byte that
+  discriminates the two sender paths (3 or 4), not a generic attribute-flags
+  word.
 
   STATUS: confirmed 16 bytes. Two distinct sender call sites build and send
   this shape (builders at 0x00ad6b58 and 0x00ad7120), differing in how the
@@ -32,7 +33,7 @@ seq:
     doc: "Offset 4:5. A single boolean-shaped byte (0 or 1), derived differently by each of the two confirmed sender call sites - see doc for both. Written into the matched room's +0x19f4 'is host' flag by 0x13f's handler on the round trip."
   - id: kind
     type: u1
-    doc: "Offset 5:6. Fixed constant, 3 for both confirmed builders (0x00ad6b58 / 0x00ad7120). Purpose unconfirmed - plausibly a request-reason/source tag."
+    doc: "Offset 5:6. A sender-path discriminator, 3 or 4 depending on which builder sent it - NOT a fixed constant. CORRECTED 2026-08-18 (objdump): builder FUN_00ad6a34 stores 3 (`li r0,3` @ 0xad6b64, `stb r0,117(r1)` @ 0xad6b6c), builder FUN_00ad7024 stores 4 (`li r0,4` @ 0xad7130, `stb r0,117(r1)` @ 0xad713c); buffer base r1+112 so wire 5. The companion doc's opcode-map row already had this right. Which UI/game path drives each builder was not traced; plausibly a request-reason/source tag."
   - id: unknown_2
     size: 2
     doc: "Offset 6:8. Not written by either confirmed sender - unconfirmed."

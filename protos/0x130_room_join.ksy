@@ -57,9 +57,18 @@ seq:
   - id: unknown_3
     size: 3
     doc: "Offset 13:16. Not written by the traced disassembly - unconfirmed."
-  - id: param3_value
-    size: 8
-    doc: "Offset 16:24. Raw (unswapped) 8-byte copy of the function's third argument (`std r29,0x80(r1)`). This argument's own source/meaning at RoomJoin's call site was not traced this pass."
+  - id: room_id
+    type: u8
+    doc: |
+      Offset 16:24. The TARGET room's id - the room the client is asking to
+      join. RESOLVED 2026-08-18: the GAME_LIST_PICK join helper
+      `_opd_FUN_003b2f40` calls `vtable+0x18(join_obj, state, *(session+0x98))`
+      where `*(session+0x98)` was just compared equal to the picked 0x136
+      RoomSearch entry's room_id (research/notes/2026-08-17-find-match-flow.md
+      section 2); the raw 8-byte copy here (`std r29,0x80(r1)`) is that value.
+      Live-proven: the server (server/session_manager.py) reads chunk[0x10:0x18]
+      as the target room id and Join Party + find-match joins work on that
+      basis. Was previously the untraced `param3_value`.
   - id: member_data
     type: member_data
     doc: |

@@ -2,6 +2,8 @@ meta:
   id: netmatchmaking_client_hello
   endian: be
   license: CC0-1.0
+  imports:
+    - common/np_id
 doc: |
   Direction: client-to-server
 
@@ -32,12 +34,12 @@ seq:
   - id: opcode
     type: u4
     doc: "Fixed literal 0x12d (301 decimal) = NetMatchmakingClientHello's own numeric ID in the 28-entry NetMatchmaking opcode table. Explicit `li r0,0x12d; li r3,0x12d` then stored, plain big-endian - the call this project previously described as a byte-swap (FUN_00a0e324) is a confirmed no-op, see research/notes/2026-08-15-byteswap-helper-is-a-noop.md."
-  - id: unknown_field
+  - id: reserved_4
     type: u4
-    doc: "A second Init()-local u32 (register r25 in the disassembly). Source register's own load site was outside this pass's disassembly window - not traced. Do not assume any particular meaning."
+    doc: "Offset 4:8. Constant 0. RESOLVED 2026-08-18: register r25 is defined only by `li r25,0` @ 0xad7270 before its single buffer store `stw r25,156(r1)` @ 0xad74ac (buffer base r1+0x98 = 152, so 156 = wire 4); the same r25 also drives the cursor reset `*(param_1+0x24054)=0`. Value known, purpose unknown - do not attribute meaning."
   - id: np_id
-    size: 36
-    doc: "Verbatim copy of this connection object's own fields at offset +4 through +0x24, which FUN_003557a8 (the caller) populates, just before calling Init(), from the SAME 36-byte NpId-derived block it copies at its own function entry from sceNpManagerGetNpId's output. In other words: this is the local player's own SceNpId (their PSN online ID + Sony's reserved padding), not anything session-manager-specific. Sony's internal SceNpId sub-field layout was not independently re-derived in this pass - treat this as one opaque 36-byte blob to copy through verbatim in a stub implementation, not as something to parse."
-  - id: trailing_unconfirmed
+    type: np_id
+    doc: "Offset 8:44. The local player's own 36-byte SceNpId (see common/np_id.ksy), a verbatim copy of this connection object's fields at +4..+0x24, which FUN_003557a8 populates from sceNpManagerGetNpId's output before calling Init(). The first 16 bytes are the online-id handle (visible as \"comradesean\" in captures); the rest is the SceNpId term/opt/reserved tail."
+  - id: uninitialised_2c
     size: 4
-    doc: "Final 4 bytes of the 48-byte message. Not captured in this pass's disassembly window (the raw disasm excerpt examined started at the first store into this buffer and covered offsets 0-43; offset 44-47's producing instruction(s) were not located). Genuinely unconfirmed, not a placeholder guess."
+    doc: "Offset 44:48. NEVER WRITTEN by the sender - uninitialised stack. RESOLVED 2026-08-18: FUN_00ad71a0's buffer stores are exactly 152/156/160-192(r1) (wire 0-43); there is no store to 196(r1) (wire 44). Same class as RoomCreate offset 4. Was `trailing_unconfirmed`."

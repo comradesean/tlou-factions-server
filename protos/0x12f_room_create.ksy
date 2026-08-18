@@ -120,7 +120,9 @@ seq:
       common/member_data.ksy. Its length is member_data_length above (0x20).
       The stub harvests chunk[0xa8:0xc8] on every RoomCreate and reuses it as
       this member's card. (The old "team-selection u16 at wire 0xb0" finding
-      is now member_data.team at offset 8 of this record.)
+      is now member_data.team at offset 9 of this record - the u16 read cleanly
+      as 0/1/2 because offset 8, member_data.capability_flag, was 0 in every
+      capture; see the member_data.ksy 2026-08-18 boundary revision.)
   - id: room_settings_tail
     size: 32
     doc: |
