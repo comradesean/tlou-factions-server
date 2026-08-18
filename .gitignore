@@ -45,6 +45,3 @@ protos/*.py
 /003433d0
 /012bc660
 /0x00ad33d8
-
-# --- Local project conventions (kept out of tracking) ---
-/CONVENTIONS.md
