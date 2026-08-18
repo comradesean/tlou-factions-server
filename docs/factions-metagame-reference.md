@@ -686,8 +686,8 @@ carve-out and on "The player can quit this match without any consequences", but 
 
 ### 4.1 There is no named story campaign
 
-`[CONFIRMED — negative finding]` Worth stating plainly because the task asked for "named
-story milestones": **Factions has no named, ordered story missions.** The Journey is a
+`[CONFIRMED — negative finding]` Worth stating plainly because "named
+story milestones" was an explicit research question: **Factions has no named, ordered story missions.** The Journey is a
 fixed *calendar of event slots*; what fills each slot is a randomly-chosen flavour event,
 and the player then picks a gameplay objective ("mission") to attempt against it. There is
 no "Week 3: "The Dam"" style script.
@@ -954,7 +954,7 @@ relative to in-game.
 
 `[LOCAL-XREF]` This repo has already observed a rank field on the wire — see
 `research/notes/2026-08-17-member-data-blob-rank-and-0x142-hostrank.md` and the `HostRank`
-reply work in `tools/`. The public record above says that value should be interpretable as
+reply work in `server/`. The public record above says that value should be interpretable as
 **cumulative weeks survived, 0–999**, with the displayed symbol derived from completed
 journeys. Worth validating against captured values.
 
