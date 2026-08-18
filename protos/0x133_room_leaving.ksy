@@ -21,11 +21,20 @@ doc: |
   client's own receive-dispatch (FUN_00ad7604) has a case for, so no reply is
   expected - live-confirmed 2026-08-15 (a same-opcode echo reply had zero
   effect on client behavior either way).
+
+  WIRE SIZE CORRECTION 2026-08-18: the message is 16 bytes, not 12. The
+  sender is `_opd_FUN_00acb93c(..., 0x10, 1)` (0x10 = 16 bytes) with the
+  opcode built into the buffer first, exactly like every sibling in this
+  family; an earlier version of this schema omitted the leading opcode field
+  and only accounted for 12 of the 16 wire bytes.
 doc-ref: ../docs/protocol/session_manager_and_matchmaking.md
 seq:
+  - id: opcode
+    type: u4
+    doc: "Offset 0:4. Fixed 0x133 (307 decimal), built into the send buffer before transmit like every sibling opcode. Plain big-endian (the family's FUN_00a0e324 pass-through is a confirmed no-op, research/notes/2026-08-15-byteswap-helper-is-a-noop.md)."
   - id: unknown
     type: u4
-    doc: "STATUS: confirmed garbage. Instruction-level trace (objdump) shows this 4 bytes is read from a stack slot the sending function never writes - genuinely uninitialized stack content at send time, not meaningful data. Matches live captures showing an arbitrary, non-repeating stack-address-shaped value here."
+    doc: "Offset 4:8. STATUS: confirmed garbage. Instruction-level trace (objdump) shows this 4 bytes is read from a stack slot the sending function never writes - genuinely uninitialized stack content at send time, not meaningful data. Matches live captures showing an arbitrary, non-repeating stack-address-shaped value here."
   - id: room_id
     type: u8
     doc: "STATUS: confirmed. The room object's own +0x10 id field, read and sent immediately before the client zeroes that same +0x10 field locally. Matches the room_id this server assigns via Member's header. Sent as a raw copy with no processing call around it at all, unlike the opcode field which is passed through FUN_00a0e324 first - though that call is itself a confirmed no-op (research/notes/2026-08-15-byteswap-helper-is-a-noop.md), so both fields end up plain big-endian regardless."
