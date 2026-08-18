@@ -276,6 +276,7 @@ def main():
     bad = []               # (dir, op, note, hex)
     padhits = {}           # (op, field) -> {valhex: count}
     census = {}            # (dir, op, field) -> {valhex: [refs]}
+    perop = {}             # op -> [(nonpad_key, {padfield: valhex})]  checksum test
     nmsg = 0
 
     for (conn, direction), stream in sorted(streams.items()):
@@ -306,13 +307,20 @@ def main():
                             msg.hex()))
                 continue
             ref = f"conn{conn}#{idx}"
+            padvals = {}
+            nonpad = []
             for path, val in fields:
                 leaf = path.split(".")[-1]
                 key = (direction, op, path)
                 census.setdefault(key, {}).setdefault(vhex(val), []).append(ref)
-                if is_padding(leaf) and nonzero(val):
-                    d = padhits.setdefault((op, path), {})
-                    d[vhex(val)] = d.get(vhex(val), 0) + 1
+                if is_padding(leaf):
+                    padvals[path] = vhex(val)
+                    if nonzero(val):
+                        d = padhits.setdefault((op, path), {})
+                        d[vhex(val)] = d.get(vhex(val), 0) + 1
+                else:
+                    nonpad.append((path, vhex(val)))
+            perop.setdefault(op, []).append((tuple(nonpad), padvals))
 
     def opname(op):
         return f"{op:#x} {OPCODES.get(op, ('?',))[0]}"
@@ -347,6 +355,37 @@ def main():
         print(f"  {opname(op)} :: {path}")
         for vh, cnt in sorted(vals.items()):
             print(f"        {vh}   x{cnt}")
+
+    print("\n## 4b. CHECKSUM TEST  (is a 'padding' field a function of the message?)")
+    print("     A checksum/cipher field is DETERMINED by the rest of the message;")
+    print("     residue varies INDEPENDENTLY. For each padding field: do two")
+    print("     messages with identical non-padding content ever differ here?")
+    any_susp = False
+    for op in sorted(perop):
+        rows = perop[op]
+        pfields = set()
+        for _k, pv in rows:
+            pfields |= set(pv.keys())
+        for pf in sorted(pfields):
+            groups = {}
+            for nonpad, pv in rows:
+                if pf in pv:
+                    groups.setdefault(nonpad, set()).add(pv[pf])
+            allvals = set().union(*groups.values()) if groups else set()
+            independent = any(len(v) > 1 for v in groups.values())
+            if len(allvals) <= 1:
+                verdict = "CONSTANT here (need varied conditions to decide)"
+            elif independent:
+                verdict = ("RESIDUE-CONFIRMED - same content, different value "
+                           "=> not a checksum/cipher")
+            else:
+                verdict = ("!! CO-VARIES with content - POSSIBLE checksum, "
+                           "verify the builder for a compute+store")
+                any_susp = True
+            print(f"  {opname(op)} :: {pf:<22} {verdict}")
+    if not any_susp:
+        print("  (no field co-varies with content as a checksum would; but "
+              "CONSTANT-here fields stay open until conditions are varied)")
 
     print("\n## 5. FIELD CENSUS (distinct values per field; VARIES = worth a look)")
     last_op = None
