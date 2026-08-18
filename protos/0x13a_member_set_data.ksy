@@ -42,9 +42,9 @@ seq:
   - id: blob_length
     type: u1
     doc: "Offset 4. The client's own declared length of the member blob that follows at offset 16. Live-constant 0x20 = 32 across every capture. This is the value the server must echo as 0x13b's length byte and seed as Member entry offset 39 - the rank/loadout UI getter (_opd_FUN_00ad2650) accepts the blob ONLY if it is exactly 32. (Earlier this whole 4-byte span was recorded as one constant 0x2026e00c; newer captures show byte 4 fixed at 0x20 and bytes 5-7 varying, so byte 4 is the length and 5-7 are a separate per-send field.)"
-  - id: uninit_5
+  - id: pad_5
     size: 3
-    doc: "Offset 5:8. NEVER WRITTEN by the sender - uninitialised stack. The full sender body FUN_00ad6148 (buffer base r1+0x70) writes exactly four things: opcode (r1+112), length byte (r1+116), room id (r1+120), and the memcpy to r1+128; bytes 5:7 (r1+117..119) get no store. The varying values seen across captures (e.g. 3a e1 48 / 9f a9 6c) are stack residue, not a per-send sequence/checksum. Same class as 0x13e/0x140/0x142."
+    doc: "Offset 5:8. Alignment padding. DEFINITION: the 3-byte gap between the 1-byte blob_length (wire 4) and the 8-byte-aligned room_id (wire 8). REASON: the sender FUN_00ad6148 writes exactly opcode(112), length byte(116), room_id(120, `std`) and the memcpy to 128; bytes 117..119 get no store, so they align room_id. The varying values across captures (e.g. 3a e1 48 / 9f a9 6c) are stack residue, not a sequence/checksum. Send 0. (Was `uninit_5`.)"
   - id: room_id
     type: u8
     doc: "Offset 8:16. The currently-open room's room_id (the value the server assigned via Member's header), sourced from room+0x10 (`std r9,120(r1)` @ 0xad6264). Used by the stub to route the relay to that room's members. Low 4 bytes coincide with the room-object pointer only because the stub derives room_id from RoomCreate's wire bytes; that is a stub artifact, not a wire requirement."

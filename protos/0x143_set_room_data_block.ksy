@@ -48,9 +48,9 @@ seq:
   - id: opcode
     type: u4
     doc: "Fixed 0x143 (323 decimal), passed through _opd_FUN_00a0e324 before send - a confirmed no-op (research/notes/2026-08-15-byteswap-helper-is-a-noop.md), so this stays plain big-endian."
-  - id: unknown_4
+  - id: pad_4
     size: 4
-    doc: "Offset 4:8. Not written by either confirmed sender - uninitialised stack, same pattern as RoomCreate offset 4 and SetHostFlag offset 6."
+    doc: "Offset 4:8. Send-side alignment padding. DEFINITION: the 4-byte gap before the 8-byte-aligned room_id in the client's outbound packet. REASON: the builder (0x00ad5528) leaves offset 4 uninitialised, and there is NO client receive arm for 0x143 (whole-binary: no `cmpwi ...,323`), so nothing ever reads it - it only aligns room_id. Send 0. (Was `unknown_4`.)"
   - id: room_id
     type: u8
     doc: "Offset 8:16. Raw (unswapped) copy of the room object's own +0x10 room-id field."

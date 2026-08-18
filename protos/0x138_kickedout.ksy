@@ -30,9 +30,9 @@ seq:
   - id: opcode
     type: u4
     doc: "Fixed 0x138 (312 decimal)."
-  - id: unknown_4
+  - id: pad_4
     size: 4
-    doc: "Offset 4:8. Not read by the traced portion of the 0x138 dispatch case - unconfirmed."
+    doc: "Offset 4:8. Alignment padding. DEFINITION: the 4-byte gap before the 8-byte-aligned room_id (wire 8). REASON: the 0x138 receive arm reads only room_id (`ld r3,8(r29)` @0xad7f50); offset 4 is never loaded, it just aligns room_id. Send 0. (Was `unknown_4`.)"
   - id: room_id
     type: u8
     doc: "Offset 8:16. Matched against the connection's room slots by the 0x00ad7f28 handler; on a match, that room is left via RequestLeave."

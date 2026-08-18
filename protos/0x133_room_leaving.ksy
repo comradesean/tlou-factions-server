@@ -32,9 +32,9 @@ seq:
   - id: opcode
     type: u4
     doc: "Offset 0:4. Fixed 0x133 (307 decimal), built into the send buffer before transmit like every sibling opcode. Plain big-endian (the family's FUN_00a0e324 pass-through is a confirmed no-op, research/notes/2026-08-15-byteswap-helper-is-a-noop.md)."
-  - id: unknown
+  - id: pad_4
     type: u4
-    doc: "Offset 4:8. STATUS: confirmed garbage. Instruction-level trace (objdump) shows this 4 bytes is read from a stack slot the sending function never writes - genuinely uninitialized stack content at send time, not meaningful data. Matches live captures showing an arbitrary, non-repeating stack-address-shaped value here."
+    doc: "Offset 4:8. Unused word. DEFINITION: not a field. REASON: builder FUN_00ad65e8 reads this slot from uninitialised stack (`lwz r3,116(r1)` @0xad66a8) and writes the same value back through the no-op swap (`stw r3,116(r1)` @0xad66bc) with no prior init - a pass-through of stack garbage, not a deliberate store. Live captures show non-repeating stack-address-shaped values. Send 0. (Was `unknown`.)"
   - id: room_id
     type: u8
     doc: "STATUS: confirmed. The room object's own +0x10 id field, read and sent immediately before the client zeroes that same +0x10 field locally. Matches the room_id this server assigns via Member's header. Sent as a raw copy with no processing call around it at all, unlike the opcode field which is passed through FUN_00a0e324 first - though that call is itself a confirmed no-op (research/notes/2026-08-15-byteswap-helper-is-a-noop.md), so both fields end up plain big-endian regardless."

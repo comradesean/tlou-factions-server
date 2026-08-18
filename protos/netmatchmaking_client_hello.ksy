@@ -40,6 +40,6 @@ seq:
   - id: np_id
     type: np_id
     doc: "Offset 8:44. The local player's own 36-byte SceNpId (see common/np_id.ksy), a verbatim copy of this connection object's fields at +4..+0x24, which FUN_003557a8 populates from sceNpManagerGetNpId's output before calling Init(). The first 16 bytes are the online-id handle (visible as \"comradesean\" in captures); the rest is the SceNpId term/opt/reserved tail."
-  - id: uninitialised_2c
+  - id: pad_2c
     size: 4
-    doc: "Offset 44:48. NEVER WRITTEN by the sender - uninitialised stack. RESOLVED 2026-08-18: FUN_00ad71a0's buffer stores are exactly 152/156/160-192(r1) (wire 0-43); there is no store to 196(r1) (wire 44). Same class as RoomCreate offset 4. Was `trailing_unconfirmed`."
+    doc: "Offset 44:48. Trailing padding. DEFINITION: the unused final 4 bytes of the 48-byte hello. REASON: the builder FUN_00ad71a0's buffer stores are exactly 152/156/160-192(r1) (wire 0..43); there is no store to 196(r1) (wire 44), so it is left as stack and just fills the message to 48 bytes. Send 0. (Was `uninitialised_2c` / earlier `trailing_unconfirmed`.)"

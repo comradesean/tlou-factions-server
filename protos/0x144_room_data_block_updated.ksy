@@ -45,9 +45,9 @@ seq:
   - id: opcode
     type: u4
     doc: "Fixed 0x144 (324 decimal), passed through FUN_00a0e324 in place before dispatch - a confirmed no-op (research/notes/2026-08-15-byteswap-helper-is-a-noop.md), so this stays plain big-endian."
-  - id: unknown_4
+  - id: pad_4
     size: 4
-    doc: "Offset 4:8. Not read by the 0x144 dispatch case at all."
+    doc: "Offset 4:8. Alignment padding. DEFINITION: the 4-byte gap before the 8-byte-aligned room_id (wire 8). REASON: the 0x144 receive arm reads only room_id (`ld r10,8(r29)` @0xad83c0) then strcpy's the data_block from wire+16; offset 4 is never loaded, it just aligns room_id. Send 0. (Was `unknown_4`.)"
   - id: room_id
     type: u8
     doc: "Offset 8:16. Compared against `*(s64*)(room_obj+0x10)` for each of the 4 room slots."

@@ -43,9 +43,9 @@ seq:
   - id: blob_length
     type: u1
     doc: "Offset 6:7. Used both as the byte count copied from the trailing blob and stored verbatim into the matched member's own struct at +0xf8."
-  - id: unknown_1
+  - id: pad_7
     size: 1
-    doc: "Offset 7:8. Not read by the traced portion of the 0x13b dispatch case - unconfirmed."
+    doc: "Offset 7:8. Alignment padding. DEFINITION: the single filler byte between blob_length (wire 6) and the 8-byte-aligned room_id (wire 8). REASON: the 0x13b arm reads offset 4 (`lhz` @0xad80a4), 6 (`lbz` @0xad813c), 8 (room_id `ld` @0xad80c8) and the blob; offset 7 is never loaded, it just aligns room_id. Send 0. (Was `unknown_1`.)"
   - id: room_id
     type: u8
     doc: "Offset 8:16. Compared against `*(s64*)(room_obj+0x10)` for each of the connection's 4 room slots (slot i's room-object pointer is at `this + i*0x9000 + 0x50`; verified by raw disasm this pass, the `addis r11,r11,1 / addi r11,r11,-28672` idiom is a 0x9000 stride). Silently dropped if no slot matches - and room_obj+0x10 is set ONLY by Member's (0x131) handler, so this message must follow a Member. Same room_id-echo pattern used throughout this opcode family."
@@ -58,6 +58,6 @@ seq:
       requires exactly 32. Full field decode in protos/common/member_data.ksy
       (also carried by 0x131 roster entries and supplied by the client via
       0x13a).
-  - id: blob_padding
+  - id: reserved_blob_tail
     size: 32
-    doc: "Offset 48:80. The packet is always 80 bytes regardless of blob_length; with the live length of 32 these trailing bytes are unused padding (only the first blob_length bytes are copied into member+0xfc)."
+    doc: "Offset 48:80. Reserved tail of the member_data blob field. DEFINITION: the unused upper half of the fixed 64-byte blob region (wire 16:80). REASON: the destination member_slot+0xFC is 64 bytes wide so the wire reserves 64, but the live blob_length is 32, and the receiver's memcpy (`bl 0xe3e064` @0xad8140) copies only blob_length bytes; 48:80 is never read. The packet is fixed at 80 bytes. Send 0. (Was `blob_padding`.)"

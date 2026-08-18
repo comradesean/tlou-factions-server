@@ -64,9 +64,9 @@ seq:
   - id: opcode
     type: u4
     doc: "Fixed 0x132 (306 decimal)."
-  - id: unknown_field
+  - id: pad_4
     type: u4
-    doc: "Offset 4. Referenced by OTHER dispatch cases (e.g. 0x13b RoomDestroyed) as a u16-shaped 'room index' field, but not read anywhere in the traced 0x132 case itself. Unconfirmed for this opcode - stub sends zero."
+    doc: "Offset 4:8. Alignment padding. DEFINITION: the 4-byte gap before the 8-byte-aligned room_id. REASON: the LIVE 0x132 receive arm (@0xad7ac0, calling FUN_00ad33d8) reads room_id at `ld r3,8(r29)` @0xad7ae4 and never loads offset 4 - it just aligns room_id. (NB: it is the stub's build_room_joined that is dead code, not the client's receive handler, which is live.) Send 0. (Was `unknown_field`.)"
   - id: room_id
     type: u8
     doc: "Offset 8:16. The server-assigned room id, matched against `*(s64*)(room_obj+0x10)` across the connection's 4 room slots (the dispatch does nothing if no slot matches) - this is how the client correlates the reply with a room it is tracking. CORRECTED 2026-08-18: renamed from `create_id`, which claimed it must equal a RoomCreate `create_id` field - but 0x12f has no such field (its offset 4 is uninitialised stack). room_obj+0x10 is set only by Member (0x131); this is the same room_id-echo used by 0x134/0x139/0x13d/0x13f."
@@ -76,9 +76,9 @@ seq:
   - id: member_id
     type: u2
     doc: "Offset 0x34-0x35. CONFIRMED 2026-08-16: `lhz r0,36(r29)` @ 0x00ad7b4c where r29 = wire+0x10, i.e. wire offset 52. Stored as the joining member's own id (local struct +0x38, then slot+0xe8 in _opd_FUN_00ad33d8). Previously lumped into an unnamed 4-byte `flags_field`. Must be unique within the room and distinct from every member_id already registered via Member (0x131) - it is the key 0x134/RoomLeave and 0x13b look members up by."
-  - id: unknown_byte_36
+  - id: member_slot_ec
     type: u1
-    doc: "Offset 0x36. `lbz r9,38(r29)` -> local struct +0x40 -> slot+0xec. Unconfirmed."
+    doc: "Offset 0x36. DEFINITION: the 0x131-entry+0x38 analog - a byte the client copies into member_slot+0xEC (`lbz r9,38(r29)` @0xad7b50 -> reg-struct+0x40 -> `stw r0,236(r31)` @0xad34f8). REASON it exists: a real server->client field, but member_slot+0xEC has no reader (write-only, whole-band grep confirms), so it is inert. Send 0. (Was `unknown_byte_36`.)"
   - id: member_data_length
     type: u1
     doc: "Offset 0x37. The length of the member_data card that follows at 0x38. CORRECTED 2026-08-18 (was `unknown_byte_37`): the 0x132 handler builds the byte-for-byte identical local struct as the 0x131 per-entry loop - it sets `local_e0 = *(byte*)(wire+0x37)` and `local_e4 = wire+0x38`, exactly as 0x131 sets `local_e0 = entry+39` (the established member_data length) and `local_e4 = entry+40` (the member_data blob), and hands both to the same registration call `_opd_FUN_00ad33d8`. Evidence: research/ghidra/sessmgr_vtable_dump.txt lines 266-305 vs 214-245. Live 32 - the card UI getter demands exactly 32."

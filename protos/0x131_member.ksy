@@ -103,9 +103,9 @@ seq:
   - id: opcode
     type: u4
     doc: "Fixed 0x131 (305 decimal)."
-  - id: unknown_field
+  - id: pad_4
     type: u4
-    doc: "Offset 4. Touched (not swapped - see doc-level note) by _opd_FUN_00ad6e34 but not read anywhere in the traced 0x131 case body. Unconfirmed."
+    doc: "Offset 4:8. Alignment padding. DEFINITION: the 4-byte gap before the room_ptr/room_id block. REASON: the 0x131 arm's first real read is room_ptr (`lwz r24,8(r28)` @0xad77d4); offset 4 is only touched by the no-op helper `bl 0xad6e34` @0xad779c and never loaded, aligning the 8-byte room_id. Send 0. (Was `unknown_field`.)"
   - id: room_ptr
     type: u4
     doc: "Offset 8. Raw client-side room-object pointer, immediately dereferenced through its own vtable with no validity check. NEVER guess this value - read it from the same connection's RoomCreate (0x12f) wire offset 8, or RoomJoin (0x130) wire offset 8 on the join path. See the doc-level 'ROOM_PTR HAZARD - SOLVED' note above."
@@ -124,9 +124,9 @@ seq:
   - id: roster_count
     type: u2
     doc: "Offset 26. Number of member_entry records that follow the 160-byte header. Confirmed - directly used as the dispatch loop's own iteration bound and as the multiplier in the message's total-size check (`0x68 * roster_count + 0xa0`)."
-  - id: unknown_field2
+  - id: reserved_28
     type: u2
-    doc: "Offset 28. Touched (not swapped - see doc-level note) by _opd_FUN_00ad6e34 but not read in the traced case body. Unconfirmed."
+    doc: "Offset 28. Reserved header slot. DEFINITION: the first word of the fixed 160-byte (0xa0) header's unread tail, past the last live header field (roster_count at offset 26, read @0xad77b0/@0xad79e0). REASON: the header is padded to its declared 0xa0 size; nothing in the 0x131 arm loads offset 28. Send 0. (Was `unknown_field2`.)"
   - id: header_padding
     size: 130
     doc: "Offset 30-159. Not read by the traced code at all in this pass - padding to reach the confirmed 160-byte (0xa0) header size implied by the buffer-size-check arithmetic. Send zero."
@@ -144,9 +144,9 @@ types:
       - id: member_id
         type: u2
         doc: "Offset 36 within entry. This entry's own id, XOR-compared against the header's owner_ref_id/local_ref_id (0x00ad795c-0x00ad79bc: `xor` then `addi -1` then `srdi 63`, i.e. is_x = (member_id == x_ref_id)) to derive the is_local/is_owner arguments to `_opd_FUN_00ad33d8`. Those two flags are what set room_obj+0x19ec (my member id) and room_obj+0x19f0 (the owner's member id). Note they are only applied on FIRST registration of this NpId - see the doc-level first-write-wins note."
-      - id: unknown_byte
+      - id: member_slot_ec
         type: u1
-        doc: "Offset 38 within entry. Traced 2026-08-18 two hops but no reader found: `lbz r0,2(r7)` @ 0x00ad7858 (r7 = entry+36) -> registration-struct+0x40, then `_opd_FUN_00ad33d8` widens it `lbz r0,64(r29)` @ 0x00ad34f4 -> member_slot+0xEC (`stw r0,236(r31)` @ 0x00ad34f8). A sweep of the SessionManager band (0xad0000-0xada000) finds no load of displacement 236, so it is either dead or read from game code via computed offsets. Send 0."
+        doc: "Offset 38 within entry. DEFINITION: a per-member byte the client copies into member_slot+0xEC. REASON it exists: it is genuinely read off the wire (`lbz r0,2(r7)` @0xad7858, r7=entry+36 -> reg-struct+0x40 -> `stw r0,236(r31)` @0xad34f8), so it was a real server->client field - but member_slot+0xEC has NO reader anywhere in the SessionManager band (0xad0000-0xada000; whole-band grep for a disp-236 load returns zero), so it is write-only and functionally inert now. Send 0. (Was `unknown_byte`.)"
       - id: member_data_length
         type: u1
         doc: |
