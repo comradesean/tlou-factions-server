@@ -12,20 +12,20 @@ doc: |
   reader, so a server MUST ignore it and MUST NOT reply (a reply wedges the
   receive cursor).
 
-  NAME RESTORED 2026-08-18. An earlier pass renamed this to the placeholder
-  `room_u16_list_upload` out of caution. The newer evidence in
-  research/notes/2026-08-17-member-data-blob-rank-and-0x142-hostrank.md section 1
-  post-dates that and supports NetMatchmakingHostRank: the shifted declared-name
-  table matches by exact size across 4 messages plus 3 semantic corroborations
-  (high confidence for the MESSAGE name), and the collector FUN_0039b720 builds
-  the u16 list by iterating the 8 local-player slots of the NetGameManager player
-  array (0x0137D700 + i*0x920 + 0x40), filtering by seven state bytes, sorting
-  entries with `*(u8*)(player+0x3FF) != 0` first, then `out_u16[i] =
-  (u16)player->vtable[0](player)` (`bctrl` @ 0x39b920, `sth r3,0(r9)` @ 0x39b934).
-  The per-entry VALUE is the player vtable[0] getter's return - the same getter
-  used as the roster rank sort override - so "rank" is likely but MEDIUM
-  confidence (the one live sample was 0x0002 from an unranked account); the
-  getter's exact return semantics are untraced.
+  NAME RESTORED 2026-08-18, then HAND-CONFIRMED LIVE. An earlier pass renamed
+  this to the placeholder `room_u16_list_upload` out of caution; the opcode has
+  since been tested and confirmed by hand as HostRank, so the restoration
+  stands (not medium-confidence any more at the message level). Supporting
+  decompile evidence: the shifted declared-name table matches by exact size
+  across 4 messages plus 3 semantic corroborations, and the collector
+  FUN_0039b720 builds the u16 list by iterating the 8 local-player slots of the
+  NetGameManager player array (0x0137D700 + i*0x920 + 0x40), filtering by seven
+  state bytes, sorting entries with `*(u8*)(player+0x3FF) != 0` first, then
+  `out_u16[i] = (u16)player->vtable[0](player)` (`bctrl` @ 0x39b920,
+  `sth r3,0(r9)` @ 0x39b934). The per-entry VALUE is the player vtable[0]
+  getter's return (the same getter used as the roster rank sort override);
+  the message is a per-player rank report. Only the exact numeric encoding of
+  each u16 (vs a captured ranked-account value) remains to be pinned down.
 
   STATUS: variable-length message, a 16-byte header plus a `count * 2`-byte
   trailing payload copied verbatim from a caller-supplied buffer
@@ -50,4 +50,4 @@ seq:
     type: u2
     repeat: expr
     repeat-expr: count
-    doc: "Offset 16 onward, count*2 bytes. One u16 per qualifying local player, collected by FUN_0039b720 from the player array (see doc): each value is that player's vtable[0] getter return, sorted by the +0x3FF flag. Likely a per-player rank (MEDIUM confidence - one live sample 0x0002 from an unranked account, getter semantics untraced). Server ignores this message; it need not interpret the values."
+    doc: "Offset 16 onward, count*2 bytes. One u16 per qualifying local player, collected by FUN_0039b720 from the player array (see doc): each value is that player's vtable[0] getter return, sorted by the +0x3FF flag - a per-player rank (message hand-confirmed as HostRank). Only the exact numeric encoding of each u16 is still open (one live sample 0x0002 from an unranked account). Server ignores this message; it need not interpret the values."

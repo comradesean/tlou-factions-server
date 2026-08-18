@@ -448,12 +448,13 @@ ticket-server's own dead-IP era, see `research/notes/net1bin-server-list.md`.)
 > against the EBOOT this session) revised several rows below; where this doc
 > and a `.ksy` file disagree, **the `.ksy` is authoritative** for wire layout.
 > The concrete reversals of earlier hedges in this file:
-> - **0x142** — name **restored to `HostRank`** (file `protos/0x142_host_rank.ksy`).
->   The row-21 retraction ("never confirmed, treat host-rank as retracted") is
->   superseded: the collector `FUN_0039b720` builds the u16 list from the local
->   player slots, and the shifted declared-name table matches by exact size
->   across 4 messages. Per-entry "rank" value semantic is medium-confidence; the
->   message name is now well-supported.
+> - **0x142** — name **restored to `HostRank`** (file `protos/0x142_host_rank.ksy`)
+>   and **hand-confirmed live 2026-08-18**. The row-21 retraction ("never
+>   confirmed, treat host-rank as retracted") is superseded: the collector
+>   `FUN_0039b720` builds the u16 list from the local player slots, the shifted
+>   declared-name table matches by exact size across 4 messages, and the opcode
+>   was tested by hand. Only the exact numeric encoding of each per-player u16
+>   remains to be pinned against a ranked-account capture.
 > - **0x143 / 0x144** — the 128-byte block is a **NUL-terminated string, not an
 >   opaque block**. The `_opd_FUN_00e45b10` = strcpy reading (rows 22/23 marked
 >   "not reconfirmed / treat as open") was independently **re-verified** this

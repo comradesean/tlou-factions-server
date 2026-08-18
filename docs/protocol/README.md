@@ -194,7 +194,7 @@ names used for 0x142/0x143/0x13e/0x13c elsewhere on this page:
 | 0x13e | `SetHostFlag` | client→server | kind byte `3` or `4`@offset 5 — a sender-path discriminator, not a constant (corrected 2026-08-18) | `protos/0x13e_set_host_flag.ksy` |
 | 0x13f | `HostFlagUpdated` | server→client | writes `room+0x19f4` | `protos/0x13f_host_flag_updated.ksy` |
 | 0x140 / 0x141 | `SetRoomAttr` / `RoomAttrUpdated` | client→server / server→client | writes `room+0x1f0`; meaning still unknown | (existing `.ksy`) |
-| 0x142 | `HostRank` | client→server | `16 + 2*count` bytes; one u16 per local player from the `FUN_0039b720` collector — name restored 2026-08-18, per-value "rank" medium-confidence | `protos/0x142_host_rank.ksy` |
+| 0x142 | `HostRank` | client→server | `16 + 2*count` bytes; one u16 per local player from the `FUN_0039b720` collector — hand-confirmed live 2026-08-18, only per-u16 numeric encoding still open | `protos/0x142_host_rank.ksy` |
 | 0x143 | `SetRoomDataBlock` | client→server | 128-byte field written to `room+0x18` via strcpy — a NUL-terminated string, not an opaque block (re-verified 2026-08-18) | `protos/0x143_set_room_data_block.ksy` |
 | 0x144 | `RoomDataBlockUpdated` | server→client | broadcasts the same 128-byte strcpy'd string block | `protos/0x144_room_data_block_updated.ksy` |
 
