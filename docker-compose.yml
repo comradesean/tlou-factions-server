@@ -1,0 +1,15 @@
+# One command to bring the whole backend up:  docker compose up
+#
+# network_mode: host binds the servers directly on the host's ports (80/7312-
+# 7314/7320) so RPCS3 (and a second client machine) reach them at the host's LAN
+# IP - the same IP you put in RPCS3's Network > IP/Hosts switches. Host networking
+# is native on Linux; under Docker Desktop/WSL2 verify the host IP is reachable
+# from RPCS3 (if not, use ./run.sh instead, which is otherwise identical).
+services:
+  tlou-backend:
+    build: ./server
+    network_mode: host
+    volumes:
+      - ./server/data:/app/server/data   # S3 mirror, profiles, leaderboard DB, FB assets
+      - ./server/logs:/app/server/logs
+    restart: unless-stopped

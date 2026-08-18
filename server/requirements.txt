@@ -1,0 +1,2 @@
+# The TLOU Factions revival servers use the Python standard library only -
+# no third-party packages to install. This file is a marker for tooling.
