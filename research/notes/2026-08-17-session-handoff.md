@@ -86,7 +86,7 @@ commits) as the solution; they are papering over the missing real join.
 ## Other root-caused items (server-adjacent, mostly P2P)
 
 - **Join Party (friends-list): UNRELIABLE, OPEN — QUARANTINED.** This session's
-  investigation and all its conclusions are archived at `archive/joinparty/` and
+  investigation and all its conclusions are archived at `research/joinparty/` and
   deliberately kept out of a fresh attempt. Do NOT read them before forming your own
   read. Invite-to-Party works; friends-list Join is the unreliable direction.
 - **Remote faction-model mismatch** (`2026-08-17-team-assignment-consistency.md`):

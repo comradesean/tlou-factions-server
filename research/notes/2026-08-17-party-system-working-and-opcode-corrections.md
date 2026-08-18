@@ -4,7 +4,7 @@
 Kick, and Promote all work, repeatedly, against two real RPCS3 machines. This
 closes the "Join Party: UNRELIABLE, OPEN — QUARANTINED" item carried forward
 from the prior session's handoff note (`2026-08-17-session-handoff.md`) and
-its archived investigation (`archive/joinparty/`) — this session did NOT read
+its archived investigation (`research/joinparty/`) — this session did NOT read
 that archive first (per its own README instruction), reached the answer
 independently via live PPU breakpoints, and only cross-checked afterward.
 
