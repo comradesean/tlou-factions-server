@@ -10,9 +10,23 @@ match → progression, leaderboards, and (in progress) the Facebook clan feature
 This is a legitimate reverse-engineering / game-preservation effort: the analysis
 target is a binary the project owner legally owns and runs under RPCS3.
 
-## Quick start (run the backend)
+## What you need
 
-The whole backend is one command — no more juggling five servers:
+- **A machine to run the backend** — Linux, macOS, or Windows (WSL2). Either
+  [Docker](https://docs.docker.com/get-docker/), or Python 3.8+ (the servers use
+  only the standard library — there is nothing to `pip install`).
+- **RPCS3 and your own legal copy of the game** (`BCUS98174`), already set up and
+  bootable in RPCS3.
+- **The game's content files** (`net1.bin.psarc.crypt` and friends), supplied
+  from your own copy — see step 2. These are copyrighted and are **not** shipped
+  in this repo.
+
+The backend and RPCS3 can be the same machine or two machines on the same LAN.
+If two machines, note the backend's **LAN IP** — you'll point RPCS3 at it.
+
+## 1. Start the backend
+
+The whole backend is one command — no juggling five servers:
 
 ```sh
 # Docker (recommended):
@@ -27,8 +41,55 @@ sudo ./run.sh            # foreground, Ctrl-C stops all  (sudo: http_gateway bin
 This starts all five servers: `http_gateway` (:80, S3 content + Facebook Graph),
 `ticket_server` (:7320, NP ticket + leaderboard + facebook-server),
 `session_manager` (:7314, matchmaking), `location_server` (:7312), `voice_server`
-(:7313). Then point RPCS3 at them — see **[client/README.md](client/README.md)**
-for the IP/Hosts switches, RPCN, and game-patch setup.
+(:7313).
+
+## 2. Supply the game content (one-time)
+
+The backend serves the game's content-delivery files from
+`server/data/served_content/` (gitignored — copyrighted). Place the files from
+your own game copy there (`net1.bin.psarc.crypt`, `net10.bin.psarc.crypt`, the
+campaign config, etc.); anything not present is fetched from the surviving
+upstream S3 buckets automatically where they still respond. How to capture these
+from your own client is described in
+**[docs/capture-howto.md](docs/capture-howto.md)**.
+
+## 3. Point RPCS3 at your backend
+
+The game reaches its backends by hostname (and a few hardcoded IPs). Redirect
+them all to your backend machine in **RPCS3 → Configuration → Network → IP/Hosts
+switches**. Paste this whole string into that one field, **replacing
+`192.168.1.100` with your backend's LAN IP** (use `127.0.0.1` if RPCS3 and the
+backend are the same machine):
+
+```
+*naughtydog.com=192.168.1.100&&*naughty-dog.com=192.168.1.100&&t1.patch.s3.amazonaws.com=192.168.1.100&&t1.campaign.config.s3.amazonaws.com=192.168.1.100&&t1.final.*.s3.amazonaws.com=192.168.1.100&&50.18.104.153=192.168.1.100&&50.18.47.114=192.168.1.100&&174.129.210.135=192.168.1.100&&s3.amazonaws.com=192.168.1.100&&graph.facebook.com=192.168.1.100&&api.facebook.com=192.168.1.100&&graph-video.facebook.com=192.168.1.100
+```
+
+Entries are `hostname=ip` joined by `&&`; `*` is a wildcard. What each group is
+for:
+
+- **Naughty Dog + S3** (`*naughtydog.com`, `*naughty-dog.com`, the
+  `*.s3.amazonaws.com` hosts) — the content-delivery backend `http_gateway`
+  answers.
+- **The three literal IPs** (`50.18.104.153`, `50.18.47.114`, `174.129.210.135`)
+  — dead server addresses hardcoded inside `net1.bin`; redirecting them here is
+  what points matchmaking/tickets at your backend without editing `net1.bin`.
+- **Facebook** (`graph.facebook.com`, `api.facebook.com`, `graph-video.facebook.com`)
+  — the clan feature's Graph calls, answered by the local Facebook stand-in.
+
+## 4. RPCN and game patches
+
+Two more RPCS3-side pieces — full details in
+**[client/README.md](client/README.md)**:
+
+- **RPCN** (NP authentication) — stock RPCN works unchanged, no fork needed;
+  use the public service or self-host [RipleyTom/rpcn](https://github.com/RipleyTom/rpcn).
+- **Patches** — copy the `patch.yml` files from
+  **[client/patches/](client/patches/)** into RPCS3's `patches/` folder and
+  enable them (one makes the Facebook connect flow succeed offline; one lowers
+  the find-match minimum for 2-client testing).
+
+Then boot the game and go to Factions online.
 
 ## Layout
 

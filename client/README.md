@@ -22,19 +22,29 @@ there (from every client machine).
 
 ## 3. Redirect the game's hosts (RPCS3 → Configuration → Network → IP/Hosts switches)
 
-The game reaches its content/social backends by hostname; redirect those to your
-backend's IP so `http_gateway` (:80) and the Facebook stand-in answer them. At
-minimum (`&&&`-separated):
+The game reaches its content/social backends by hostname (and a few hardcoded
+IPs); redirect those to your backend's IP so `http_gateway` (:80) and the
+Facebook stand-in answer them. The complete, copy-pasteable IP/Hosts string is
+in the **[top-level README, step 3](../README.md#3-point-rpcs3-at-your-backend)** —
+paste it into the IP/Hosts switches field and replace the placeholder IP with
+your backend's LAN IP.
 
-- S3 content: `t1.final.prod.s3.amazonaws.com`, `t1.patch.s3.amazonaws.com`,
-  `s3.amazonaws.com`, `t1.campaign.config.s3.amazonaws.com` → `<backend-ip>`
-- Facebook: `graph.facebook.com` (+ optionally `api.facebook.com`,
-  `graph-video.facebook.com`) → `<backend-ip>`
+Groups it covers:
 
-The sibling services (`ticket`/`leaderboard`/`facebook-server` :7320,
-`session_manager` :7314, `location` :7312, `voice` :7313) come from `net1.bin` as
-literal IPs, which this build already points at the backend host. The full,
-authoritative host list and the RPCS3 DNS-hook details are in
+- **S3 content + Naughty Dog** (`*naughtydog.com`, `*naughty-dog.com`,
+  `t1.patch.s3.amazonaws.com`, `t1.campaign.config.s3.amazonaws.com`,
+  `t1.final.*.s3.amazonaws.com`, `s3.amazonaws.com`) — served by `http_gateway`.
+- **Hardcoded `net1.bin` IPs** (`50.18.104.153`, `50.18.47.114`,
+  `174.129.210.135`) — the dead ticket/matchmaking server addresses baked into
+  `net1.bin`; redirecting them points those services at your backend without
+  editing `net1.bin`. The sibling services behind them are `ticket`/`leaderboard`/
+  `facebook-server` (:7320), `session_manager` (:7314), `location` (:7312),
+  `voice` (:7313).
+- **Facebook** (`graph.facebook.com`, `api.facebook.com`, `graph-video.facebook.com`).
+
+Entries are `hostname=ip` joined by `&&`, the hostname side a whole-string regex
+(`*` → `.*`, `.` → literal dot); **never prefix a scheme** like `http://`, or the
+match silently fails. The DNS-hook mechanics are detailed in
 **[docs/capture-howto.md](../docs/capture-howto.md)**.
 
 ## 4. Install the game patches
