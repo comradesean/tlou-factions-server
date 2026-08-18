@@ -40,7 +40,7 @@ seq:
   - id: count
     type: u2
     doc: "Offset 4:6. The sender's entry count (`sth r6,4(r29)` @ 0xad60dc), truncated to 16 bits and stored raw. Number of u16 entries in the trailing list (one per qualifying local player)."
-  - id: uninit_6
+  - id: pad_6
     size: 2
     doc: "Offset 6:8. NEVER WRITTEN by the sender - uninitialised stack. RESOLVED 2026-08-18: FUN_00ad5ffc stores opcode @ 0xad60d4, count @ 0xad60dc, room id @ 0xad60d8, and the memcpy to +16 @ 0xad60e0 - nothing at offset 6:7. Explains the live `00 00` vs `00 60` variation. Was `unknown_2`."
   - id: room_id

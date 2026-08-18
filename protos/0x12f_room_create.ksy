@@ -56,7 +56,7 @@ seq:
   - id: opcode
     type: u4
     doc: "Offset 0. Fixed 0x12f (303 decimal). `stw r0,144(r1)` @ 0x00ad5c40."
-  - id: uninitialised_4
+  - id: pad_4
     size: 4
     doc: "Offset 4:8. NEVER WRITTEN by the sender - uninitialised stack. Previously and wrongly documented as an 8-byte `create_id` spanning 4:12. Do not read anything from here; live captures show it varying between `01 27 23 d8` and `00 00 00 00` on the same client across sessions."
   - id: room_ptr
@@ -92,7 +92,7 @@ seq:
   - id: caller_arg_1c
     type: u2
     doc: "Offset 28:30. A caller-supplied argument (`sth r27,172(r1)` @ 0x00ad5c60, before r27 is reset to 0). Live values `ff ff` and `00 00`."
-  - id: uninitialised_1e
+  - id: pad_1e
     size: 2
     doc: "Offset 30:32. NEVER WRITTEN - uninitialised stack. tools/session_manager_stub.py reads max_players from here; that is a bug (see doc, correction 3). Live values `00 0a` and `00 00`."
   - id: value_20

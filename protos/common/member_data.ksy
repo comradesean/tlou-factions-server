@@ -142,7 +142,7 @@ seq:
       Offset 20:22. Second half of the same BE u32 `P+0x654` (byte stores to
       r1+0x8c/0x8d @ 0x003b1730+). UI card cell index 3. Same provenance and
       confidence as card_stat_2.
-  - id: uninit_tail
+  - id: pad_16
     size: 10
     doc: |
       Offset 22:32. Genuinely opaque - and NEVER WRITTEN BY THE PRODUCER for

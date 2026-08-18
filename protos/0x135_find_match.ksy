@@ -47,7 +47,7 @@ seq:
   - id: opcode
     type: u4
     doc: "Fixed 0x135 (309 decimal). Confirmed live, big-endian."
-  - id: uninitialised_4
+  - id: pad_4
     type: u4
     doc: "Offset 4:8. NEVER WRITTEN by the sender - uninitialised stack. RESOLVED 2026-08-18: FUN_00ad6c70's buffer stores (base r1+144) are exactly at 144/152/156/160/164/166/168/172/174/176(r1); there is no store to 148(r1) = wire 4. The pointer-shaped live value `d0 04 01 a0` is stack residue. Was `header_04`."
   - id: search_obj_ptr
@@ -73,9 +73,9 @@ seq:
   - id: burst_marker
     type: u2
     doc: "Offset 24:26 (wire 0x18). BURST/criteria marker = the sender's own 3rd argument (`mr r31,r5` @ 0xad6cc8, `sth r31,168(r1)` @ 0xad6d28), a caller-supplied criteria index from the find-match state machine. Steps 5, 10, 10, 0, 0 across the ~5 searches of one burst. The stub keys its serialized election on marker==5 (criteria 0 = a fresh burst start) - see the doc note above."
-  - id: uninitialised_1a
+  - id: pad_1a
     size: 2
-    doc: "Offset 26:28. NEVER WRITTEN by the sender - uninitialised stack (happens to capture as 0). RESOLVED 2026-08-18 from the store enumeration above. Was the first 2 bytes of `pad_1a`."
+    doc: "Offset 26:28. Uninitialised padding. DEFINITION: an unwritten 2-byte gap after burst_marker, before the search-window pair. REASON: FUN_00ad6c70's store enumeration (base r1+144) has no store to 170(r1) = wire 26; it captures as 0. Send 0. (This offset plus search_window_lo/hi below were once a single field wrongly named `pad_1a`.)"
   - id: search_window_lo
     type: u2
     doc: "Offset 28:30. `max(0, param_5 - param_6)` when param_5 >= 0, else 0 (`subf/not/srawi/and` clamp @ 0xad6d90-0xad6dc4). The low end of a rating/filter window; 0 in all live captures (the window is disabled while searching). Was the middle of `pad_1a`."
