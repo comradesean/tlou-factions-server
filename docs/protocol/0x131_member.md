@@ -65,7 +65,7 @@ lines ~100-113):
 | 8 | 4 | **`room_ptr`** - see hazard section below | high (mechanism), none (value) |
 | 12 | 2 | `owner_ref_id` - XOR-compared against each entry's own id | high |
 | 14 | 2 | `local_ref_id` - same mechanism, marks the local player's entry | high |
-| 16 | 8 | overwrites the target room object's own id field (`room_obj+0x10`) - the SAME field `RoomJoined`'s `create_id` gate-checks against | high (mechanism) |
+| 16 | 8 | overwrites the target room object's own id field (`room_obj+0x10`) - the SAME field `RoomJoined`'s `room_id` gate-checks against (that field was renamed from `create_id` 2026-08-18; 0x12f has no create_id) | high (mechanism) |
 | 24 | 2 | `capacity` - see "The `capacity` field" below | high (mechanism + value, live-confirmed) |
 | 26 | 2 | `roster_count` - confirmed, drives both the loop bound and the size check | high |
 | 28 | 2 | unknown - touched by the field helper but unread | low |
@@ -84,7 +84,7 @@ the entry's own id plus two more bytes:
 | 36 | 2 | `member_id` - XOR-compared against the header's `owner_ref_id`/`local_ref_id` | high |
 | 38 | 1 | unread byte in traced code | low |
 | 39 | 1 | **data-blob LENGTH** (CORRECTED 2026-08-17 — was "flags-shaped unread byte"): memcpy'd count for the blob at offset 40, written to `member_slot+0xF8`. The rank/loadout UI getter `_opd_FUN_00ad2650` returns the blob only if this is exactly 32 | high |
-| 40 | 64 | **per-member DATA BLOB** (CORRECTED 2026-08-17 — was "likely a name/NpId buffer"): the first `data-blob length` bytes are memcpy'd into `member_slot+0xFC`, the field the lobby reads for a REMOTE player's rank/title/loadout. The DISPLAY NAME is NOT here — it comes from the SceNpId in the first 16 bytes of the offset-0 attributes block. When 32 bytes: byte 8 flags, byte 9 title index, bytes 10..13 the host map-picker's recent-level ring (CORRECTED 2026-08-17 — was "four loadout item-ids"; it is NOT loadout, it is `NetGameManager+0x4982` recently-played map indices read by FUN_003a2310, see `protos/common/member_data.ksy`), u16 at byte 14 = rank value. Same blob the client supplies at runtime via `0x13a` and that is re-delivered per-member via `0x13b`. See `research/notes/2026-08-17-member-data-blob-rank-and-0x142-hostrank.md` | high (structure) |
+| 40 | 64 | **per-member DATA BLOB** (CORRECTED 2026-08-17 — was "likely a name/NpId buffer"): the first `data-blob length` bytes are memcpy'd into `member_slot+0xFC`, the field the lobby reads for a REMOTE player's rank/title/loadout. The DISPLAY NAME is NOT here — it comes from the SceNpId in the first 16 bytes of the offset-0 attributes block. When 32 bytes, decoded in `protos/common/member_data.ksy` (boundaries revised 2026-08-18 from the blob producer `FUN_003b15bc`): offset 0:8 `party_id` u64, byte 8 `capability_flag`, byte 9 `team`/faction (drives the faction name+colour lookup `FUN_0039c69c(blob[9]-1)`; loosely called "title index" before), bytes 10..13 the host map-picker's recent-level ring (`NetGameManager+0x4982` recently-played map indices read by FUN_003a2310, NOT loadout), u16 at byte 14 = `rank_value` (= journeys*1000 + weeks), then `rank_tier` + two customization words. Same blob the client supplies at runtime via `0x13a` and that is re-delivered per-member via `0x13b`. See `research/notes/2026-08-17-member-data-blob-rank-and-0x142-hostrank.md` | high (structure) |
 
 ## The `room_ptr` hazard - resolved
 
