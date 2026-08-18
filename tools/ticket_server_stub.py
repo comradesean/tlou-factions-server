@@ -342,21 +342,15 @@ def build_facebook_response(cmd):
         return "".join("+0\n" for _ in npids), f"get-fid n={len(npids)} (all unlinked)"
 
     if verb == "facebook-get-npid":
-        # facebook-get-npid <fbid0> ...: resolve FB ids -> NpIds. Reply is one
-        # '+<npid>' line per queried fbid, positional (client @0xac1a04 iterates
-        # its friend records in order; @0xac1a4c it copies chars after '+', <=16,
-        # into an NpId and calls sceNpLookupNpId). We hand back a deterministic
-        # fake NpId per friend so every friend "resolves". NOTE: sceNpLookupNpId
-        # is a REAL PSN/RPCN lookup, so these fake ids will fail it (not real
-        # accounts) - and the clan-naming path runs unconditionally after this,
-        # so this is a test, not expected to change the survivor names.
+        # facebook-get-npid <fbid0> ...: resolve FB ids -> PSN NpIds. We answer
+        # NO matches (empty). DO NOT hand back fabricated NpIds: the client feeds
+        # each resolved id into the real NP/presence machinery (sceNpLookup + the
+        # Presence Thread), and a non-existent account crashes it - observed as a
+        # jump to 0x30303030 ("0000", bytes of a fake "fbf000...0" id) -> access
+        # violation. "No matches" is the safe, non-crashing answer (no FB friend
+        # maps to a PSN player here). See research/notes/2026-08-17-facebook-connect-flow.md.
         fbids = tokens[1:]
-        lines = []
-        for fb in fbids:
-            digits = "".join(c for c in fb if c.isdigit())
-            npid = ("fbf" + digits[-12:]) or "fbfriend"  # keep the varying tail
-            lines.append(f"+{npid[:16]}\n")
-        return "".join(lines), f"get-npid n={len(fbids)} (fake npids)"
+        return "", f"get-npid n={len(fbids)} (no matches - fake NpIds crash the Presence Thread)"
 
     # Unknown facebook verb: benign ack rather than hang/close.
     return "+0\n", f"unknown facebook verb {verb!r}"
