@@ -24,12 +24,13 @@ there (from every client machine).
 
 The game reaches its content/social backends by hostname (and a few hardcoded
 IPs); redirect those to your backend's IP so `http_gateway` (:80) and the
-Facebook stand-in answer them. The complete, copy-pasteable IP/Hosts string is
-in the **[top-level README, step 3](../README.md#3-point-rpcs3-at-your-backend)** —
-paste it into the IP/Hosts switches field and replace the placeholder IP with
-your backend's LAN IP.
+Facebook stand-in answer them. The copy-pasteable IP/Hosts string — a minimal
+log-verified set plus optional belt-and-suspenders extras — is in the
+**[top-level README, step 3](../README.md#3-point-rpcs3-at-your-backend)**; paste
+it into the IP/Hosts switches field and replace the placeholder IP with your
+backend's LAN IP.
 
-Groups it covers:
+Hosts involved:
 
 - **S3 content + Naughty Dog** (`*naughtydog.com`, `*naughty-dog.com`,
   `t1.patch.s3.amazonaws.com`, `t1.campaign.config.s3.amazonaws.com`,

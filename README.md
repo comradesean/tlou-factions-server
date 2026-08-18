@@ -56,35 +56,36 @@ from your own client is described in
 ## 3. Point RPCS3 at your backend
 
 The game reaches its backends by hostname (and a few hardcoded IPs). Redirect
-them all to your backend machine in **RPCS3 → Configuration → Network → IP/Hosts
-switches**. Paste this whole string into that one field, **replacing
-`192.168.1.100` with your backend's LAN IP** (use `127.0.0.1` if RPCS3 and the
-backend are the same machine):
+them to your backend machine in **RPCS3 → Configuration → Network → IP/Hosts
+switches**. Paste this into that one field, **replacing `192.168.1.100` with
+your backend's LAN IP** (use `127.0.0.1` if RPCS3 and the backend are the same
+machine). Entries are `hostname=ip` joined by `&&`; `*` is a wildcard.
+
+This is the minimal set — every entry here is confirmed in the server request
+logs (five hostnames the game actually fetched, plus the one `net1.bin` server
+IP it actually connected to):
 
 ```
-*naughtydog.com=192.168.1.100&&*naughty-dog.com=192.168.1.100&&t1.patch.s3.amazonaws.com=192.168.1.100&&t1.campaign.config.s3.amazonaws.com=192.168.1.100&&t1.final.*.s3.amazonaws.com=192.168.1.100&&50.18.104.153=192.168.1.100&&50.18.47.114=192.168.1.100&&174.129.210.135=192.168.1.100&&s3.amazonaws.com=192.168.1.100&&graph.facebook.com=192.168.1.100&&api.facebook.com=192.168.1.100&&graph-video.facebook.com=192.168.1.100
+t1.patch.s3.amazonaws.com=192.168.1.100&&t1.campaign.config.s3.amazonaws.com=192.168.1.100&&t1.final.*.s3.amazonaws.com=192.168.1.100&&s3.amazonaws.com=192.168.1.100&&graph.facebook.com=192.168.1.100&&50.18.104.153=192.168.1.100
 ```
 
-Entries are `hostname=ip` joined by `&&`; `*` is a wildcard. This is a
-belt-and-suspenders list — it redirects every host the game is known to reach
-plus a few defensive catch-alls, so extra entries the game never asks for are
-harmless. What each group is for:
+- The four `*.s3.amazonaws.com` hosts — content-delivery files `http_gateway` serves.
+- `graph.facebook.com` — the clan feature's Graph calls (local Facebook stand-in).
+- `50.18.104.153` — the ticket/matchmaking server address hardcoded in `net1.bin`;
+  redirecting it points those services at your backend without editing `net1.bin`.
 
-- **S3 content** (`t1.patch.s3.amazonaws.com`, `t1.campaign.config.s3.amazonaws.com`,
-  `t1.final.*.s3.amazonaws.com`, `s3.amazonaws.com`) — the content-delivery
-  files `http_gateway` serves. *Confirmed: these appear as real requests in the
-  server logs.*
-- **Naughty Dog CDN** (`*naughtydog.com`, `*naughty-dog.com`) — the game
-  assembles `t1.final.prod.naughtydog.com` at runtime as its "Content Delivery"
-  host (`research/notes/dynamic-hostname-construction.md`); the hyphenated
-  variant is an era-known ND domain kept as a fallback.
-- **`net1.bin` server IPs** (`50.18.104.153`, `50.18.47.114`, `174.129.210.135`)
-  — dead ticket/matchmaking addresses hardcoded inside `net1.bin`; redirecting
-  them points those services at your backend without editing `net1.bin`. Only
-  `.153` is observed being connected to; the other two are its fallbacks.
-- **Facebook** (`graph.facebook.com`, `api.facebook.com`, `graph-video.facebook.com`)
-  — the clan feature's Graph calls, answered by the local Facebook stand-in.
-  Only `graph.facebook.com` is seen in the logs; the other two are defensive.
+### Optional extra entries
+
+Append any of these (each as `&&hostname=192.168.1.100`) as belt-and-suspenders.
+They are **not** seen in the current logs, so they're harmless catch-alls rather
+than required — add them if a future capture or client build reaches them:
+
+| Entry | Why you might add it |
+|---|---|
+| `*naughtydog.com` | The game assembles `t1.final.prod.naughtydog.com` at runtime as its "Content Delivery" host (`research/notes/dynamic-hostname-construction.md`); in testing it reached the S3 equivalents above instead. |
+| `*naughty-dog.com` | Era-known ND domain (`*.tlou.ps3.naughty-dog.com`); resolves but is dead. |
+| `50.18.47.114`, `174.129.210.135` | The other two `net1.bin` fallback server IPs; only `.153` was observed being tried. |
+| `api.facebook.com`, `graph-video.facebook.com` | Referenced in the binary's social-sharing / video features; not observed in the Graph flow so far. |
 
 ## 4. RPCN and game patches
 
