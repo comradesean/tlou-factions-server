@@ -65,17 +65,26 @@ backend are the same machine):
 *naughtydog.com=192.168.1.100&&*naughty-dog.com=192.168.1.100&&t1.patch.s3.amazonaws.com=192.168.1.100&&t1.campaign.config.s3.amazonaws.com=192.168.1.100&&t1.final.*.s3.amazonaws.com=192.168.1.100&&50.18.104.153=192.168.1.100&&50.18.47.114=192.168.1.100&&174.129.210.135=192.168.1.100&&s3.amazonaws.com=192.168.1.100&&graph.facebook.com=192.168.1.100&&api.facebook.com=192.168.1.100&&graph-video.facebook.com=192.168.1.100
 ```
 
-Entries are `hostname=ip` joined by `&&`; `*` is a wildcard. What each group is
-for:
+Entries are `hostname=ip` joined by `&&`; `*` is a wildcard. This is a
+belt-and-suspenders list — it redirects every host the game is known to reach
+plus a few defensive catch-alls, so extra entries the game never asks for are
+harmless. What each group is for:
 
-- **Naughty Dog + S3** (`*naughtydog.com`, `*naughty-dog.com`, the
-  `*.s3.amazonaws.com` hosts) — the content-delivery backend `http_gateway`
-  answers.
-- **The three literal IPs** (`50.18.104.153`, `50.18.47.114`, `174.129.210.135`)
-  — dead server addresses hardcoded inside `net1.bin`; redirecting them here is
-  what points matchmaking/tickets at your backend without editing `net1.bin`.
+- **S3 content** (`t1.patch.s3.amazonaws.com`, `t1.campaign.config.s3.amazonaws.com`,
+  `t1.final.*.s3.amazonaws.com`, `s3.amazonaws.com`) — the content-delivery
+  files `http_gateway` serves. *Confirmed: these appear as real requests in the
+  server logs.*
+- **Naughty Dog CDN** (`*naughtydog.com`, `*naughty-dog.com`) — the game
+  assembles `t1.final.prod.naughtydog.com` at runtime as its "Content Delivery"
+  host (`research/notes/dynamic-hostname-construction.md`); the hyphenated
+  variant is an era-known ND domain kept as a fallback.
+- **`net1.bin` server IPs** (`50.18.104.153`, `50.18.47.114`, `174.129.210.135`)
+  — dead ticket/matchmaking addresses hardcoded inside `net1.bin`; redirecting
+  them points those services at your backend without editing `net1.bin`. Only
+  `.153` is observed being connected to; the other two are its fallbacks.
 - **Facebook** (`graph.facebook.com`, `api.facebook.com`, `graph-video.facebook.com`)
   — the clan feature's Graph calls, answered by the local Facebook stand-in.
+  Only `graph.facebook.com` is seen in the logs; the other two are defensive.
 
 ## 4. RPCN and game patches
 
