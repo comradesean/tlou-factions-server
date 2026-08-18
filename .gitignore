@@ -18,12 +18,11 @@ server/logs/
 # runtime leaderboard store
 server/data/leaderboard_scores.sqlite
 
-# --- Packet captures & live logs (unfiltered; keep local) ---
-captures/*.pcap
-captures/*.pcapng
-captures/*.log
+# --- Live logs (unfiltered; keep local) ---
 *-run.log
 *_debug.log
+*.pcap
+*.pcapng
 
 # --- Ghidra project + raw RE dumps (keep distilled findings, not raw output) ---
 research/ghidra/*.gpr

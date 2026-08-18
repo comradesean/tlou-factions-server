@@ -42,9 +42,8 @@ for the IP/Hosts switches, RPCN, and game-patch setup.
   scripts, capture/patch utilities).
 - **`protos/`** — [Kaitai Struct](https://kaitai.io/) `.ksy` files, one per packet
   type. `docs/` — methodology + per-packet semantic docs (`docs/protocol/`).
-- **`ref/`**, **`captures/`** — reference material and a scratch area for live
-  packet captures. (Superseded research lives under `research/`, e.g.
-  `research/joinparty/`.)
+- **`ref/`** — reference material. (Superseded research lives under `research/`,
+  e.g. `research/joinparty/`.)
 
 The `EBOOT.elf` itself is never committed (copyrighted game data) — see
 `docs/tooling.md` for its fingerprint. RPCN is **not** vendored here: stock
