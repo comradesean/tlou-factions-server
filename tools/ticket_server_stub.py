@@ -319,18 +319,6 @@ def handle_leaderboard(conn, session_token, client_nonce, log_append):
                    f"({len(frame_out)}-byte frame); holding for client close\n")
 
 
-# The client reports its OWN NpId in `facebook-set <npid> <fbid>`. We remember it
-# so facebook-get-npid can resolve every FB friend to THIS real, existing account
-# instead of a fabricated one. sceNpLookupNpId (@0xe570ec) is a real NP lookup, so
-# only a genuine account resolves without crashing the Presence Thread; the
-# survivor NAMES come from the FB-name field, not the NpId, so mapping all friends
-# to one real account still renders their real names on the roster. Override with
-# env TLOU_FB_RESOLVE_NPID; set to empty/"none" to disable (answer no matches).
-# EXPERIMENTAL: all friends collapsing to one NpId may confuse presence/social;
-# revert to "no matches" if it misbehaves.
-_FB_RESOLVE_NPID = [os.environ.get("TLOU_FB_RESOLVE_NPID")]
-
-
 def build_facebook_response(cmd):
     """Map one decoded facebook-server command to the ASCII '+'-line response the
     client parses. facebook-server maps PSN NpIds <-> Facebook ids for friend
@@ -343,12 +331,9 @@ def build_facebook_response(cmd):
     verb = tokens[0] if tokens else ""
 
     if verb == "facebook-set":
-        # facebook-set <npid> <fbid>: client reports its OWN NpId<->fbid mapping.
-        # Remember the npid (unless an env override is pinned) so get-npid can
-        # resolve friends to this real account. Client does one bounded recv; ack.
-        if len(tokens) >= 2 and tokens[1] and not os.environ.get("TLOU_FB_RESOLVE_NPID"):
-            _FB_RESOLVE_NPID[0] = tokens[1]
-        return "+0\n", f"set {' '.join(tokens[1:])!r} (ack; resolve-npid={_FB_RESOLVE_NPID[0]!r})"
+        # facebook-set <npid> <fbid>: client reports its own NpId<->fbid mapping.
+        # Client does one bounded recv; it only needs some bytes. Ack.
+        return "+0\n", f"set {' '.join(tokens[1:])!r} (ack)"
 
     if verb == "facebook-get-fid":
         # facebook-get-fid <npid0> <npid1> ...: one '+'-line per queried NpId
@@ -357,19 +342,15 @@ def build_facebook_response(cmd):
         return "".join("+0\n" for _ in npids), f"get-fid n={len(npids)} (all unlinked)"
 
     if verb == "facebook-get-npid":
-        # facebook-get-npid <fbid0> ...: resolve FB ids -> PSN NpIds, one '+<npid>'
-        # line per friend (positional). Resolve every friend to the CLIENT'S OWN
-        # real NpId (learned from facebook-set / env). A real account passes
-        # sceNpLookupNpId (@0xe570ec) so the Presence Thread doesn't crash - unlike
-        # fabricated ids, which jumped to 0x30303030 ("0000") -> access violation.
-        # The survivor NAME comes from the FB-name field, not this NpId, so real
-        # friend names still render on the roster. Empty override / no npid known
-        # => no matches (safe, but names won't render since resolution is required).
+        # facebook-get-npid <fbid0> ...: resolve FB ids -> PSN NpIds. We answer
+        # NO matches (empty). DO NOT hand back fabricated NpIds: the client feeds
+        # each resolved id into the real NP/presence machinery (sceNpLookup + the
+        # Presence Thread), and a non-existent account crashes it - observed as a
+        # jump to 0x30303030 ("0000", bytes of a fake "fbf000...0" id) -> access
+        # violation. "No matches" is the safe, non-crashing answer (no FB friend
+        # maps to a PSN player here). See research/notes/2026-08-17-facebook-connect-flow.md.
         fbids = tokens[1:]
-        npid = _FB_RESOLVE_NPID[0]
-        if npid and npid.lower() != "none":
-            return "".join(f"+{npid}\n" for _ in fbids), f"get-npid n={len(fbids)} -> {npid!r} (client's own real NpId)"
-        return "", f"get-npid n={len(fbids)} (no matches - no resolve-npid known)"
+        return "", f"get-npid n={len(fbids)} (no matches - fake NpIds crash the Presence Thread)"
 
     # Unknown facebook verb: benign ack rather than hang/close.
     return "+0\n", f"unknown facebook verb {verb!r}"
