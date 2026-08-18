@@ -218,6 +218,78 @@ def handle_leaderboard(conn, session_token, client_nonce, log_append):
                    f"({len(frame_out)}-byte frame); holding for client close\n")
 
 
+def build_facebook_response(cmd):
+    """Map one decoded facebook-server command to the ASCII '+'-line response the
+    client parses. facebook-server maps PSN NpIds <-> Facebook ids for friend
+    presence (facebook.cpp FUN_00ac17b0 / FUN_003538c0); this stub keeps no real
+    mappings, so it answers 'not linked' for every query - semantically correct
+    locally (no PSN friend is Facebook-linked here) and, crucially, a well-formed
+    reply so the CLIENT closes first (a server-initiated EOF raises the same
+    Error 9 as leaderboard - see handle_facebook). Returns (response_str, note)."""
+    tokens = cmd.strip().split(" ")
+    verb = tokens[0] if tokens else ""
+
+    if verb == "facebook-set":
+        # facebook-set <npid> <fbid>: client reports its own NpId<->fbid mapping.
+        # Client does one bounded recv; it only needs some bytes. Ack.
+        return "+0\n", f"set {' '.join(tokens[1:])!r} (ack)"
+
+    if verb == "facebook-get-fid":
+        # facebook-get-fid <npid0> <npid1> ...: one '+'-line per queried NpId
+        # (single numeric field = fbid/online flag). 0 = not linked / offline.
+        npids = tokens[1:]
+        return "".join("+0\n" for _ in npids), f"get-fid n={len(npids)} (all unlinked)"
+
+    if verb == "facebook-get-npid":
+        # facebook-get-npid <fbid0> ...: resolve FB ids -> NpIds. No local
+        # mappings, so no rows (none of these FB friends is a PSN player here).
+        fbids = tokens[1:]
+        return "", f"get-npid n={len(fbids)} (no matches)"
+
+    # Unknown facebook verb: benign ack rather than hang/close.
+    return "+0\n", f"unknown facebook verb {verb!r}"
+
+
+def handle_facebook(conn, session_token, client_nonce, log_append):
+    """Post-hello loop for a facebook-server connection. Same encrypted-frame
+    layer and NUL-sentinel / hold-for-client-close discipline as
+    handle_leaderboard: a server-initiated EOF here triggers the client's
+    'recv() failed (errno=0)' -> Error 9 disconnect (seen in TTY.log during a
+    Facebook connect). So reply with a NUL-terminated body and let the client
+    close first."""
+    in_ctr = session_token
+    out_ctr = client_nonce
+    served = 0
+    while True:
+        try:
+            header = recv_exact(conn, 20, timeout=30)
+        except socket.timeout:
+            log_append(f"  (facebook idle 30s after {served} command(s), closing)\n")
+            return
+        except (ConnectionError, OSError):
+            log_append(f"  (facebook client closed after {served} command(s))\n")
+            return
+        plen = int.from_bytes(header[2:4], "big")
+        pad = header[1]
+        try:
+            ciphertext = recv_exact(conn, plen + pad)
+        except (ConnectionError, socket.timeout, OSError) as e:
+            log_append(f"  (facebook truncated frame: {e})\n")
+            return
+        frame = header + ciphertext
+        plaintext, tag_ok, in_ctr, _, _ = ticket_cipher.decrypt_frame(
+            CANDIDATE_KEY, in_ctr, frame)
+        cmd = plaintext.decode("ascii", "replace")
+        log_append(f"-- facebook cmd (tag_ok={tag_ok}): {cmd!r}\n")
+        response, note = build_facebook_response(cmd)
+        frame_out, out_ctr = ticket_cipher.encrypt_frame(
+            CANDIDATE_KEY, out_ctr, response.encode("ascii", "replace") + b"\x00")
+        conn.sendall(frame_out)
+        served += 1
+        log_append(f"   -> {note}; replied {len(response)} bytes "
+                   f"({len(frame_out)}-byte frame); holding for client close\n")
+
+
 def hexdump(data):
     lines = []
     for i in range(0, len(data), 16):
@@ -271,6 +343,18 @@ def handle(conn, addr, log_lock, log):
             def log_append(s):
                 box["entry"] += s
             handle_leaderboard(conn, session_token, client_nonce, log_append)
+            entry = box["entry"]
+            return
+
+        # facebook-server: another 0x11 sibling on this listener. Speaks the same
+        # encrypted-frame line protocol after the hello (facebook-set /
+        # facebook-get-fid / facebook-get-npid). Must hold for client close like
+        # leaderboard, else the client hits Error 9 (see handle_facebook).
+        if service_name == "facebook-server":
+            box = {"entry": entry}
+            def log_append(s):
+                box["entry"] += s
+            handle_facebook(conn, session_token, client_nonce, log_append)
             entry = box["entry"]
             return
 
