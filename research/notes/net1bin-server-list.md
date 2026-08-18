@@ -1,6 +1,6 @@
 # net1.bin: Confirmed Server List (All Dead)
 
-Full pipeline now confirmed working end-to-end: RPCS3 DNS-hook redirects `t1.final.prod.s3.amazonaws.com` to our catcher -> catcher serves the real `net1.bin.psarc.crypt` (65,160 bytes, user-supplied, saved at `tools/served_content/net1.bin.psarc.crypt`, gitignored) -> game decrypts/extracts it to `net1.bin` (283,870 bytes, plain, `research/net1bin/net1.bin`, gitignored - see below) -> game reads it and attempts `connect to 50.18.104.153:7320`.
+Full pipeline now confirmed working end-to-end: RPCS3 DNS-hook redirects `t1.final.prod.s3.amazonaws.com` to our catcher -> catcher serves the real `net1.bin.psarc.crypt` (65,160 bytes, supplied from a local game copy, saved at `tools/served_content/net1.bin.psarc.crypt`, gitignored) -> game decrypts/extracts it to `net1.bin` (283,870 bytes, plain, `research/net1bin/net1.bin`, gitignored - see below) -> game reads it and attempts `connect to 50.18.104.153:7320`.
 
 ## Contents
 
@@ -17,7 +17,7 @@ Full pipeline now confirmed working end-to-end: RPCS3 DNS-hook redirects `t1.fin
 
 Three null-terminated IP strings sitting directly next to **unrelated campaign-mode debug text** (survivor-camp population/supply/clan mechanics). This strongly suggests `net1.bin` is a general debug/log string table shared across subsystems, not a purpose-built network config file - the three IPs are most likely **hardcoded fallback server addresses** compiled in as literal debug strings, not a structured server-list format.
 
-Port `7320` (matching the `connect to 50.18.104.153:7320` log line) was not found as an adjacent string or an obvious packed value near the IP cluster - likely a separate hardcoded constant elsewhere (not chased further this session).
+Port `7320` (matching the `connect to 50.18.104.153:7320` log line) was not found as an adjacent string or an obvious packed value near the IP cluster - likely a separate hardcoded constant elsewhere (not chased further in this pass).
 
 ## All three confirmed dead
 
@@ -31,7 +31,7 @@ All three were almost certainly real Naughty Dog game-server addresses (AWS EC2,
 
 ## Files (not committed - gitignored)
 
-- `tools/served_content/net1.bin.psarc.crypt` - the real encrypted file the user supplied, now served by `tools/catch_http.py`.
+- `tools/served_content/net1.bin.psarc.crypt` - the real encrypted file, supplied from a local game copy, now served by `tools/catch_http.py`.
 - `research/net1bin/net1.bin` - the decrypted/extracted plain file, pulled from RPCS3's `dev_hdd0/game/BCUS98174DATA2/USRDIR/net1.bin`.
 
 Both are extracted game content (copyrighted), same reasoning as never committing `EBOOT.elf` itself - kept locally only.
@@ -91,3 +91,22 @@ connecting to authentication server". This is the pre-existing, separately-track
 "what does the ticket-server actually respond with" question from earlier in the
 investigation (see the 7320/`ticket-server` protocol capture notes) - not a new
 problem, and not related to `net1.bin.psarc.crypt` at all anymore.
+
+## net10.bin (second content file, same fallback list)
+
+`net10.bin` (`BCUS98174DATA2/USRDIR/net10.bin`) carries the **same three dead
+fallback IPs** as `net1.bin` (`50.18.104.153`, `174.129.210.135`,
+`50.18.47.114`) and exhibits the same delete-and-recreate refresh behavior — the
+game re-extracts it on each NetInit pass, so a read-only file flag does not
+survive (confirmed 2026-08-14).
+
+One additional mechanical lesson, learned while live-patching it: **the patch
+must be written with an atomic `os.replace()`, never an in-place `open(...,"wb")`**.
+An in-place write truncates the file before the new bytes land, and a game
+reader landing in that window gets a short/inconsistent read — live-confirmed as
+a `ReadSync file (req/read: 409093/262048) Permission denied` crash. An
+atomic rename on the same filesystem means any reader sees either the fully-old
+or fully-new file, never a partial one. This lesson is retained here because the
+live-patch scripts it came from (`watch_and_patch_net1bin.py` /
+`watch_and_patch_net10bin.py`) have been removed — the served `.crypt` pipeline
+(`server/`) produces correct content directly, retiring the live-patch stopgap.
