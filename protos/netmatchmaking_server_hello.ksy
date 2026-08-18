@@ -17,20 +17,22 @@ doc: |
   mismatch); one field (session_seed) confirmed as real key material feeding
   the SAME ARX cipher key-schedule function already solved for ticket-server
   (see docs/known-keys.md - the static key itself is confirmed byte-for-byte
-  identical to ticket-server's, at a second rodata address). The remaining
-  two fields are unconfirmed placeholders - genuinely never read by anything
-  this pass traced, not just "not yet looked at closely".
+  identical to ticket-server's, at a second rodata address). The remaining two
+  fields (reserved_4, reserved_c) are PROVEN never-read (2026-08-18): the reply
+  lands at r1+120 (16-byte recv, `bl 0xacbd98` @ 0xad74fc), and Init loads only
+  `lwz r0,120(r1)` (opcode, @0xad7510) and `lwz r0,128(r1)` (session_seed,
+  @0xad7534); 124(r1) and 132(r1) are never loaded.
 doc-ref: ../docs/protocol/session_manager_and_matchmaking.md
 seq:
   - id: opcode
     type: u4
     doc: "MUST equal 0x12e (302 decimal) = NetMatchmakingServerHello's own numeric ID, or Init() treats this as a fatal handshake failure (closes the connection, Init() returns -1) - confirmed via `if (local_a8[0] == 0x12e) {...} else { close; fail }` in FUN_00ad71a0's decompile. Passed through FUN_00ad55d8 before this check, which this project previously described as a byte-order-fixup - now decompiled and confirmed to be composed entirely of calls to the no-op FUN_00a0e324, so this and every other field in this message is plain big-endian, no runtime swap involved. See research/notes/2026-08-15-byteswap-helper-is-a-noop.md."
-  - id: unknown1
+  - id: reserved_4
     type: u4
-    doc: "Declared/received but not read by any branch this pass traced in Init(). Do not assume a meaning."
+    doc: "Offset 4:8. Server-authored u32 the client NEVER reads (124(r1) never loaded; proven 2026-08-18). Sits on a u32 boundary between opcode and session_seed, so likely a reserved/expansion slot rather than alignment padding, though that intent isn't determinable client-side. Send 0. (Was `unknown1`.)"
   - id: session_seed
     type: u4
     doc: "Passed directly as the counter/seed argument to FUN_00db5ec0 - the EXACT SAME key-schedule function that keys ticket-server's ARX stream cipher (docs/protocol/0x11_ticket_server_hello.md's 'Encrypted frame layer' section), here combined with a static 16-byte key confirmed byte-for-byte identical to ticket-server's own key (see docs/known-keys.md). Directly analogous to ticket-server message B's session_token field: a server-chosen per-connection counter the client will use to key everything it decrypts/verifies from this point on. A server implementation MUST track whatever value it sends here the same way ticket-server's session_token/client_nonce counters are tracked."
-  - id: unknown2
+  - id: reserved_c
     type: u4
-    doc: "Final 4 bytes of the 16-byte response. Not read in the portion of Init() traced this pass. Genuinely unconfirmed."
+    doc: "Offset 12:16. Final u32 of the 16-byte reply. Server-authored, the client NEVER reads it (132(r1) never loaded; proven 2026-08-18). Likely a reserved/expansion slot (u32-aligned). Send 0. (Was `unknown2`.)"

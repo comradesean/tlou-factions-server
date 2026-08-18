@@ -73,21 +73,21 @@ types:
           0x5000000N01383bd8) and advertises THAT here; a 0x130 carrying an
           unrecognised id still resolves via the per-connection election
           mapping. See the coordination root-cause note."
-      - id: unknown_a
+      - id: unused_8
         size: 4
-        doc: "Offset 8:12. Unconfirmed; stub sends 0."
+        doc: "Offset 8:12. PROVEN unused (2026-08-18): the 0x136 deserializer (0x136 case of FUN_00ad7604) copies wire[0:8] then jumps straight to wire[0x14]; bytes 8..0xb are never loaded, and no object-entry slot exists for them. Definition: a gap in the entry struct the client does not read - send 0. (Was `unknown_a`.)"
       - id: cur_players
         type: u2
-        doc: "Offset 0xc:0xe. Current player count (stub sends the roster size). Semantics inferred, not confirmed."
-      - id: unknown_b
+        doc: "Offset 0xc:0xe. Current player count in the room. CONFIRMED READ 2026-08-18: deserialized to entry+0x2c (`lhz r9,12(r8)` @0xad7eb8), then read by the game-list sort/score (converted to a float fill-ratio @0x3b6be4/0x3b6bf4) and shown as a browser column (@0x3bbb74). Stub sends roster size. (Count semantics inferred from its float-ratio use; the read is proven.)"
+      - id: unused_e
         type: u2
-        doc: "Offset 0xe:0x10. Unconfirmed; stub sends 0."
+        doc: "Offset 0xe:0x10. PROVEN unused: the deserializer's only halfword loads are wire[0xc] and wire[0x10]; 0xe/0xf are never loaded. Struct gap - send 0. (Was `unknown_b`.)"
       - id: max_players
         type: u2
-        doc: "Offset 0x10:0x12. Capacity (stub sends 8). Semantics inferred."
-      - id: unknown_c
+        doc: "Offset 0x10:0x12. Room capacity. CONFIRMED READ: deserialized to entry+0x34 (`lhz r0,16(r8)` @0xad7ebc), read alongside cur_players for the browser's sort/fill-ratio and shown as the second population column (@0x3bbb84). Stub sends 8. (Capacity semantics inferred; read proven.)"
+      - id: unused_12
         size: 2
-        doc: "Offset 0x12:0x14. Unconfirmed; stub sends 0."
+        doc: "Offset 0x12:0x14. PROVEN unused: never loaded by the deserializer (byte copy starts at 0x14; halfword loads are only 0xc/0x10). Struct gap - send 0. (Was `unknown_c`.)"
       - id: host_npid
         size: 16
         doc: |

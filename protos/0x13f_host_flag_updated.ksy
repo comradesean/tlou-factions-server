@@ -65,9 +65,9 @@ seq:
   - id: flag
     type: u1
     doc: "Offset 4:5. Only the low bit is used (ANDed with 1) before being stored into the matched room's +0x19f4 'is host' flag byte."
-  - id: unknown_3
+  - id: pad_5
     size: 3
-    doc: "Offset 5:8. Not read by the traced portion of the 0x13f dispatch case - unconfirmed."
+    doc: "Offset 5:8. ALIGNMENT PADDING (proven 2026-08-18): the 0x13f receive arm (FUN_00ad825c, opcode 319) loads only wire+0 (opcode), wire+4 (`lbz r3,4(r29)` = host-flag byte, whose low bit -> room_obj+0x19F4) and wire+8 (room_id); wire+5..7 are never loaded. Definition: 3-byte gap aligning the 8-byte room_id after the single flag byte at +4. Not a field - send 0. (Was `unknown_3`.)"
   - id: room_id
     type: u8
     doc: "Offset 8:16. Compared against `*(s64*)(room_obj+0x10)` for each of the connection's 4 room slots (slot i's room-object pointer is at `this + i*0x9000 + 0x50`; the `addis r11,r11,1 / addi r11,r11,-28672` idiom is a 0x9000 stride). Silently dropped if no slot matches - and room_obj+0x10 is set ONLY by Member's (0x131) handler, so this message must follow a Member. Same room_id-echo pattern used throughout this opcode family."

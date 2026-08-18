@@ -129,7 +129,7 @@ types:
       clan_state:
         pos: 0x1BE8
         type: u4
-        doc: "P+0x1BF0. Clan / faction state enum (== 2 in both samples)."
+        doc: "P+0x1BF0. Clan/settlement status enum. Seeded to a DC-bounded random value at clan setup (FUN_0037a7b4 @0x37aba8), then ticked down when idle (@0x37d13c) or re-randomised when active (@0x37d180) by the settlement updater FUN_0037cf90. 2 / 2 (in-bounds). Exact enum meaning is DC-config-bounded."
       pop_accumulator:
         pos: 0x1E18
         type: u4
@@ -142,10 +142,10 @@ types:
         pos: 0x1E20
         type: u4
         doc: "P+0x1E28. Set to 1 by OnMatchEnd (a result flag, not a gate). 0 / 0 in the samples."
-      unknown_1e2c:
+      milestone_latch_1e2c:
         pos: 0x1E24
         type: u4
-        doc: "P+0x1E2C. Flag (1/0), not pinned to a decompile writer. 1 / 0."
+        doc: "P+0x1E2C. One-shot milestone latch (bitfield). FUN_0035f1bc sets bit0 (`ori r0,r31,1` / `stw r0,7724(r3)` @0x35f26c/0x35f274) the first time its predicate-6 holds at game-state==3, awarding event 0x40b5d875. Persisted so the award fires once. comradesean 1 (done) / mgnomad2 0 (not). Which milestone is DC-assigned."
       pop_highwater_menu:
         pos: 0x1E28
         type: u4
@@ -158,14 +158,14 @@ types:
         pos: 0x1E30
         type: u4
         doc: "P+0x1E38. Matches played, mode B (writer guarded on mode == 3). 5 / 4."
-      unknown_1e3c:
+      match_ratio_1e3c:
         pos: 0x1E34
         type: u4
-        doc: "P+0x1E3C. Nonzero only in mgnomad2 (0xE0C2); not pinned to a writer."
+        doc: "P+0x1E3C. OnMatchEnd-computed scaled ratio statistic: (matchStatA->0x4 * 6000) / (matchStatB->0x10) (`mulli r29,r29,6000` / `divwu` / `stw r29,7740(r3)` @0x3f29b4-0x3f29c8, also @0x3f2d60 in FUN_003f208c), reported under DC StringId 0x5c494554; cleared to 0 outside a match (@0x3b6124/@0x3b7f00). 0 / 0xE0C2. Precise numerator/denominator meaning is DC-side."
       flag_1e40:
         pos: 0x1E38
         type: u4
-        doc: "P+0x1E40. == 1 in both samples; unresolved flag."
+        doc: "P+0x1E40. Persisted boolean toggle setting. Dedicated setter FUN_003188d4(this, value) stores the caller's argument verbatim here (`stw r28,7744(r3)` @0x318918) and mirrors it to obj+0xC (UI-refreshed). Called indirectly (fn-ptr/vtable), so the exact user-facing option isn't pinned to a call site. 1 / 1 (on)."
       journeys_completed:
         pos: 0x1E3C
         type: u4
@@ -173,7 +173,7 @@ types:
       healthy_count:
         pos: 0x1E40
         type: u4
-        doc: "P+0x1E48. Per-player count (menu-written), likely healthy survivors. 4 / 6."
+        doc: "P+0x1E48. Healthy-survivor sub-count: RNG-drawn in [1, population-1] by the clan sim (init FUN_0037a7b4 @0x37ac50, per-tick FUN_0037cf90 @0x37d07c) - NOT menu-written as previously thought. 4 / 6."
       wins_mode_a:
         pos: 0x1E44
         type: u4

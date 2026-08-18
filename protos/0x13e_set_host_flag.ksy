@@ -34,9 +34,9 @@ seq:
   - id: kind
     type: u1
     doc: "Offset 5:6. A sender-path discriminator, 3 or 4 depending on which builder sent it - NOT a fixed constant. CORRECTED 2026-08-18 (objdump): builder FUN_00ad6a34 stores 3 (`li r0,3` @ 0xad6b64, `stb r0,117(r1)` @ 0xad6b6c), builder FUN_00ad7024 stores 4 (`li r0,4` @ 0xad7130, `stb r0,117(r1)` @ 0xad713c); buffer base r1+112 so wire 5. The companion doc's opcode-map row already had this right. Which UI/game path drives each builder was not traced; plausibly a request-reason/source tag."
-  - id: unknown_2
+  - id: pad_6
     size: 2
-    doc: "Offset 6:8. Not written by either confirmed sender - unconfirmed."
+    doc: "Offset 6:8. ALIGNMENT PADDING (proven 2026-08-18): both builders (FUN_00ad6a34, FUN_00ad7024) store only wire+0 (opcode), wire+4 (flag byte) and wire+5 (kind); neither writes wire+6, and the 16-byte send leaves it as uninitialised stack. Definition: 2-byte gap aligning the 8-byte room_id after the kind byte. Not a field - send 0. (Was `unknown_2`.)"
   - id: room_id
     type: u8
     doc: "Offset 8:16. Raw (unswapped) copy of the room object's own +0x10 room-id field, matching the room_id-echo pattern used throughout this opcode family."

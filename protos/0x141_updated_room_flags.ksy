@@ -20,29 +20,34 @@ doc: |
       ad8350:  clrlwi r0,r10,16      ; zero-extend the u16
       ad8354:  stw  r0,496(r9)       ; room_obj+0x1f0 = value
 
-  So only offset 4:6 is read; offset 6:8 is ignored entirely. This matches
-  the 0x140 sender, which also writes only a u16 there (see
-  protos/0x140_set_room_flags.ksy for the correction).
+  So only offset 4:6 (the attr_selector) is read by the client; offset 6:8 (the
+  attr_value) is not read back on the echo. NOTE (corrected 2026-08-18): 6:8 is
+  NOT stack garbage on the 0x140 send side - it is a reproducible client->server
+  attribute value (see protos/0x140_set_room_flags.ksy). It is simply not
+  consumed by the client on the 0x141 echo; the retail server was its reader.
+
+  DEFINITION / PURPOSE: the server's "room attribute updated" confirmation of a
+  0x140 SetAttrFlags. Classic set-X / confirm-X pair. The client uses it only to
+  refresh room_obj+0x1f0 with the selector (4:6); that field is never branched
+  on, so the echo is effectively an ack.
 
   SEQUENCING: the room lookup keys on room_obj+0x10, which is set ONLY by
   Member's (0x131) handler from Member wire offset 16. This message is
   silently swallowed if it arrives before a Member has established that id.
 
-  tools/session_manager_stub.py echoes SetAttrFlags' `chunk[4:8]` verbatim,
-  which preserves the meaningful u16 correctly (and echoes 2 bytes of the
-  client's own stack garbage, which the client ignores) - accidentally
-  correct behaviour.
+  server/session_manager.py echoes SetAttrFlags' `chunk[4:8]` verbatim, which
+  round-trips both halves (selector + value) correctly.
 doc-ref: ../docs/protocol/session_manager_and_matchmaking.md
 seq:
   - id: opcode
     type: u4
     doc: "Fixed 0x141 (321 decimal)."
-  - id: value
+  - id: attr_selector
     type: u2
-    doc: "Offset 4:6. `lhz r3,4(r29)` @ 0x00ad82ec. Zero-extended and stored into the matched room's +0x1f0. Echo SetAttrFlags' own u16 here."
-  - id: unread_2
-    size: 2
-    doc: "Offset 6:8. Not read by the handler at all. Send zero (or echo the client's own bytes; either works)."
+    doc: "Offset 4:6. `lhz r3,4(r29)` @ 0x00ad82ec. Zero-extended and stored into the matched room's +0x1f0 (never branched on afterwards). Echo SetAttrFlags' selector here."
+  - id: attr_value
+    type: u2
+    doc: "Offset 6:8. The attribute value from the matching 0x140. Not read by the client on the echo, but a real field (reproducible on the 0x140 send side, see that schema). Echo SetAttrFlags' own bytes here."
   - id: room_id
     size: 8
     doc: "Offset 8:16. Compared against `*(s64*)(room_obj+0x10)` across the connection's 4 room slots. Must match the id established by Member, or the message is silently dropped."

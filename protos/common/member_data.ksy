@@ -49,14 +49,23 @@ seq:
   - id: capability_flag
     type: u1
     doc: |
-      Offset 8. Producer: `stb r0,0x80(r1)` @ 0x003b15e8, source = low byte of
-      `*(u32*)(0x01459260+0xC)` (`lwz r9,-0x7ff4(r30)` / `lwz r0,0xc(r9)` @
-      0x003b15dc/0x003b15e4). Consumer: AND-reduced across all members @
-      0x00ad2b6c into the map-picker capability mask (FUN_00ad2768/FUN_00ad2b14).
-      CORRECTED 2026-08-18: this byte was the high half of the old u16 `team`
-      field; it was 0 in all 47 captures (both test accounts), which is why the
-      u16 read as a clean 0/1/2. Medium confidence: mechanism verified, exact
-      capability semantics beyond "feeds the map-picker capability mask" open.
+      Offset 8. DEFINITION: a per-player CAPABILITY BITMASK - the set of
+      content/entitlement capabilities (owned DLC map packs / modes) this member
+      brings to the lobby. PURPOSE: it lets the host's map/mode picker offer only
+      maps every member can play, so a matched game never picks content someone
+      lacks. Producer: `stb r0,0x80(r1)` @ 0x003b15e8, source = low byte of the
+      caps/entitlement register `*(u32*)(0x01459260+0xC)` (`lwz r9,-0x7ff4(r30)` /
+      `lwz r0,0xc(r9)` @ 0x003b15dc/0x003b15e4). Consumer (verified 2026-08-18):
+      FUN_00ad2b14 folds every member's byte 8 into a lobby-common mask
+      (`li r28,-1` @ 0xad2b44; `lbz r0,8(r3)` / `and r28,r28,r0` @ 0xad2b6c-70),
+      then each map/mode candidate is kept only if `common_caps &
+      descriptor.required_mask(+0x14) != 0` (@0x3a25b4, @0x35ad84); a candidate
+      whose required mask is 0 is always eligible. INDIVIDUAL BIT MEANINGS are
+      DC/entitlement-defined (which bit = which DLC pack lives in the .pak
+      descriptor tables + the owned-content register, not the EBOOT). Was 0 in all
+      47 captures (both test accounts had no MP DLC), which is why the old u16
+      `team` read as a clean 0/1/2. Confidence: high (mechanism); bit-level
+      semantics are DC-dependent.
   - id: team
     type: u1
     doc: |

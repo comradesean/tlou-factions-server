@@ -60,9 +60,9 @@ seq:
   - id: new_owner_member_id
     type: u2
     doc: "Offset 4:6. `lhz r3,4(r29)` @ 0x00ad81e0. Zero-extended and stored into the matched room's +0x19f0 = the member id of the room's owner. Must match a member_id already registered via Member (0x131) for `_opd_FUN_00ad0d98`'s lookup to resolve it. Pairs with 0x13c/Promote's own new_owner_member_id field."
-  - id: unknown_2
+  - id: pad_6
     size: 2
-    doc: "Offset 6:8. Not read by the traced portion of the 0x13d dispatch case - unconfirmed."
+    doc: "Offset 6:8. ALIGNMENT PADDING (proven 2026-08-18): the 0x13d receive arm (FUN_00ad817c, opcode 317) loads only wire+0 (opcode), wire+4 (`lhz r3,4(r29)` = new_owner u16) and wire+8 (`ld r3,8(r29)` = room_id); wire+6 is never loaded. Definition: 2-byte gap that aligns the 8-byte room_id to an 8-byte boundary after the u16 new_owner. Not a field - send 0. (Was `unknown_2`.)"
   - id: room_id
     type: u8
     doc: "Offset 8:16. Compared against `*(s64*)(room_obj+0x10)` for each of the connection's 4 room slots (slot i's room-object pointer is at `this + i*0x9000 + 0x50`; the `addis r11,r11,1 / addi r11,r11,-28672` idiom is a 0x9000 stride). Silently dropped if no slot matches - and room_obj+0x10 is set ONLY by Member's (0x131) handler, so this message must follow a Member. Same room_id-echo pattern used throughout this opcode family."

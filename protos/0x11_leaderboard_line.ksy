@@ -36,7 +36,14 @@ doc: |
     GET row:          +<rank> <name> <score> <b64>     (client stores rank = atoi(<rank>)+1)
     RANGE(blob) row:  +<name> <score> <b64>            (rank computed positionally = start+index+1)
     RANGE(blob) total:+<total>
-    RANGE(clan):      +<total>   and   +<a> <b>
+    RANGE(clan):      +<total>   then the STANDARD 3-token row +<name> <score> <b64>
+                      (the rank-0/leader entry of a "range <board> 0 1" query).
+                      CORRECTED 2026-08-18 (was wrongly "+<a> <b>"): the clan
+                      worker FUN_003af46c requires all THREE tokens (name/score/
+                      b64); it keeps only <score> (strtol -> job+0x88, @0x3afa44-60)
+                      and counts rows (job+0x70), discarding <name> and <b64>. A
+                      2-token line stores nothing. So <score> here = the queried
+                      board's leader score; its on-screen label is DC-driven.
   A minimal legal answer is a single "+0\n" (empty board) or an empty response.
 
   The trailing `<b64>` token is NOT opaque: it is standard base64 of a

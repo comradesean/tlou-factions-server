@@ -85,3 +85,29 @@ primary method — the connection was unstable (`research/notes/rpcn-connection-
 and early attempts produced empty captures
 (`research/notes/2026-08-13-capture1-and-nd-hostnames.md`). Self-hosting the
 backend (methods 1 and 2 above) replaced it.
+
+## 3. Targeted capture matrix for the remaining undefined fields
+
+A handful of session-manager fields cannot be named from static analysis alone,
+because the EBOOT never branches on them (their meaning lived in the retail
+server) and the existing `server/logs/session_manager.log` is all solo-host.
+Each is resolvable by a short, controlled hosting session while tailing
+`server/logs/session_manager.log` (every received message is dumped as raw hex
+with a parsed summary). Vary ONE condition at a time.
+
+| # | Field | Message / offset | Capture procedure | Names it because |
+|---|---|---|---|---|
+| 1 | `field_0c` (map vs map+team combined index) | RoomCreate `0x12f` wire `0x0c`; also find_match `0x135` wire `0x0c` | Host 4 rooms: (a) same map, team Blue; (b) same map, team Red; (c) map A, fixed team; (d) map B, same fixed team. Read wire `0x0c` each time. | If `0x0c` moves only with map (a==b, c!=d) it is the map id; if it also moves with team it is a map+team combined index. Resolves the 2026-08-16 confound. |
+| 2 | `0x140` `attr_value` (wire `0x6:0x8`) | SetRoomFlags `0x140` | In a lobby, change ONE host option at a time (map, mode, round/score limit, friendly-fire, respawns, time limit) and note which change emits a `0x140` and what `0x6:0x8` becomes. | The option whose toggle moves the value names the field. Logged solo values already show it cycling `ff50/fbe0/2f78`, so it tracks a host-scrolled setting. |
+| 3 | Game mode (Supply Raid vs Survivors) | RoomCreate `0x12f` (whole message) + `0x140` | Host one lobby in Supply Raid, one in Survivors, all else equal; diff the two RoomCreate messages and any `0x140`. | The mode must be encoded somewhere the host advertises; the only bytes that differ between two otherwise-identical mode-A/mode-B lobbies carry it (candidate homes: `field_0c`, the `0x140` value, or the RoomCreate attribute block). |
+| 4 | Party-vs-solo deltas | any session-manager message | Repeat a given action solo, then in a 2-player party; diff. | Isolates any field that only takes a non-default value when real members are present (the current logs are ~95% solo, so party-only values are unobserved). |
+
+Practical notes:
+- Tail the log live: `tail -f server/logs/session_manager.log`; each entry prints
+  the 16-byte (or longer) hex dump plus a `parsed opcode=0x...` summary line.
+- The stub already decodes RoomCreate `0x0c` as `map_id=` and `0x140` as
+  `flags=` in its summary lines, so the varying value is visible without manual
+  hex reading.
+- `0x140` only fires once a room survives long enough to load toward a match
+  (needs the RPCS3 "Stub PPU Traps" workaround and the min-players client patch);
+  see `research/notes/2026-08-17-min-players-client-patch.md`.
