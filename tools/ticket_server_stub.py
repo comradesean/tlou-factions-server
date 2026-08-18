@@ -241,10 +241,21 @@ def build_facebook_response(cmd):
         return "".join("+0\n" for _ in npids), f"get-fid n={len(npids)} (all unlinked)"
 
     if verb == "facebook-get-npid":
-        # facebook-get-npid <fbid0> ...: resolve FB ids -> NpIds. No local
-        # mappings, so no rows (none of these FB friends is a PSN player here).
+        # facebook-get-npid <fbid0> ...: resolve FB ids -> NpIds. Reply is one
+        # '+<npid>' line per queried fbid, positional (client @0xac1a04 iterates
+        # its friend records in order; @0xac1a4c it copies chars after '+', <=16,
+        # into an NpId and calls sceNpLookupNpId). We hand back a deterministic
+        # fake NpId per friend so every friend "resolves". NOTE: sceNpLookupNpId
+        # is a REAL PSN/RPCN lookup, so these fake ids will fail it (not real
+        # accounts) - and the clan-naming path runs unconditionally after this,
+        # so this is a test, not expected to change the survivor names.
         fbids = tokens[1:]
-        return "", f"get-npid n={len(fbids)} (no matches)"
+        lines = []
+        for fb in fbids:
+            digits = "".join(c for c in fb if c.isdigit())
+            npid = ("fbf" + digits[-12:]) or "fbfriend"  # keep the varying tail
+            lines.append(f"+{npid[:16]}\n")
+        return "".join(lines), f"get-npid n={len(fbids)} (fake npids)"
 
     # Unknown facebook verb: benign ack rather than hang/close.
     return "+0\n", f"unknown facebook verb {verb!r}"
