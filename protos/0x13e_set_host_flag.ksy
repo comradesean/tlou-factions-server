@@ -95,6 +95,58 @@ seq:
       find-match search, and host lobby creation - genuinely still open,
       and the search for it should now look OUTSIDE "local client claims or
       releases its own host flag," since that whole category is kind=3's.
+
+      KIND=4 LIVE-CAPTURED 2026-08-19 (same extended session, after the
+      above was written): breakpoint at 0x00ad7024 finally hit, right as a
+      map finished loading for the host of a private match. Confirmed
+      correct vtable slot by disassembling the caller at `LR=0x00ad13a0`
+      (thunk at 0x00ad1368-0xad13b4): `lwz r9,52(r9)` = offset 0x34,
+      matching kind=4's vtable+0x34 exactly. `param_2 (r4) = 0x01383bd8`,
+      the GAME ROOM object (same one kind=3 used for its own lobby-creation
+      hit) - `param_3 (r5) = 1`. Immediately following this single kind=4
+      hit, in the same map-load sequence, kind=3 fired twice more: once on
+      the party object and once again on the game-room object, both
+      `param_3=1`. So the observed order for a host's map load is: kind=4
+      once (game room) -> kind=3 (party) -> kind=3 (game room again).
+      Because kind=4's builder is confirmed to never touch `+0x19f4` (see
+      above), this `param_3=1` is NOT a "become host" action in the same
+      behavioral sense as kind=3's - per the static decompile, `param_3`
+      here only selects between two debug-log string indices
+      (`puVar2+(-0x7fc0)` vs `puVar2+(-0x7fbc)`), with no other observable
+      branch.
+
+      A SECOND kind=4 hit, same session, closed the picture completely: at
+      MATCH END (scoreboard visible, same 0x00ad7024/vtable+0x34 caller),
+      `param_2 (r4) = 0x01383bd8` (the same game-room object) again, but
+      `param_3 (r5) = 0` this time - and the surrounding float registers
+      (f2=85, f5=5, f6=100, f8=85, f9=20) are the SAME plainly stat-shaped
+      values already live-confirmed for `0x140`'s `selector=0` hit earlier
+      this session (see protos/0x140_set_room_flags.ksy) - i.e. this is the
+      identical `NET_SM_RESULTS`/match-end moment, corroborated across two
+      independent opcodes in the same live session. Immediately after this
+      second kind=4 hit, kind=3 fired again too - on the PARTY object,
+      `param_3=1` (become host) - matching the established pattern of
+      reclaiming solo party-host status once a match concludes (this was
+      then reconfirmed a third time, live, when the game entered the lobby
+      after the deconstructed match: kind=3, party object, `param_3=1`).
+      READING, NOW COMPLETE: kind=4 (`FUN_00ad7024`) is a clean SET-THEN-
+      CLEAR pair tied to the GAME ROOM's own active-match lifecycle -
+      `param_3=1` when a match starts (map load complete), `param_3=0` when
+      it ends (results/scoreboard) - the room-level counterpart to kind=3's
+      broader, more frequently-firing host-flag claim/release. Because
+      kind=4's builder never touches `+0x19f4` (confirmed by static
+      disassembly), this pair is NOT a host-flag toggle in the same
+      behavioral sense as kind=3 - functionally it only selects between two
+      debug-log string indices per the decompile - but its TRIGGER
+      CONDITIONS are now fully named and, like kind=3, appear to be
+      LOCALLY-INITIATED notifications of the client's own match-lifecycle
+      state (active/not-active on the room), mirroring kind=3's own
+      lobby/results split for the party object. Both kind=3 and kind=4 are
+      now closed to the same standard: trigger conditions solidly
+      established via live debugging and cross-opcode corroboration. The
+      SERVER-SIDE consequence of either, like `0x140`, remains permanently
+      unrecoverable from the client alone (see docs/OPEN-QUESTIONS.md's PS4
+      capture plan).
   - id: pad_6
     size: 2
     doc: "Offset 6:8. ALIGNMENT PADDING (proven 2026-08-18): both builders (FUN_00ad6a34, FUN_00ad7024) store only wire+0 (opcode), wire+4 (flag byte) and wire+5 (kind); neither writes wire+6, and the 16-byte send leaves it as uninitialised stack. Definition: 2-byte gap aligning the 8-byte room_id after the kind byte. Not a field - send 0. (Was `unknown_2`.)"
