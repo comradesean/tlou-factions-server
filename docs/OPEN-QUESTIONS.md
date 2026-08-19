@@ -177,6 +177,15 @@ live in the data-compiler payload the game loads at runtime.
       immediately every time the way our stub does, or does it withhold/
       delay a reply under some condition, which would be an indirect clue to
       server-side gating this repo can't otherwise discover).
+      Also applies to `0x13e SetHostFlag`/`0x13f HostFlagUpdated`
+      (added 2026-08-19): trigger conditions for both `kind=3`
+      (`FUN_00ad6a34` - a generic host-flag claim/release on either the
+      party or game-room object) and `kind=4` (`FUN_00ad7024` - a
+      set-then-clear pair tied to the game room's active-match lifecycle)
+      are now fully named client-side (see `protos/0x13e_set_host_flag.ksy`)
+      via the same kind of live RPCS3 debugging session as `0x140`. Same
+      ceiling applies: what a real backend does with either notification is
+      unrecoverable without a retail capture.
 
 - **`0x12f room_settings_tail` / `0x130 room_object_tail`** - 32 bytes each,
   provenance known (copies of specific room-object spans), interiors unmapped.
