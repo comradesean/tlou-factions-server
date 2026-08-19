@@ -1242,6 +1242,23 @@ def handle(conn, addr, log_lock, log):
                 # historical static id: it is single-console with no cross-conn
                 # join, so its collision is harmless and the live-confirmed
                 # solo-host path stays byte-for-byte untouched.
+                # VERSION CANARY (2026-08-18). PARTY_ROOM_PTR / ROOM_PTR are
+                # addresses of globals in the retail 1.00 EBOOT, and two
+                # BEHAVIOURAL decisions compare against them by equality: the
+                # unique-party-id mint just below, and the solo-keepalive skip
+                # in start_member_refresher. A game patch that relocates either
+                # global would make both comparisons silently fail - no error,
+                # just the Join Party host-lookup collision and the "kicked from
+                # party" churn quietly returning. Only 0x01383bd8 and 0x01387f58
+                # have ever been observed (331 frames). Anything else means the
+                # client build changed and these constants need re-deriving.
+                if room_ptr not in (ROOM_PTR, PARTY_ROOM_PTR):
+                    emit(f"   *** UNKNOWN room_ptr {room_ptr:#010x} - expected "
+                         f"{ROOM_PTR:#010x} (game) or {PARTY_ROOM_PTR:#010x} "
+                         f"(party). The client build may differ from retail "
+                         f"1.00; party detection and the unique-party-id mint "
+                         f"are BOTH keyed on these addresses and will not fire "
+                         f"for this client. Re-derive them for this build. ***")
                 if find_match_searching:
                     room_id = synth_public_room_id(room_ptr)
                 elif room_ptr == PARTY_ROOM_PTR:
