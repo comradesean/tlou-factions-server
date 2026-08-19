@@ -99,22 +99,21 @@ an unresolved caveat: an earlier controlled test saw values 0x09/0x13 track TEAM
 with the map held constant, so "map id" could not be separated from "map+team
 combined index". A 2x2 capture was listed as the way to settle it.
 
-100 live RoomCreate frames settle it without one. Pairing `field_0c` against the
+126 live RoomCreate frames settle it without one. Pairing `field_0c` against the
 team u16 at wire 0xb0:
 
-| field_0c | team (0xb0) | count |
+| field_0c | teams it occurs with | counts |
 |---|---|---|
-| 0x00000002 | 0x0000 | 71 |
-| 0x00000013 | 0x0001 | 15 |
-| 0x00000009 | 0x0001 | 9 |
-| 0x00000013 | 0x0002 | 3 |
-| 0x00000012 | 0x0001 | 1 |
-| 0x00000009 | 0x0000 | 1 |
+| 0x00000002 | 0 | 92 |
+| 0x00000009 | 0, 1 | 2, 9 |
+| 0x00000012 | 1 | 4 |
+| 0x00000013 | **0, 1, 2** | 1, 15, 3 |
 
-`0x13` appears with team 1 and team 2; `0x09` appears with team 1 and team 0. If
-`field_0c` encoded team in any bit, a fixed `field_0c` would force a fixed team.
-It does not, so `field_0c` carries no team component. The remaining reading is
-map (or map-like) selection only.
+`0x13` spans the COMPLETE team domain - the team byte takes only 0, 1 and 2, and
+a single `field_0c` value occurs with every one of them. If `field_0c` encoded
+team in any bit, a fixed `field_0c` would force a fixed team; instead one value
+covers every team there is. `field_0c` carries no team component, and the
+remaining reading is map (or map-like) selection only.
 
 Second observation: `0x135` FindMatch carries `field_0c = 0x00000002` in 411/411
 frames, and every RoomCreate reached via find-match carries `0x02` as well, while

@@ -76,11 +76,16 @@ seq:
       The earlier controlled test (research/notes/2026-08-16-map-id-vs-team-
       confound.md) saw 0x09/0x13 track TEAM with map held constant, leaving
       pure-map vs map+team-combined unseparated and calling for a 2x2 capture.
-      100 live RoomCreate frames settle it without one: pairing this field
-      against the team u16 at wire 0xb0 gives 0x13 with team 1 (x15) AND team 2
-      (x3), and 0x09 with team 1 (x9) AND team 0 (x1). If field_0c encoded team
-      in any bit, a fixed field_0c would force a fixed team; it does not, so this
-      field carries NO team component. Remaining reading: map (or map-like)
+      126 live RoomCreate frames settle it without one. Pairing this field
+      against the team u16 at wire 0xb0:
+        field_0c=0x13 occurs with team 0 (x1), team 1 (x15) AND team 2 (x3)
+        field_0c=0x09 occurs with team 0 (x2) AND team 1 (x9)
+        field_0c=0x12 occurs with team 1 (x4)
+        field_0c=0x02 occurs with team 0 (x92, the find-match path)
+      A single field_0c value (0x13) spans the COMPLETE team domain - team takes
+      only 0, 1 and 2. If field_0c encoded team in any bit, a fixed field_0c
+      would force a fixed team; instead one value covers every team there is, so
+      this field carries NO team component. Remaining reading: map (or map-like)
       selection only.
       OPEN SUB-QUESTION: find-match always sends 0x02 here (and 0x135 sends 0x02
       in 411/411 frames), while custom games send 0x09/0x12/0x13 - so 0x02 may be
