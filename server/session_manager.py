@@ -18,6 +18,7 @@ can be read directly off a live capture before trusting the server hello
 response's byte order.
 """
 import socket
+import signal
 import sys
 import datetime
 import threading
@@ -814,10 +815,22 @@ def close_room_and_notify(entry, reason, exclude_key=None):
     for key, (mid, mconn, memit) in list(entry.get("conns", {}).items()):
         if key == exclude_key:
             continue
+        # NEVER send a member its OWN departure. 0x134's handler runs the
+        # member lookup + removal path (FUN_00ad0d4c -> FUN_00ad3190), so
+        # RoomLeave(member_id=N) delivered to member N tells that client it
+        # left, and it acts on itself. That self-referential shape is the same
+        # bug class as the 0x138 self-kick that broke Join Party and the 0x13d
+        # re-announce that broke join-in-progress. The owner still gets 0x139,
+        # which is the message that actually means "this room is finished".
+        # Matters on the shutdown drain, where nobody is the departing party
+        # and the owner IS one of the recipients.
+        msg = closed if mid == MEMBER_ID else leave + closed
         try:
-            mconn.sendall(leave + closed)
+            mconn.sendall(msg)
             memit(f"   [close] room {room_id.hex()} closed ({reason}) - sent "
-                  f"RoomLeave(owner)+RoomClosed(0x139) to member {mid}")
+                  + ("RoomClosed(0x139)" if mid == MEMBER_ID
+                     else "RoomLeave(owner)+RoomClosed(0x139)")
+                  + f" to member {mid}")
             told += 1
         except OSError as e:
             memit(f"   [close] could not notify member {mid} ({e})")
@@ -1955,11 +1968,62 @@ def handle(conn, addr, log_lock, log):
         conn.close()
 
 
+def drain_rooms_for_shutdown(reason="server shutting down"):
+    """Tell every client its rooms are gone, BEFORE the process exits.
+
+    A client has NO reconnect path for the session-manager connection: it is
+    opened once by SessionManager::Init (FUN_00ad71a0, connect @0x00ad728c) when
+    the player enters the Multiplayer menu, and nothing re-drives it during a
+    healthy session (research/notes/2026-08-18-session-manager-connect-and-
+    reconnect.md). Worse, the death is SILENT client-side - recv()==0 returns
+    with no log, no close, and the client keeps sending its 30 s 0x145 keepalive
+    into the dead socket forever, only surfacing an error if it happens to hit
+    one of the screen handlers that consume the network-error flag.
+
+    Live consequence (2026-08-18): after a restart, one client was booted and
+    recovered, while the other sat in the main menu looking fine for six
+    minutes with a dead connection, and had to re-enter multiplayer by hand.
+
+    We cannot make a client reconnect - that is proven, no server-reachable
+    trigger exists. What we CAN do is not leave it holding a room we have
+    forgotten: 0x134 RoomLeave + 0x139 RoomClosed drive the client's own
+    teardown, so the room object is invalidated properly rather than rotting
+    into a null room id. Best-effort and exception-guarded: shutdown must not
+    hang or throw.
+    """
+    with rooms_lock:
+        entries = list(active_rooms.values())
+        active_rooms.clear()
+    if not entries:
+        return 0
+    print(f"{_ts()} draining {len(entries)} room(s) before exit ({reason})",
+          flush=True)
+    for info in entries:
+        try:
+            close_room_and_notify(info, reason)
+        except Exception as e:      # never let shutdown die on a dead socket
+            print(f"{_ts()}   drain of room "
+                  f"{info.get('room_id', b'').hex()} failed: {e}", flush=True)
+    return len(entries)
+
+
+def _install_shutdown_handlers():
+    def _bye(signum, _frame):
+        drain_rooms_for_shutdown(f"server shutting down (signal {signum})")
+        sys.exit(0)
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(sig, _bye)
+        except (ValueError, OSError):
+            pass        # not on the main thread / unsupported platform
+
+
 def main():
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("0.0.0.0", PORT))
     srv.listen(5)
+    _install_shutdown_handlers()
     print(f"{_ts()} Session Manager stub listening on 0.0.0.0:{PORT}, "
           f"logging to {LOG_PATH}", flush=True)
 
