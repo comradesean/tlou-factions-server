@@ -72,7 +72,7 @@ seq:
     doc: "Offset 4:6. The member id being kicked from the party/room."
   - id: requester_member_id
     type: u2
-    doc: "Offset 6:8. The member id requesting the kick. A value of 0 marks this as the join flow's own auto-emitted status message, NOT a genuine user-initiated kick - see doc-level note."
+    doc: "Offset 6:8. The member id requesting the kick. A value of 0 means there is NO requesting member - an automatic removal request, NOT a genuine user-initiated kick. Two observed sources: the join flow (fires ~0.01-0.17 s after a RoomJoin) and a host whose P2P layer has noticed a dead peer (fires 30-640 s after any join). Only a nonzero value is a player pressing Kick in the UI - see doc-level note."
   - id: room_id
     type: u8
     doc: "Offset 8:16. The room the target/requester both belong to - same room_id-echo pattern used throughout this opcode family."
