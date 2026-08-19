@@ -122,15 +122,17 @@ live in the data-compiler payload the game loads at runtime.
   that could still name the interior fields, since no reader exists to trace
   backward from.
 
-  IMPORTANT - IF PS4 ACCESS EVER HAPPENS: The Last of Us Remastered (PS4) is
-  the only realistic route left to a genuine retail server for this - the
-  PS3 original's ND servers are long dead, but Remastered's may still be up
-  since it shipped years later. If PS4 hardware/access is ever obtained,
-  capture `0x136 RoomSearch` traffic (or Remastered's equivalent opcode, IF
-  ONE EXISTS - the PS4 build's session-manager protocol may not use the same
-  opcode numbering as this repo's PS3 findings; do not assume opcode 0x136
-  or these exact byte offsets carry over without re-deriving them the way
-  this project derived the PS3 ones). What to capture and why:
+  IMPORTANT - IF PS4 ACCESS EVER HAPPENS: The Last of Us Remastered (PS4) has
+  a real retail backend STILL RUNNING as of 2026-08-19 - not speculative,
+  confirmed - which the PS3 original's long-dead ND servers can no longer
+  provide. No PS4 hardware/access exists right now, so nothing further can
+  be done on this item until that changes; recorded here so the plan isn't
+  lost. If PS4 hardware/access is ever obtained, capture `0x136 RoomSearch`
+  traffic (or Remastered's equivalent opcode, IF ONE EXISTS - the PS4
+  build's session-manager protocol may not use the same opcode numbering as
+  this repo's PS3 findings; do not assume opcode 0x136 or these exact byte
+  offsets carry over without re-deriving them the way this project derived
+  the PS3 ones). What to capture and why:
     - The FULL wire capture of the whole session-manager connection, not
       just the game-list reply - `attr_tail`'s producer/consumer chain spans
       multiple opcodes on the PS3 side, and the PS4 equivalent may too.
@@ -157,6 +159,24 @@ live in the data-compiler payload the game loads at runtime.
     - Record findings the same way as the rest of this repo: a dated note in
       `research/notes/`, then fold the confirmed fields into a `.ksy` spec
       with Who/Why/Where evidence, not directly into this file.
+    - ALSO CAPTURE (added 2026-08-19, from the `0x140`/`0x141` investigation):
+      `SetAttrFlags`/`UpdatedAttrFlags` traffic (or its PS4 equivalent) across
+      a full lobby-to-results cycle. The PS3 side already has the CLIENT'S
+      half fully solved - `attr_selector` is a binary phase announcement (1 =
+      lobby/roster model rebuild, 0 = `NET_SM_RESULTS`/match-end stat
+      crediting; see `protos/0x140_set_room_flags.ksy` and this project's own
+      prior research naming both call sites, `FUN_0035a7dc` and
+      `FUN_003f208c`) - what's missing and UNRECOVERABLE from the PS3 client
+      alone is the SERVER-SIDE consequence: what a real ND/Remastered backend
+      DOES with a lobby-rebuild vs. results notification (matchmaking
+      bookkeeping? stats/leaderboard timing? nothing at all?). A retail
+      capture can't show this directly either (the server's internal logic
+      still isn't observable from outside), but it CAN show whether the
+      retail server's OWN reply behavior differs from what would be
+      predicted from this repo's current stub (e.g. does retail reply
+      immediately every time the way our stub does, or does it withhold/
+      delay a reply under some condition, which would be an indirect clue to
+      server-side gating this repo can't otherwise discover).
 
 - **`0x12f room_settings_tail` / `0x130 room_object_tail`** - 32 bytes each,
   provenance known (copies of specific room-object spans), interiors unmapped.
