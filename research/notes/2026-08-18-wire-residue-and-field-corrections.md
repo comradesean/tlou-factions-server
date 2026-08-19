@@ -117,7 +117,9 @@ carry is narrowed further in 4b below - it is not a map id either.)
 
 ### 4b. It is not a map id either - it splits by ROOM OBJECT
 
-131 live RoomCreate frames, zero crossover:
+**[SUPERSEDED - see 4d. The "zero crossover" below did not hold.]**
+
+131 live RoomCreate frames, zero crossover at the time of writing:
 
 | field_0c | room object | count |
 |---|---|---|
@@ -139,7 +141,10 @@ LEAD: a friend-card presence capture during a live custom game read
 since mode and faction are set on the same lobby screen. Unresolved: the
 historically logged 0x5a (90) and 0x63 (99) are too many for a two-mode reading.
 
-### 4c. Matchmade path RESOLVED - it is the game mode
+### 4c. Matchmade path - the SEARCH field is the game mode
+
+(Section 4b's "disjoint by room class, zero crossover" claim is RETRACTED in 4d
+below. Read 4d before relying on anything here.)
 
 `field_0c` looked invariant at `0x02` (411/411 searches) only because every
 capture until then was of a single playlist. A second playlist produced `0x03`:
@@ -149,8 +154,9 @@ capture until then was of a single playlist. A second playlist produced `0x03`:
 | `0x135` FindMatch | 554 | 11 |
 | `0x12f` RoomCreate (PUBLIC) | 94 | 2 |
 
-The searcher ASKS for a mode in `0x135`; the elected host STAMPS it on the room
-it creates. `0x02` = Supply Raid, `0x03` = Survivors, read off the live client
+The searcher ASKS for a mode in `0x135`. (The "and the elected host STAMPS it on
+the room it creates" half of this claim is RETRACTED - see 4d.) `0x02` = Supply
+Raid, `0x03` = Survivors, read off the live client
 UI. This is the matchmaking filter, and the stub currently IGNORES it - it
 returns every public room regardless of mode. Harmless while one playlist is in
 use; wrong the moment two are.
@@ -278,3 +284,49 @@ gap fields all match the capture exactly as documented. The only remaining uses
 of a from-recurrence argument are the two corrected 0x140/0x141 passages and
 `0x146`, where "reproducible from the session_seed" is a disassembly-backed
 statement about a real checksum, not an inference from recurrence.
+
+
+### 4d. RETRACTION - two claims in 4b/4c were wrong
+
+Both were made and refuted the same day. Recording them because the error mode
+is instructive, not just the conclusion.
+
+**Retracted 1: "the searcher asks for a mode in 0x135 and the elected host
+stamps it on the room."** Live counter-example: at 23:18:35 a client sent 0x135
+with `field_0c=0x02`; 14 seconds later its own RoomCreate carried
+`field_0c=0x13`, on a room the server registered PUBLIC/matchmade. Same client,
+different values.
+
+**Retracted 2: "the value ranges are disjoint by room class, zero crossover."**
+The same frame puts `0x13` on a PUBLIC room; it also occurs 21 times on PRIVATE
+ones. Updated distribution over 138 RoomCreate frames:
+
+| field_0c | PUBLIC | PRIVATE | PARTY |
+|---|---|---|---|
+| 0x02 | 94 | - | - |
+| 0x03 | 2 | - | - |
+| 0x09 | - | 12 | - |
+| 0x12 | - | - | 6 |
+| 0x13 | **1** | 21 | - |
+
+**The error:** `0x135`'s `field_0c` and `0x12f`'s `room_field_0c` are the same
+struct OFFSET (+0x0c) but of DIFFERENT OBJECTS - `search_obj` versus `room_obj`.
+Treating "same offset" as "same quantity" was an inference stated as a fact, and
+the 94/94 agreement that appeared to confirm it was a correlation produced by
+both being set during the same normal flow.
+
+**What survives:** the SEARCH field (`0x135`) tracking the playlist is still
+well supported - `0x02`/`0x03` across 565 searches, matching the client UI.
+Only the room field is in doubt.
+
+**Current reading of the room field (provisional):** a genuine room-object
+member that nothing reliably resets, so a room created from a dirty client
+state inherits a stale value. The single crossover frame came from a client
+that had just been booted mid-match and reconnected, and the value it carried
+(`0x13`) is in the same id space as the recent-level MAP ring - and that client
+had just played a map. For private matches nothing in matchmaking reads the
+field at all, so nothing forces it to be meaningful there.
+
+**Server guidance:** filter the `0x136` game list on the SEARCHER's `0x135`
+field, never on the host's `room_field_0c`; a stale value would otherwise make
+a legitimate room unjoinable.

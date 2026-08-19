@@ -181,17 +181,20 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
 
 ## TIER 2 - MECHANISM KNOWN, MEANING PARTIAL
 
-34. **`room_field_0c` / `field_0c`** (`0x12f`, `0x135`) - `*(u32*)(obj+0x0c)`.
-    MATCHMADE HALF NOW TIER 1: it is the GAME MODE / PLAYLIST - `0x02` = Supply
-    Raid, `0x03` = Survivors, asked for in `0x135` and stamped on the room by
-    the elected host. Value ranges are disjoint by room class (131 frames, zero
-    crossover): PUBLIC `0x02`/`0x03`, PRIVATE `0x09`/`0x13`, PARTY `0x12`. Team
-    component ruled out. STILL TIER 2: what the PRIVATE pair means - the same
-    modes in another encoding, or map (find-match votes the map, a private match
-    picks it), the latter fitting the historical `0x5a`/`0x63`.
-    NOTE an implementation gap this exposes: the stub ignores `field_0c` when
-    answering `0x136`, so it will match players into the wrong playlist as soon
-    as two are in use.
+34. **`field_0c`** - two DIFFERENT fields that share a struct offset, and were
+    wrongly treated as one. `0x135`'s is `search_obj+0x0c`: the GAME MODE the
+    player is queueing for (`0x02` Supply Raid, `0x03` Survivors, 565 searches,
+    matches the client UI) - well supported, and the correct key for filtering
+    the `0x136` list. `0x12f`'s `room_field_0c` is `room_obj+0x0c` and is NOT
+    the same quantity: a client searched `0x02` and 14 s later created a
+    matchmade room stamped `0x13`. Best reading of the room field is a genuine
+    member that nothing reliably resets, so a dirty client state carries a stale
+    value (possibly the last map id - the crossover value `0x13` is in the
+    recent-level MAP id space, from a client that had just played a map). Team
+    component ruled out for both. IMPLEMENTATION: the stub ignores `field_0c`
+    entirely when answering `0x136`, so it will cross-match playlists as soon as
+    two are in use.
+
 35. **`room_flags_e8` / `room_flags_10`** - `*(u32*)(obj+0xE8)` conditionally
     OR'd with `0x40000000`. Low 20 bits constant across captures; the `oris` gate
     condition is outside the traced function body.

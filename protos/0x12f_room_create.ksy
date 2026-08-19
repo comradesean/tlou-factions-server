@@ -66,54 +66,59 @@ seq:
     type: u4
     doc: |
       Offset 12:16. Verbatim copy of `*(u32*)(room_obj + 0x0c)` (`lwz r0,12(r31)`
-      / `stw r0,156(r1)` @ 0x00ad5f30). The same struct offset is sent by 0x135
-      FindMatch as its own `field_0c`, so the two carry the same quantity.
+      / `stw r0,156(r1)` @ 0x00ad5f30). A real struct member, deliberately
+      copied - NOT send-buffer residue like the pad_* fields.
 
-      DEFINITION: the room's SELECTOR - what kind of session this is. Its value
-      range is disjoint by room class, and on the matchmaking path it is the
-      game mode.
+      STATUS: PARTIALLY UNDERSTOOD, and previously OVER-CLAIMED TWICE in one day.
+      Read the corrections below before trusting any summary of this field.
 
-      MATCHMADE PATH - RESOLVED 2026-08-18: this is the GAME MODE / PLAYLIST.
-      It had looked invariant at 0x02 only because every earlier capture was of
-      one playlist; a second playlist produced 0x03, in both the searcher's
-      request and the host's RoomCreate:
-        0x135 FindMatch:              0x02 x554,  0x03 x11
-        0x12f RoomCreate (PUBLIC):    0x02 x94,   0x03 x2
-      The searcher ASKS for a mode in 0x135; the elected host STAMPS it on the
-      room it creates. 0x02 = Supply Raid, 0x03 = Survivors (read off the live
-      client UI). REASON it exists: it is the matchmaking filter - a server
-      should only offer a searcher rooms whose field_0c matches its own, or
-      players get matched into the wrong playlist.
+      WHAT IS SOLID:
+        - It carries NO team component. A single value (0x13) occurs with team 0,
+          1 AND 2 - the complete team domain - so no bit of it encodes team.
+          This closes the old map-vs-team confound
+          (research/notes/2026-08-16-map-id-vs-team-confound.md) without the 2x2
+          capture that note called for.
+        - Live value distribution by room class (whole day, 138 RoomCreate
+          frames): PUBLIC 0x02 x94 / 0x03 x2 / 0x13 x1; PRIVATE 0x09 x12 /
+          0x13 x21; PARTY 0x12 x6.
+        - The PARTY value is a constant 0x12 in 6/6 frames.
 
-      VALUE RANGES ARE DISJOINT BY ROOM CLASS (131 live RoomCreate frames,
-      zero crossover):
-        PUBLIC  (find-match)   -> 0x02, 0x03      = game mode, per above
-        PRIVATE (custom game)  -> 0x09, 0x13      = open, see below
-        PARTY                  -> 0x12 (constant) = a party has no mode or map
+      CORRECTION 1 (2026-08-18, same day as the claim). It was documented that
+      "the searcher ASKS for a mode in 0x135 and the elected host STAMPS it on
+      the room". REFUTED by a live counter-example: at 23:18:35 a client sent
+      0x135 with field_0c=0x02, and 14 s later its own 0x12f RoomCreate carried
+      field_0c=0x13, on a room the server registered PUBLIC/matchmade. The two
+      values differ on the same client seconds apart. The error was assuming
+      that because 0x135's field_0c and this field are both at +0x0c of their
+      objects, they carry the same quantity - they are DIFFERENT OBJECTS
+      (search_obj vs room_obj) and that was an inference, not a fact.
 
-      PRIVATE PAIR - OPEN. Two readings that make different predictions:
-        (a) the same two modes in a private-match encoding; or
-        (b) a different quantity entirely - on find-match you choose a PLAYLIST
-            and the map is voted, whereas in a private match you choose the MAP,
-            so the field may carry map there.
-      Reading (b) better fits the historically logged 0x5a (90) and 0x63 (99),
-      which are too many values for a two-mode reading.
-      DECIDING TEST: two private matches differing ONLY in mode (map fixed) - if
-      field_0c changes it is mode; then two differing ONLY in map (mode fixed) -
-      if it changes it is map.
+      CORRECTION 2. It was documented that the value ranges are "disjoint by
+      room class, zero crossover". REFUTED by the same frame: 0x13 occurs on
+      both PRIVATE (x21) and PUBLIC (x1).
 
-      TEAM COMPONENT RULED OUT 2026-08-18. An earlier controlled test
-      (research/notes/2026-08-16-map-id-vs-team-confound.md) saw 0x09/0x13 track
-      TEAM with the map held constant, leaving "map" and "map+team combined"
-      unseparated and calling for a 2x2 capture. 126 live frames settle it
-      without one: pairing field_0c against the team u16 at wire 0xb0, value
-      0x13 occurs with team 0 (x1), 1 (x15) AND 2 (x3) - the COMPLETE team
-      domain, since team takes only 0/1/2 - and 0x09 occurs with team 0 (x2) and
-      1 (x9). If field_0c encoded team in any bit a fixed field_0c would force a
-      fixed team; instead one value covers every team there is. The old confound
-      is explained by mode and faction being set on the same lobby screen.
+      CURRENT BEST READING (explicitly provisional): a genuine room-object
+      member that the matchmaking path sets, but which NOTHING RELIABLY RESETS,
+      so a room created from a dirty client state inherits a stale value. The
+      one crossover frame came from a client that had just been BOOTED
+      mid-match and reconnected - an abnormal state - and the stale value it
+      carried (0x13) is in the same id space as the recent-level MAP ring
+      (0x0e, 0x0f, 0x10, 0x13, 0x14, 0x15, 0x17), and that client had just
+      played a map. So the stale content may be the last MAP id. For PRIVATE
+      matches nothing in matchmaking ever reads this field, so nothing forces
+      it to be meaningful there.
 
-      See research/notes/2026-08-18-wire-residue-and-field-corrections.md 4/4b.
+      SERVER GUIDANCE: do not rely on this field. If it is ever used to filter
+      the 0x136 game list, tolerate mismatches rather than excluding rooms on
+      it - a stale value would otherwise make a legitimate room unjoinable.
+
+      DECIDING CAPTURES, in priority order:
+        1. Play a KNOWN map, do NOT get booted, then create a room - does
+           field_0c equal that map's id from the recent_level ring?
+        2. Two private matches differing ONLY in mode, then ONLY in map.
+        3. A clean-boot client (ring 0xffff) creating a matchmade room - what
+           does the field read before anything has been played?
+      See research/notes/2026-08-18-wire-residue-and-field-corrections.md 4/4b/4c.
   - id: region_language
     size: 4
     doc: "Offset 16:20. Region/language, built from the sceNpManagerGetAccountRegion / GetMyLanguages pair this function calls. Live-constant `75 73 00 01` = \"us\\0\" + language 1."

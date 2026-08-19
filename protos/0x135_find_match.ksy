@@ -57,24 +57,29 @@ seq:
     type: u4
     doc: |
       Offset 12:16. `*(u32*)(search_obj+0x0C)` (`lwz r11,12(r29)` @ 0xad6c90,
-      `stw r11,156(r1)`) - literally the SAME struct offset as RoomCreate's
-      room_field_0c (room_obj+0x0c), and it carries the same quantity.
+      `stw r11,156(r1)`). NOTE: RoomCreate's room_field_0c is the same struct
+      OFFSET but of a DIFFERENT OBJECT (room_obj, not search_obj). An earlier
+      revision asserted the two carry the same quantity; that was refuted the
+      same day - a client searched with 0x02 and 14 s later created a matchmade
+      room stamped 0x13. Treat them as separate fields.
       DEFINITION on this path: the GAME MODE / PLAYLIST the client is searching
       for. RESOLVED 2026-08-18 - it had looked invariant at 0x02 across 411
       frames only because every capture was of a single playlist; a second
-      playlist produced 0x03 (0x02 x554, 0x03 x11), and the RoomCreate that
-      follows a search stamps the same value on the new PUBLIC room
-      (0x02 x94, 0x03 x2). 0x02 = Supply Raid, 0x03 = Survivors, read off the
-      live client UI.
-      REASON it exists: this is the matchmaking filter. A server MUST only
-      return rooms whose field_0c matches the searcher's, or players are matched
-      into the wrong playlist. The stub currently ignores it and returns every
-      public room - correct while only one playlist is in use, WRONG as soon as
-      two are, and worth fixing before any multi-playlist testing.
-      Team component ruled out, and the private-match value range (0x09/0x13) is
-      a separate open question - see protos/0x12f_room_create.ksy
-      room_field_0c and research/notes/2026-08-18-wire-residue-and-field-
-      corrections.md 4/4b.
+      playlist produced 0x03 (0x02 x554, 0x03 x11). 0x02 = Supply Raid,
+      0x03 = Survivors, read off the live client UI. PUBLIC RoomCreates usually
+      carry a matching value (0x02 x94, 0x03 x2), but NOT always - one carried
+      0x13 - so that correlation is a tendency, not the mechanism.
+      REASON it exists: this is the matchmaking filter - the mode the player is
+      queueing for. A server that filters the 0x136 list should key on THIS
+      field (the searcher's own request), NOT on the host's room_field_0c, which
+      is not reliably maintained (see protos/0x12f_room_create.ksy). The stub
+      currently ignores it and returns every public room - correct while only
+      one playlist is in use, WRONG as soon as two are.
+      CONFIDENCE: the 0x02/0x03 split tracks the two playlists across 565 live
+      searches and matches what the client UI showed, so the MODE reading here
+      is well supported. It is only the equivalence with room_field_0c that was
+      wrong. See research/notes/2026-08-18-wire-residue-and-field-corrections.md
+      4/4b/4c.
   - id: room_flags_10
     type: u4
     doc: "Offset 16:20. `*(u32*)(search_obj+0xE8)` conditionally OR'd with 0x40000000 (`lwz r0,232(r29)` @ 0xad6cd0, `oris r0,r0,16384` @ 0xad6cf0) - identical construction to RoomCreate's room_flags_e8. Live `10 2c 50 3f`. (The oris gate compares r10, whose definition is outside the function body - gate condition untraced.)"
