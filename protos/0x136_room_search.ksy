@@ -104,30 +104,52 @@ types:
         size: 20
         doc: |
           Offset 0x24:0x38. The unmapped remainder of the 36-byte attribute
-          block whose first 16 bytes are host_npid. NOT FIELD-MAPPED, and the
-          name says so deliberately: no interior field of these 20 bytes has a
-          confirmed offset, width or meaning. Any "map/mode/etc." reading is a
-          guess from the block's role, not a decode - do not treat it as one.
+          block whose first 16 bytes are host_npid. No interior field of these
+          20 bytes has a confirmed offset, width, or meaning - any "map/mode/
+          etc." reading is still a guess from the block's role, not a decode.
 
-          The server sends 20 zero bytes and matchmaking works end-to-end
-          (browse -> join -> counted, credited match), so zeros are SAFE in the
-          sense that nothing observed is broken by them. That is an absence of
-          evidence, not a proof of inertness: it only establishes that every
-          consumer reached so far either ignores the span or tolerates zero as
-          a legal value. A consumer that keys off it would show up as a
-          cosmetic or filtering difference in the browser, not as a hard
-          failure.
+          NO LONGER "absence of evidence only" (2026-08-19): traced BOTH sides
+          of the copy at instruction granularity and confirmed this span IS
+          propagated downstream, not dropped.
 
-          Two things together would unblock it, and neither alone is enough:
-            (a) decompile the copy of this block on BOTH sides - the 0x136
-                deserializer (the 0x136 case of FUN_00ad7604, which byte-copies
-                from wire[0x14] into the entry object) and the CONNECT_TO_HOST
-                handler `_opd_FUN_003b2a9c`, which copies the entry's attribute
-                block again - and find the loads that read inside 0x24:0x38;
+          Side 1, the 0x136 deserializer (0x136 case of FUN_00ad7604,
+          disassembly research/ghidra/dispatch_raw2.txt around 0xad7d90-
+          0xad7eb4): a straight byte-for-byte copy loop, `lbz`/`stb` pairs,
+          with a fixed -0xc offset from wire to the in-memory entry object for
+          this whole span - wire[0x14:0x38] (host_npid + attr_tail, 36 bytes)
+          lands verbatim at entry_obj[0x8:0x2c], so attr_tail specifically is
+          entry_obj[0x18:0x2c]. No reinterpretation at this step, just a copy.
+
+          Side 2, the CONNECT_TO_HOST handler (`_opd_FUN_003b2a9c`,
+          research/ghidra/fm_stab_handlers.txt): copies entry_obj[0x0:0x2c] -
+          room_id + host_npid + attr_tail, the WHOLE block including this
+          field - into a second object (call it the peer-connection struct)
+          at that object's offset 0x98:0xc4, immediately before writing a
+          P2P connection handle to the same object's offset 0x1a48 (a field
+          independently confirmed live-load-bearing elsewhere - it recurs
+          across unrelated network flows, e.g. invite-accept in the same
+          file, and is read back extensively in research/ghidra/
+          fm_host_refs.txt to actually address the peer). So attr_tail is not
+          copied into a throwaway scratch buffer; it rides along into a real,
+          actively-used connection object at the exact moment the client
+          commits to dialing a specific host.
+
+          STILL OPEN: no reader of that destination object's 0x98:0xc4 span
+          was found in this pass - the trace proves attr_tail is CARRIED to a
+          live object, not that anything reads it back out of that object
+          afterward. That is the narrowed remaining question (down from "is
+          this field read anywhere at all" to "is THIS specific copy read
+          back"). Closing it needs one of:
+            (a) identify the peer-connection struct's concrete type (a size/
+                allocator/vtable search from its confirmed fields: id at
+                +0x98, npid+attr_tail at +0xa0:0xc4, P2P handle at +0x1a48)
+                and enumerate every reader of offsets +0xb0:0xc4 specifically
+                on THAT type - offset collisions with unrelated structs are
+                common in a binary this large, so a bare offset grep is not
+                enough (tried; too noisy to trust without the type pin);
             (b) correlate against a live capture in which the host varies ONE
                 search/lobby option at a time (mode, map, playlist, privacy,
                 NAT, party size) between otherwise identical rooms, so each
                 changed byte is attributable to exactly one option.
-          Static analysis alone gives offsets without meanings; captures alone
-          give byte diffs without proof of what reads them.
-          See docs/OPEN-QUESTIONS.md.
+          The server still sends 20 zero bytes and matchmaking works end-to-
+          end; that remains true and safe. See docs/OPEN-QUESTIONS.md.

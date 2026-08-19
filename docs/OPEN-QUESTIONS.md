@@ -61,22 +61,32 @@ live in the data-compiler payload the game loads at runtime.
   because that is genuinely all that is known - the field name and its `doc:`
   are deliberately non-committal, and the "map/mode/etc." reading that used to
   appear beside it was a guess from the block's role, not a decode.
-  WHY ZEROS ARE CURRENTLY SAFE: the server sends 20 zero bytes and the full loop
-  works - browse, join, load, counted and credited match. So no consumer reached
-  so far either requires a non-zero value or rejects zero. That is an absence of
-  evidence, not a proof of inertness: a consumer keyed off this span would show
-  up as a cosmetic or a filtering difference in the browser (a wrong icon, a
-  room that should have been filtered out), not as a hard failure, so it could
-  sit unnoticed indefinitely. It cannot be fixed blind - inventing field
-  meanings here would put unverified fields into a proto, which is exactly what
-  `docs/methodology.md`'s confidence discipline forbids.
-  UNBLOCK - both halves are needed, neither alone suffices:
-    (a) decompile the copy of that block on BOTH sides. The `0x136`
-        deserializer is the `0x136` case of `FUN_00ad7604`, which byte-copies
-        from `wire[0x14]` into the entry object; the consumer is
-        `_opd_FUN_003b2a9c` (the joiner's `CONNECT_TO_HOST` handler), which
-        copies the entry's attribute block again. Find the loads that land
-        inside `0x24:0x38` and note their widths and offsets.
+  NARROWED 2026-08-19: both copy sites are now traced at instruction
+  granularity (`research/ghidra/dispatch_raw2.txt`, `fm_stab_handlers.txt`).
+  The `0x136` deserializer copies attr_tail verbatim into the entry object
+  (wire `0x24:0x38` -> entry_obj `0x18:0x2c`, a plain byte-copy loop, fixed
+  -0xc offset). `_opd_FUN_003b2a9c` (CONNECT_TO_HOST) then copies the WHOLE
+  36-byte attribute block, attr_tail included, into a live peer-connection
+  object at that object's `0x98:0xc4` - the same object that receives the
+  P2P connection handle at `+0x1a48` moments later, a field independently
+  confirmed load-bearing (it recurs across unrelated flows, e.g. invite-
+  accept, and is read back extensively in `research/ghidra/fm_host_refs.txt`
+  to actually address the peer). So this is no longer "absence of evidence
+  only": attr_tail is proven to ride into a real, actively-used object at the
+  exact moment the client commits to dialing a host, not a throwaway copy.
+  WHY IT IS STILL OPEN: no reader of that destination object's `0x98:0xc4`
+  span was found in this pass. The question narrowed from "is this read
+  anywhere at all" to "is THIS specific copy read back out of the peer object
+  afterward" - genuinely smaller, not closed.
+  WHY ZEROS ARE STILL SAFE: the server sends 20 zero bytes and the full loop
+  still works end to end - browse, join, load, counted and credited match.
+  UNBLOCK - either would close it:
+    (a) pin the peer-connection struct's concrete type from its now-confirmed
+        fields (id `+0x98`, npid+attr_tail `+0xa0:0xc4`, P2P handle `+0x1a48`)
+        and enumerate every reader of `+0xb0:0xc4` on THAT type specifically -
+        a bare offset grep across the binary was tried and is too noisy to
+        trust without the type pin (those offsets collide with many unrelated
+        structs).
     (b) correlate against a live capture in which the host varies exactly ONE
         search/lobby option at a time (mode, map, playlist, privacy, NAT, party
         size) between otherwise identical rooms, so each byte that changes is
