@@ -37,10 +37,14 @@ full `0x13d`+`0x13f` round trip; `0x138` Kickedout captured being sent correctly
 for a genuine kick; and `0x137`'s two roles separated by live evidence
 (4x requester=0 join-flow status, 1x requester=1 real kick).
 
+**Closed 2026-08-18 by the host-departure fix:** `0x139` RoomClosed, first send
+in the project's history - an owner leaving a room with a survivor in it now
+produces `0x134 RoomLeave(owner)` + `0x139`, and the survivor accepted it
+cleanly while keeping its separate party room. Every Tier 1 room-lifecycle
+message is now live-verified.
+
 **Still not live-verified:**
 
-- `0x139` RoomClosed - zero frames in either direction, ever. Disassembly only.
-  The one Tier 1 room-lifecycle message with no live backing.
 - `0x132` RoomJoined - deliberately never sent; the "must not send" reason rests
   on disassembly plus an unretained 2026-08-15 regression.
 - `single-player-server` hello - 0 of 452 captured sibling hellos.

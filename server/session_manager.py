@@ -231,7 +231,27 @@ PARTY_ROOM_PTR = 0x01387f58
 # Keyed by id(conn); each value keeps everything needed to push an updated
 # roster to the host connection when someone joins. Guarded by rooms_lock.
 rooms_lock = threading.Lock()
+# KEYED BY (conn_key, room_id) since 2026-08-18 - it used to be keyed by
+# conn_key alone, which meant a connection could own only ONE room. A client
+# is routinely in TWO rooms at once (its party room 0x01387f58 AND its game
+# room 0x01383bd8), so creating the game room OVERWROTE the party entry and
+# the party ceased to exist server-side while the client was still in it.
+# Live proof (2026-08-18 21:44-21:57): comradesean created a game room at
+# 21:44:58, and mgnomad2's party join at 21:57:13 was answered "NO matching
+# room found on another connection, no reply sent" - while the party host was
+# still connected and still posting party data, which the stub then dropped as
+# "sender not in any registered room". Both clients ended up restarting.
 active_rooms = {}
+
+
+def rooms_owned_by(conn_key):
+    """Every room this connection is the OWNER of. Caller holds rooms_lock."""
+    return [info for (ck, _rid), info in active_rooms.items() if ck == conn_key]
+
+
+def room_keys_owned_by(conn_key):
+    """Registry keys for every room this connection owns. Caller holds lock."""
+    return [k for k in active_rooms if k[0] == conn_key]
 
 # Per-member data blob cache (2026-08-17). Each client pushes its own 32-byte
 # member blob via 0x13a (SetPartyData) - the blob carries the values the
@@ -755,6 +775,62 @@ def build_room_leave(room_id, member_id):
     body[8:16] = room_id
     struct.pack_into(">H", body, 16, member_id)
     return bytes(body)
+
+
+def build_room_closed(room_id):
+    """Build a 0x139 RoomClosed (16 bytes) - "this room no longer exists".
+
+    NEW 2026-08-18. Never sent before this date, which is exactly the bug:
+    when the room OWNER left (0x133 or a dead socket) the stub deleted the
+    room from its registry and told the remaining members NOTHING - no
+    0x134, no 0x139. A survivor was left holding a room object the server
+    had forgotten, with no keepalive (start_member_refresher skips
+    multi-member rooms) and no surviving peer to maintain it, which is the
+    documented road to room_obj+0x10 going zero and code that assumes a
+    valid room id trapping (research/notes/2026-08-15-room-teardown-and-
+    flag-chain.md, _opd_FUN_0040b210).
+
+    Layout per protos/0x139_room_closed.ksy: opcode, 4 pad bytes, room_id.
+    """
+    body = bytearray(16)
+    struct.pack_into(">I", body, 0, 0x139)
+    body[8:16] = room_id
+    return bytes(body)
+
+
+def close_room_and_notify(entry, reason, exclude_key=None):
+    """Retire a room and TELL ITS SURVIVING MEMBERS, instead of silently
+    dropping it. Caller must NOT hold rooms_lock.
+
+    Sends, to every member except `exclude_key` (the departing connection):
+      0x134 RoomLeave(owner_member_id)  - the owner is gone from the roster
+      0x139 RoomClosed(room_id)         - and the room itself is finished
+    then stops the refresher and purges the room's cached member blobs.
+    """
+    room_id = entry["room_id"]
+    leave = build_room_leave(room_id, MEMBER_ID)
+    closed = build_room_closed(room_id)
+    told = 0
+    for key, (mid, mconn, memit) in list(entry.get("conns", {}).items()):
+        if key == exclude_key:
+            continue
+        try:
+            mconn.sendall(leave + closed)
+            memit(f"   [close] room {room_id.hex()} closed ({reason}) - sent "
+                  f"RoomLeave(owner)+RoomClosed(0x139) to member {mid}")
+            told += 1
+        except OSError as e:
+            memit(f"   [close] could not notify member {mid} ({e})")
+    if told == 0:
+        # Log the no-survivor case too, so "the close path never ran" and "it
+        # ran and had nobody to tell" are distinguishable in the log.
+        entry["emit"](f"   [close] room {room_id.hex()} closed ({reason}) - "
+                      f"no surviving members to notify")
+    entry["stop_event"].set()
+    with rooms_lock:
+        for kk in [k for k in member_blobs if k[0] == room_id]:
+            member_blobs.pop(kk, None)
+    return told
 
 
 def build_kickedout(room_id):
@@ -1297,14 +1373,19 @@ def handle(conn, addr, log_lock, log):
                                         MEMBER_ID, MEMBER_ID, active_room_stop,
                                         room_ptr=room_ptr, populate_self_npid=True)
                 with rooms_lock:
-                    old_entry = active_rooms.get(id(conn))
+                    # Replace only the entry for THIS SAME room_id. Rooms this
+                    # connection owns under OTHER ids (its party room, when it
+                    # is now creating a game room) must survive - overwriting
+                    # them is what silently destroyed live parties before
+                    # 2026-08-18. See active_rooms' comment.
+                    old_entry = active_rooms.get((id(conn), room_id))
                     if old_entry is not None:
                         # A joint-roster refresher started by the 0x130 join
                         # handler holds a NEWER stop_event than this thread's
                         # local active_room_stop - stop it via the registry
                         # so it can't outlive its room.
                         old_entry["stop_event"].set()
-                    active_rooms[id(conn)] = {
+                    active_rooms[(id(conn), room_id)] = {
                         "npid": npid, "conn": conn, "emit": emit,
                         "room_id": room_id, "room_ptr": room_ptr,
                         "max_players": max_players,
@@ -1552,9 +1633,11 @@ def handle(conn, addr, log_lock, log):
                 # only guards the edge where a party host (room_ptr 0x01387f58)
                 # searches on the game object (0x01383bd8).
                 with rooms_lock:
-                    hosted = active_rooms.get(conn_key)
-                    live_host = (hosted is not None
-                                 and hosted.get("room_ptr") == search_obj_ptr)
+                    # "Live host" = this connection owns a room whose room_ptr
+                    # is the object it is searching on. Scans every room it
+                    # owns now that a connection can own more than one.
+                    live_host = any(h.get("room_ptr") == search_obj_ptr
+                                    for h in rooms_owned_by(conn_key))
                     entries = [(info["room_id"], info)
                                for info in active_rooms.values()
                                if info.get("public") and info["conn"] is not conn
@@ -1600,27 +1683,36 @@ def handle(conn, addr, log_lock, log):
                 # Host liveness is now strictly "between its 0x12f and its
                 # 0x133", never a timer.
                 dropped_public = False
+                closing = None
                 with rooms_lock:
-                    info = active_rooms.get(id(conn))
-                    # Tolerate an id mismatch on a public room: its id is
-                    # stub-synthesized, so if the client's own local copy ever
-                    # diverges we still must retire the room rather than leave
-                    # a zombie host in the list.
-                    if info is not None and (info["room_id"] == room_id_tail
-                                             or info.get("public")):
-                        if info["room_id"] != room_id_tail:
-                            emit(f"   (0x133 room_id {room_id_tail.hex()} != "
-                                 f"registered {info['room_id'].hex()} - retiring "
-                                 f"this connection's public room anyway)")
-                        info["stop_event"].set()
+                    # Only the room this 0x133 names - rooms this connection
+                    # owns under other ids stay alive (a client leaving its
+                    # GAME room is still in its PARTY room).
+                    info = active_rooms.get((id(conn), room_id_tail))
+                    if info is None:
+                        # Tolerate an id mismatch on a public room: its id is
+                        # stub-synthesized, so if the client's own local copy
+                        # ever diverges we still must retire the room rather
+                        # than leave a zombie host in the list.
+                        for k in room_keys_owned_by(id(conn)):
+                            if active_rooms[k].get("public"):
+                                info = active_rooms[k]
+                                emit(f"   (0x133 room_id {room_id_tail.hex()} != "
+                                     f"registered {info['room_id'].hex()} - retiring "
+                                     f"this connection's public room anyway)")
+                                break
+                    if info is not None:
                         dropped_public = bool(info.get("public"))
-                        del active_rooms[id(conn)]
-                        # Retire the room's cached member blobs with it, so a
-                        # departed player's rank/faction/loadout can never be
-                        # seeded into the NEXT room that reuses this id.
-                        for k in [kk for kk in member_blobs
-                                  if kk[0] == info["room_id"]]:
-                            member_blobs.pop(k, None)
+                        del active_rooms[(id(conn), info["room_id"])]
+                        closing = info
+                if closing is not None:
+                    # THE OWNER IS LEAVING. Tell whoever is still in the room
+                    # instead of dropping it silently - a survivor left holding
+                    # a forgotten room gets no keepalive and no peer, which is
+                    # the documented road to a null room id and a trap. See
+                    # build_room_closed. (This also retires the cached blobs.)
+                    close_room_and_notify(closing, "owner left (0x133)",
+                                          exclude_key=id(conn))
                 stop_member_refresher(id(conn))
                 if dropped_public:
                     emit(f"   (public host room {room_id_tail.hex()} abandoned - "
@@ -1817,15 +1909,18 @@ def handle(conn, addr, log_lock, log):
             active_room_stop.set()
         stop_member_refresher(id(conn))
         with rooms_lock:
-            info = active_rooms.pop(id(conn), None)
-            if info is not None:
-                info["stop_event"].set()
-                # Purge this room's cached blobs so a dead host's stale rank/
-                # loadout data can't be replayed into the next party that
-                # reuses the same shared room_id.
-                for (rid, mid) in [kk for kk in member_blobs
-                                   if kk[0] == info["room_id"]]:
-                    member_blobs.pop((rid, mid), None)
+            # A connection can own SEVERAL rooms (party + game), so retire all
+            # of them - and keep them so their survivors can be told. Blob
+            # purging happens in close_room_and_notify.
+            closing = []
+            for k in room_keys_owned_by(id(conn)):
+                closing.append(active_rooms.pop(k))
+        for info in closing:
+            # THE OWNER'S SOCKET DIED (client crash, VM death, network drop).
+            # Previously this deleted the room and told the remaining members
+            # NOTHING, orphaning them on a room the server had forgotten.
+            close_room_and_notify(info, "owner connection closed",
+                                  exclude_key=id(conn))
         broadcast_member_departure(id(conn))
         conn.close()
 

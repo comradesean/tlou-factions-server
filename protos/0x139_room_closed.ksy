@@ -26,6 +26,25 @@ doc: |
   vtable+0x20 callback. Net effect: this client's entire room object is
   torn down and invalidated, regardless of which member it is - "the room
   itself is gone", distinct from "I personally was kicked" (0x138).
+  LIVE-VERIFIED 2026-08-18 - first send in the project's history. Until this
+  date the stub had no builder for 0x139 at all, and an owner leaving simply
+  vanished: the room was deleted from the registry and the remaining members
+  were told NOTHING (no 0x134, no 0x139), leaving a survivor holding a room the
+  server had forgotten, with no keepalive (start_member_refresher skips
+  multi-member rooms) and no surviving peer - the documented road to
+  room_obj+0x10 going zero and code that assumes a valid room id trapping.
+
+  Captured exchange:
+    22:30:59.864  in   owner  0x133 RoomLeaving  room=012723d801383bd8
+    22:30:59.867  out  member 0x134 RoomLeave(member_id=1) + 0x139 RoomClosed
+
+  The survivor accepted it cleanly and kept running: six seconds later it was
+  still exchanging 0x13a/0x13b member data on its PARTY room. So the teardown
+  is correctly scoped to the room named in room_id - it invalidates that room
+  object only, and other rooms the same client belongs to are untouched.
+  Send it to every remaining member when a room's owner departs, paired with a
+  0x134 RoomLeave naming the departed owner.
+
 doc-ref: ../docs/protocol/session_manager_and_matchmaking.md
 seq:
   - id: opcode
