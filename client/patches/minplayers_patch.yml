@@ -10,3 +10,35 @@ PPU-9df60dc1aa5005a0c80e9066e4951dc0471553e6:
     Patch Version: "1.0"
     Patch:
       - [ be32, 0x003b7ab8, 0x38600002 ]  # bl FUN_0039f1e0 -> li r3,2 (min players = 2)
+
+# =============================================================================
+# PATCH 1.11 (app version 01.11). Same fix, ported by signature 2026-08-19.
+#
+# HOW THE ADDRESS WAS FOUND (not guessed): the 1.00 site 0x003b7ab8 sits in a
+# distinctive sequence - two consecutive bl, then
+#   lwz r31,-32712(r30) / mr r29,r3 / mr r3,r31 / bl <getter> / nop /
+#   cmplw cr7,r29,r3 / bge cr7
+# i.e. r29 = the P2P-gated counted-member total, r3 = the playlist minimum.
+# That signature (with the bl wildcarded) matches 5 sites in EACH binary, and
+# 1.11's third one is byte-for-byte identical to 1.00's third, down to the same
+# lwz displacements (-32704/-32712/-32632), the same lwz r0,100(r9), and the
+# same branch offsets (+0x1c/+0x8c/+0x88). Only the bl targets are relocated.
+#
+# CONFIRMED by the property the 1.00 patch relies on: the getter it calls has
+# exactly ONE call site binary-wide. Scanning every bl in both binaries:
+#   1.00  getter 0x0039f1e0  <- called only from 0x003b7ab8
+#   1.11  getter 0x003b84ac  <- called only from 0x003d1d18
+# Reproducing the documented 1.00 result validates the method.
+#
+# Original bytes at 0x003d1d18: 4b fe 67 95  (bl 0x3b84ac).
+# =============================================================================
+PPU-120fb71f7352d62521c639b0e99f960018c10a56:
+  "TLOU Factions - Find Match min players = 2 (TESTING ONLY)":
+    Games:
+      "The Last of Us":
+        BCUS98174: [ 01.11 ]
+    Author: "tlou_factions"
+    Notes: "TESTING patch, 1.11 build. Lowers the find-match lobby start minimum from the shipped 6 to 2 so two-client dev testing can start a matchmade game. Replaces the bl to the playlist min-players getter (0x003b84ac in 1.11, sole call site binary-wide) with li r3,2 at the SERVER_LOBBY start gate. Port of the 01.00 patch above; see that entry for the mechanism. Not for the final product. Original bytes at 0x003d1d18: 4b fe 67 95."
+    Patch Version: "1.0"
+    Patch:
+      - [ be32, 0x003d1d18, 0x38600002 ]  # bl <min-players getter> -> li r3,2
