@@ -1195,6 +1195,7 @@ def handle(conn, addr, log_lock, log):
         # custom game and must never be listed (one-shot: reset on create).
         find_match_searching = False
         find_match_mode = None
+        find_match_build = None
         stop_event = threading.Event()
         # Per-room refresher lifecycle (2026-08-16): start_member_refresher's
         # background thread only stops on a socket error - nothing ever set
@@ -1496,6 +1497,10 @@ def handle(conn, addr, log_lock, log):
                         # reliably reset and has been seen stale. None = unknown,
                         # which the 0x136 filter treats as "offer to anyone".
                         "mode": find_match_mode if find_match_searching else None,
+                        # Game build of the client that owns this room, from its
+                        # own room-object pointer. None = unrecognised build,
+                        # which the 0x136 filter treats as "offer to anyone".
+                        "build": build_of(room_ptr),
                     }
                 if find_match_searching:
                     emit(f"   (this RoomCreate follows a find-match search - "
@@ -1521,6 +1526,23 @@ def handle(conn, addr, log_lock, log):
                         if info["conn"] is not conn and info["room_id"] == target_room_id:
                             host = info
                 if host is not None:
+                    # CROSS-BUILD JOIN WATCH (2026-08-19). WARN ONLY - we do not
+                    # refuse yet. A party invite crosses PSN, not our server, so
+                    # a 1.00 client could in principle be invited into a 1.11
+                    # party; the two cannot actually play together. Refusing
+                    # outright risks false positives on a build we have not
+                    # catalogued, and today already showed how a silent mismatch
+                    # of these constants breaks Join Party - so observe first,
+                    # enforce once there is evidence this fires in real use.
+                    joiner_build = build_of(join_room_ptr)
+                    host_build = host.get("build")
+                    if (joiner_build is not None and host_build is not None
+                            and joiner_build != host_build):
+                        emit(f"   *** CROSS-BUILD JOIN: joiner is {joiner_build} "
+                             f"(room_ptr {join_room_ptr:#010x}) but the room "
+                             f"belongs to {host_build}. These builds cannot play "
+                             f"together; the session will not work. Allowing it "
+                             f"for now so the behaviour can be observed. ***")
                     # Always speak the room identity WE assigned (registry key).
                     # For the party/invite path this is identical to what the
                     # client sent; on the find-match path it is the synthesized
@@ -1713,6 +1735,14 @@ def handle(conn, addr, log_lock, log):
                 # has been observed stale (protos/0x12f_room_create.ksy).
                 find_match_mode = (struct.unpack(">I", chunk[12:16])[0]
                                    if len(chunk) >= 16 else None)
+                # GAME BUILD of the searcher. 0x135 wire offset 8 is the
+                # client's search object, which is the SAME global as its game
+                # room object (0x01383bd8 in 855/855 live 1.00 searches), so the
+                # build fingerprint arrives with the search itself - no lazy
+                # learning needed. build_of() returns None for an unrecognised
+                # pointer, and None disables the filter rather than hiding
+                # rooms, so an unknown build can never wedge matchmaking.
+                find_match_build = build_of(search_obj_ptr)
                 # Burst position marker: wire offset 0x18 u16 runs 5,10,10,0,0
                 # across the five searches of one burst (live-captured), so 5
                 # means "first search of a fresh burst" = criteria 0.
@@ -1749,10 +1779,26 @@ def handle(conn, addr, log_lock, log):
                                if info.get("public") and info["conn"] is not conn
                                and len(info.get("members", []))
                                < info.get("max_players", 8)
-                               and info.get("mode") in (None, find_match_mode)]
+                               and info.get("mode") in (None, find_match_mode)
+                               and (find_match_build is None
+                                    or info.get("build") in (None, find_match_build))]
                     filtered = [info for info in active_rooms.values()
                                 if info.get("public") and info["conn"] is not conn
                                 and info.get("mode") not in (None, find_match_mode)]
+                    # CROSS-BUILD SEGREGATION (2026-08-19). Two game builds
+                    # cannot play together - different code and content - so a
+                    # 1.00 client must never be matched into a 1.11 room or
+                    # vice versa. Nothing in the protocol carries a version
+                    # (see research/notes/2026-08-18-version-segregation-via-
+                    # netbin.md), but the client's own room-object pointer is a
+                    # reliable build fingerprint, and unlike field_0c it is not
+                    # stale-prone: it is the address the client is actually
+                    # using this session.
+                    wrong_build = [info for info in active_rooms.values()
+                                   if info.get("public") and info["conn"] is not conn
+                                   and info.get("build") is not None
+                                   and find_match_build is not None
+                                   and info["build"] != find_match_build]
                 if live_host:
                     emit(f"   parsed opcode={opcode:#x} (find-match search, "
                          f"marker={marker}) - this connection is a LIVE HOST "
@@ -1765,6 +1811,11 @@ def handle(conn, addr, log_lock, log):
                          f"{len(entries)} public game(s) "
                          f"[{', '.join(rid.hex() for rid, _ in entries) or 'none'}], "
                          f"search_obj_ptr={search_obj_ptr:#x}")
+                    if wrong_build:
+                        emit(f"   [build] withheld {len(wrong_build)} public "
+                             f"room(s) from this searcher - wrong game build "
+                             f"(searcher={find_match_build}, rooms="
+                             f"{[i.get('build') for i in wrong_build]})")
                     if filtered:
                         emit(f"   [mode] withheld {len(filtered)} public room(s) "
                              f"from this searcher - wrong playlist "
