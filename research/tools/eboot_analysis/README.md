@@ -4,11 +4,24 @@ Small Python tools for analysing the decrypted TLOU EBOOT directly, for when the
 Ghidra project is locked/busy or when Ghidra's reference manager misses this
 binary's addressing idioms (it frequently does — see below).
 
-Target binary (not vendored; path is the local RPCS3 game install):
+Target binary (not vendored; paths are the local RPCS3 game installs). TWO game
+versions are in play as of 2026-08-19 - every address in this repo's notes is
+1.00 unless stated otherwise, and 1.11 is a RECOMPILE, so addresses do not
+translate by a fixed delta:
 
 ```
+# 01.00  PPU-9df60dc1aa5005a0c80e9066e4951dc0471553e6
 /mnt/f/rpcs3_testing/rpcs3-v0.0.41-19598-357b7d44_win64_msvc/games/The Last of Us [BCUS98174]/PS3_GAME/USRDIR/EBOOT.elf
+
+# 01.11  PPU-120fb71f7352d62521c639b0e99f960018c10a56
+/mnt/f/rpcs3_testing/rpcs3-v0.0.41-19598-357b7d44_win64_msvc/dev_hdd0/game/BCUS98174/USRDIR/EBOOT.elf
 ```
+
+Port addresses between builds by SIGNATURE, then confirm with a property that
+holds independently in both binaries (a unique instruction immediate, a
+call-site count, an identical displacement pattern). `client/patches/` has two
+worked examples in its comment blocks. The `VMA = file offset + 0x10000` mapping
+below holds for BOTH builds - verified against each ELF's program headers.
 
 VMA↔file mapping is uniform for both LOAD segments: **file offset = VMA − 0x10000**.
 That means plain objdump works with no ELF parsing at all:

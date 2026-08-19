@@ -40,7 +40,7 @@ doc: |
      unchecked vtable call. Live-proven: comradesean's client sends
      `01 38 3b d8`, which is byte-for-byte the address a live RPCS3
      debugger breakpoint previously recovered and which
-     tools/session_manager_stub.py hardcodes as ROOM_PTR; a second real
+     server/session_manager.py hardcodes as ROOM_PTR; a second real
      client (mgnomad2) sends `01 38 7f 58`. Read it off this field per
      connection instead of hardcoding it.
 
@@ -136,7 +136,7 @@ seq:
     doc: "Offset 28:30. A caller-supplied argument (`sth r27,172(r1)` @ 0x00ad5c60, before r27 is reset to 0). Live values `ff ff` and `00 00`."
   - id: pad_1e
     size: 2
-    doc: "Offset 30:32. NEVER WRITTEN - uninitialised stack. tools/session_manager_stub.py reads max_players from here; that is a bug (see doc, correction 3). Live values `00 0a` and `00 00`."
+    doc: "Offset 30:32. NEVER WRITTEN - uninitialised stack. server/session_manager.py reads max_players from here; that is a bug (see doc, correction 3). Live values `00 0a` and `00 00`."
   - id: value_20
     type: u2
     doc: "Offset 32:34. A float converted to int via fctiwz. Live-constant 1000 (0x03e8)."
@@ -153,7 +153,7 @@ seq:
       player's 32-byte member_data card carried at wire 0xa8 (see member_data
       inside room_tail_block below), sourced from `*(u8*)(room_obj + 0x19f8)`
       (`stb r11,182(r1)`). Live 0x20 (=32), the exact length the card UI getter
-      (_opd_FUN_00ad2650) demands. tools/session_manager_stub.py HARVESTS the
+      (_opd_FUN_00ad2650) demands. server/session_manager.py HARVESTS the
       32 bytes at wire 0xa8 keyed by this length and replays them into its
       0x131 Member roster + 0x13b so the host's lobby shows the joiner's card -
       the matchmade lobby never sends a 0x13a request, so this (and 0x130's

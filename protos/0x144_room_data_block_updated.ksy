@@ -33,7 +33,7 @@ doc: |
   PRACTICAL CONSEQUENCE: the block MUST be NUL-terminated within 128 bytes
   or the strcpy overruns `room_obj+0x18` into `room_obj+0x98` and beyond.
   Echoing the client's own 0x143 payload back (what
-  tools/session_manager_stub.py does) is safe and correct for a
+  server/session_manager.py does) is safe and correct for a
   confirmation reply, since the client only ever puts a strcpy'd
   `<npid>.<unix-timestamp>` string there in practice.
 

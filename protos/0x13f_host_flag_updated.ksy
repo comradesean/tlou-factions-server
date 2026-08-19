@@ -20,10 +20,15 @@ doc: |
   offset 4 into that room's own struct at +0x19f4 - the "is owner"/"is
   host" flag. Name and behavior agree cleanly.
 
-  *** THIS IS THE HIGHEST-VALUE UNSENT MESSAGE IN THE FAMILY (2026-08-16) ***
+  *** WAS THE HIGHEST-VALUE UNSENT MESSAGE IN THE FAMILY (2026-08-16) - NOW
+  SENT AND LIVE-VERIFIED (status corrected 2026-08-19) ***
 
-  `tools/session_manager_stub.py` has never sent this, and without it a
-  solo-hosting client NEVER LEARNS IT IS THE HOST. Full evidence in
+  `server/session_manager.py` sends this on the solo-host path and on every
+  ownership change; 271 frames in a single day's capture, and it is part of the
+  live-verified Promote round trip (0x13c -> 0x13d + 0x13f to every member, see
+  protos/0x13c_promote.ksy). The text below records WHY it was needed and
+  remains the evidence for the field's meaning: without it a solo-hosting client
+  never learns it is the host. Full evidence in
   research/notes/2026-08-16-sessmgr-dispatch-audit-and-unsent-opcodes.md
   section 2; the short version:
 
@@ -51,7 +56,7 @@ doc: |
 
   This is a DIFFERENT and complementary piece of ownership state from
   0x13d/OwnerChanged, which writes `room_obj+0x19f0` ("which member id is
-  the owner"). Neither is currently sent by tools/session_manager_stub.py.
+  the owner"). Neither is currently sent by server/session_manager.py.
 
   SEQUENCING (hard requirement): room_obj+0x10 is set ONLY by Member's
   (0x131) handler. Send 0x13f strictly AFTER Member - sent first, the

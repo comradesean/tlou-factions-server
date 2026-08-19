@@ -33,7 +33,7 @@ doc: |
   null or validity check (`lwz r24,0x8(r28)` @ 0x00ad77d4 -> `lwz r9,0x0(r29)`
   -> `bctrl`). It must be the address of an object the CLIENT ITSELF
   allocated. Previously this required a live RPCS3 debugger breakpoint and was
-  hardcoded in tools/session_manager_stub.py as ROOM_PTR = 0x01383bd8.
+  hardcoded in server/session_manager.py as ROOM_PTR = 0x01383bd8.
 
   **The client hands it to us on every RoomCreate.** `FUN_00ad5b78` (the
   0x12f/RoomCreate sender) stores its own room-object pointer into RoomCreate

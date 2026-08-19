@@ -51,7 +51,7 @@ doc: |
 
   UPDATE (2026-08-14, fourth pass): SOLVED. The ARX (add-rotate-xor)
   construction across FUN_00db5ec0/FUN_00db7f88/FUN_00db7c80/FUN_00db5e50/
-  FUN_00db7cb0 is reimplemented in `tools/ticket_cipher.py` and now
+  FUN_00db7cb0 is reimplemented in `server/lib/ticket_cipher.py` and now
   correctly decrypts this real capture - the static key was independently
   confirmed via a live RPCS3 memory read (matching the statically-resolved
   candidate byte-for-byte), which isolated the remaining bug to this
@@ -75,7 +75,7 @@ seq:
     doc: "Length of the ORIGINAL UNENCRYPTED payload (the raw NP ticket bytes here), big-endian - NOT the on-wire ciphertext length. Confirmed via disassembly (`sth len,...`) and matches the real capture (0x00fa = 250, plausible for an NP ticket; an earlier RPCS3 log line from an unrelated session observed 248, so ticket size legitimately varies run-to-run)."
   - id: auth_tag
     size: 16
-    doc: "Keyed authentication tag over the plaintext, computed by the client's encoder (FUN_00db5ec0 keystream-init + FUN_00db7f88 digest + FUN_00db5e50 finalize) and independently RECOMPUTED and compared by the client's own decoder (FUN_00acbb90) whenever IT receives a frame from the server - meaning ticket_server_ticket_submit_response (message D) must carry a tag the client will recompute and verify, or the client closes the connection. Keyed by the session_token counter (this direction) + a static 16-byte table embedded in the client binary (both confirmed live - see doc). CONFIRMED WORKING: tools/ticket_cipher.py recomputes this tag and it matches the real capture's embedded tag exactly."
+    doc: "Keyed authentication tag over the plaintext, computed by the client's encoder (FUN_00db5ec0 keystream-init + FUN_00db7f88 digest + FUN_00db5e50 finalize) and independently RECOMPUTED and compared by the client's own decoder (FUN_00acbb90) whenever IT receives a frame from the server - meaning ticket_server_ticket_submit_response (message D) must carry a tag the client will recompute and verify, or the client closes the connection. Keyed by the session_token counter (this direction) + a static 16-byte table embedded in the client binary (both confirmed live - see doc). CONFIRMED WORKING: server/lib/ticket_cipher.py recomputes this tag and it matches the real capture's embedded tag exactly."
   - id: ciphertext
     size: plaintext_len + pad_count
-    doc: "The plaintext (raw NP ticket bytes) plus pad_count padding bytes, encrypted in place via a keystream produced by the same ARX construction as auth_tag (FUN_00db7cb0 - identical math to FUN_00db7f88's digest pass but writes the mixed state back over the buffer instead of only accumulating it). CONFIRMED WORKING: tools/ticket_cipher.py decrypts this and recovers a real NP ticket (contains \"UP9000-BCUS98174_00\" and \"comradesean\" in plaintext, with consistent Sony TLV structure) - the first plaintext_len bytes are the raw NP ticket exactly as sceNpManagerGetTicket returned it."
+    doc: "The plaintext (raw NP ticket bytes) plus pad_count padding bytes, encrypted in place via a keystream produced by the same ARX construction as auth_tag (FUN_00db7cb0 - identical math to FUN_00db7f88's digest pass but writes the mixed state back over the buffer instead of only accumulating it). CONFIRMED WORKING: server/lib/ticket_cipher.py decrypts this and recovers a real NP ticket (contains \"UP9000-BCUS98174_00\" and \"comradesean\" in plaintext, with consistent Sony TLV structure) - the first plaintext_len bytes are the raw NP ticket exactly as sceNpManagerGetTicket returned it."

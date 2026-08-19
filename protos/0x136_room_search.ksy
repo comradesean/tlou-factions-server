@@ -16,7 +16,7 @@ doc: |
   to that entry's host (NET_SM_CLIENT_CONNECT_TO_HOST, via the host NpId in the
   entry - see below), NOT via a 0x130 to us.
 
-  Implemented in tools/session_manager_stub.py (build_room_search). LIVE STATUS
+  Implemented in server/session_manager.py (build_room_search). LIVE STATUS
   2026-08-17: the FULL loop works end-to-end - the stub's serialized election
   (see protos/0x135_find_match.ksy) replies with an EMPTY list to the elected
   host through its whole search burst, PARKS the other searcher (sends no

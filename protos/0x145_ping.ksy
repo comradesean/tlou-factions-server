@@ -12,7 +12,7 @@ doc: |
   0x145 (see that doc's intro for the correction).
 
   STATUS: fully confirmed. Bare 4-byte opcode-only packet, no payload at
-  all. Fire-and-forget: tools/session_manager_stub.py (PING_OPCODE) sends
+  all. Fire-and-forget: server/session_manager.py (PING_OPCODE) sends
   no reply, and the client has shown no sign of expecting one - appears to
   be a client-side-timer-driven keepalive rather than something requiring
   server acknowledgment.

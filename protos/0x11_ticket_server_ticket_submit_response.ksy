@@ -46,7 +46,7 @@ doc: |
   UPDATE (2026-08-14, fourth pass): the cipher itself is now SOLVED and
   verified against a real message-C capture - see
   protos/0x11_ticket_server_ticket_submit.ksy and the doc's "Encrypted frame
-  layer" section. `tools/ticket_cipher.py`'s `encrypt_frame()`, keyed by a
+  layer" section. `server/lib/ticket_cipher.py`'s `encrypt_frame()`, keyed by a
   connection's own client_nonce, now produces a real, self-consistent frame
   (correct magic byte, correct auth_tag - verified by round-tripping it back
   through the module's own decrypt) for this message. The all-zero 16-byte

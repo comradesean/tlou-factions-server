@@ -48,7 +48,7 @@ seq:
       the LENGTH of the joiner's 32-byte member_data card carried at wire
       offset 0x18 (see member_data below), copied from the room object's own
       +0x19f8 byte (same source as RoomCreate's member_data_length). Live
-      0x20 (=32). tools/session_manager_stub.py harvests the card keyed by
+      0x20 (=32). server/session_manager.py harvests the card keyed by
       this length on every 0x130 and replays it (0x131 roster + 0x13b) so the
       HOST's lobby shows the joiner's rank/faction card - the decisive fix,
       since the matchmade lobby never sends 0x13a and the host would otherwise

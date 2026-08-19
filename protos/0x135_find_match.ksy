@@ -23,7 +23,7 @@ doc: |
   wire offset 8 = search-object pointer, and wire offset 0x18 is a BURST
   MARKER (criteria index) that steps 5, 10, 10, 0, 0 across the ~5 searches of
   one find-match burst before the client gives up and self-hosts a public game.
-  tools/session_manager_stub.py uses this to run a deterministic election: the
+  server/session_manager.py uses this to run a deterministic election: the
   FIRST criteria-0 (marker==5) searcher is elected HOST and gets empty 0x136
   lists through its whole burst so it self-hosts; any OTHER client searching
   during the election is PARKED (no 0x136 reply at all - it blocks silently in
@@ -70,11 +70,16 @@ seq:
       carry a matching value (0x02 x94, 0x03 x2), but NOT always - one carried
       0x13 - so that correlation is a tendency, not the mechanism.
       REASON it exists: this is the matchmaking filter - the mode the player is
-      queueing for. A server that filters the 0x136 list should key on THIS
-      field (the searcher's own request), NOT on the host's room_field_0c, which
-      is not reliably maintained (see protos/0x12f_room_create.ksy). The stub
-      currently ignores it and returns every public room - correct while only
-      one playlist is in use, WRONG as soon as two are.
+      queueing for. A server that filters the 0x136 list MUST key on THIS field
+      (the searcher's own request), NOT on the host's room_field_0c, which is
+      not reliably maintained (see protos/0x12f_room_create.ksy).
+      IMPLEMENTED 2026-08-18 (commit 7995141) after a live cross-playlist match:
+      a Survivors searcher (0x03) was handed a Supply Raid room (0x02) and
+      joined it, because the stub answered every search with every public room.
+      server/session_manager.py now records each public room's playlist from the
+      search that preceded its creation and only advertises matching rooms; a
+      room whose mode was never learned is still offered to everyone, so an
+      unknown can never make a legitimate room unjoinable.
       CONFIDENCE: the 0x02/0x03 split tracks the two playlists across 565 live
       searches and matches what the client UI showed, so the MODE reading here
       is well supported. It is only the equivalence with room_field_0c that was

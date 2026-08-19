@@ -1,5 +1,24 @@
 # Protocol Documentation Index
 
+> **Dangling citations (checked 2026-08-19).** Some specs and docs cite evidence
+> artifacts that are no longer in the repo. The CLAIMS they support were derived
+> from them at the time and remain valid; only the artifact is gone. Do not go
+> looking for these:
+>
+> | cited artifact | status |
+> |---|---|
+> | `captures/tcp_catch.log` | historical raw capture, not retained. Live wire evidence now comes from `server/logs/wire.jsonl` via the tap in `server/session_manager.py`, checkable with `research/tools/verify_wire.py`. |
+> | `research/notes/2026-08-15-createparty-trace.md` | never retained |
+> | `research/notes/2026-08-15-invite-server-dead-code-confirmed.md` | never retained |
+> | `research/net1bin/net1.bin` | extracted bundle, not retained. The encrypted originals are cached under `server/data/served_content/` and decrypt with `server/lib/psarc_crypt.py`. |
+> | `research/ghidra/sessmgr_init_raw_disasm.txt` | not retained; regenerate with `research/tools/ghidra_scripts/DumpRawDisasm.java`, or use `research/disasm/full.asm` |
+> | `protos/pending/netevent_catalog.md` | never created; `protos/pending/` holds `net_sm_states_catalog.md` |
+>
+> Old `tools/...` paths in DATED research notes are left as written - they record
+> the layout at the time. The repo was restructured 2026-08-18; the map is in
+> the repo root README. Live reference docs (`protos/`, `docs/`) were updated to
+> the current paths on 2026-08-19.
+
 **Numeric opcode IDs are confirmed** for 115 `NetEventType` values (0-114) — recovered directly from an in-memory enum-to-name table via Ghidra, see `protos/common/opcodes.ksy` and `research/notes/ghidra-opcode-recovery.md`. **The opcode-to-payload dispatch mechanism is now found and fully mapped** (a 115-entry allocator jump table at `0x0038ec40`, keyed directly by opcode) — see `docs/protocol/net_event_dispatch_and_simple_opcodes.md` for the discovery and `research/notes/2026-08-14-gameplay-opcode-mapping.md` for the full per-opcode status ledger. 41 opcodes have fully confirmed, `ksc`-validated payload schemas so far (16 from the first pass's inline-constructed opcodes, 25 more from a 2026-08-15 pass that generalized the vtable-resolution technique to opcodes with a dedicated external constructor — see `docs/protocol/net_event_dispatch_and_simple_opcodes.md` section 5 and `research/notes/2026-08-15-gameplay-opcode-schema-expansion.md`); every other opcode has at least a known object size and (for ~57 of the remaining ones) a known constructor address ready for the next pass. **Live testing on the `NetMatchmaking*`/session-manager family below now reaches full 2-player gameplay** (2026-08-16/17): against a self-hosted stub (`server/session_manager.py`), a real client goes through auth, solo-host into an actual match, party invite + accept + join, cross-connection find-match pairing, and two real players loading into and playing a match together. See the "LIVE-CONFIRMED WORKING" banner in `docs/protocol/session_manager_and_matchmaking.md` and the `research/notes/2026-08-16-solo-host-fixed-live-confirmed.md` / `2026-08-16-two-player-party-and-match-working.md` / `2026-08-17-member-data-blob-rank-and-0x142-hostrank.md` notes. Open items: remote-player rank/gear render empty (served profiles are empty — rank/gear progression needs the `profiles/…`+`userdata/….txt.crypt` pipeline, under investigation), the party P2P link drops at game end, and an intermittent "Host quit for cheating" teardown. Earlier trail: the `research/notes/2026-08-14-*`/`2026-08-15-*` session notes. The `net_event_type` gameplay-event family immediately below (opcodes 0-114) remains primarily static-analysis-confirmed, consistent with the project's decided scope (auth/matchmaking/signaling backbone, not gameplay-simulation reimplementation).
 
 Also known: a 38-entry catalog of lobby/match state names (`NET_SM_*`) pulled from the binary's string table, status unconfirmed either way (state-machine states vs. actual wire opcodes) — see `protos/pending/net_sm_states_catalog.md`.

@@ -42,7 +42,7 @@ doc: |
 
   This is a DIFFERENT and complementary piece of ownership state from
   0x13f/HostFlagUpdated, which writes the boolean `room_obj+0x19f4` ("am I
-  the host"). Neither is currently sent by tools/session_manager_stub.py.
+  the host"). Neither is currently sent by server/session_manager.py.
 
   SIDE EFFECT worth noting: unlike Member's silent write of the same field,
   this handler also fires `room_obj->vtable[0x34]()` after the store
