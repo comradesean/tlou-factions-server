@@ -218,6 +218,52 @@ ROOM_PTR = 0x01383bd8
 GAME_ROOM_PTR = 0x01383bd8
 PARTY_ROOM_PTR = 0x01387f58
 
+# ---------------------------------------------------------------------------
+# MULTI-BUILD SUPPORT (2026-08-19). The client sends its OWN room-object pointer
+# in 0x12f/0x130 wire offset 8, and those objects are statically allocated
+# globals whose addresses differ PER GAME BUILD. Two behavioural decisions key
+# on "is this the party object?" - the unique-party-id mint (the Join Party fix)
+# and the solo-keepalive skip - so a build we do not know about silently loses
+# both, resurfacing the Join Party host-lookup collision and the party
+# re-broadcast churn with no error.
+#
+# Live-captured pairs. NOTE the inter-object delta CHANGED between builds
+# (0x4380 -> 0x4490), so a new build's party pointer CANNOT be extrapolated from
+# its game pointer - it has to be observed. 01.11's was captured from a real
+# "Invite to Party" accept (2026-08-19 00:35:58) after the 01.00-only code let
+# that join collide and bounce.
+#
+#   build   game object   party object
+#   01.00   0x01383bd8    0x01387f58
+#   01.11   0x013babd8    0x013bf068
+#
+# To add a build: create a game room and a party on it, read room_ptr off the
+# wire (0x12f offset 8) for each, and add the pair. The canary in the 0x12f
+# handler prints exactly what to add when it sees an unknown pointer.
+# ---------------------------------------------------------------------------
+CLIENT_BUILDS = {
+    0x01383bd8: ("01.00", 0x01387f58),
+    0x013babd8: ("01.11", 0x013bf068),
+}
+GAME_ROOM_PTRS = set(CLIENT_BUILDS)
+PARTY_ROOM_PTRS = {party for _ver, party in CLIENT_BUILDS.values()}
+KNOWN_ROOM_PTRS = GAME_ROOM_PTRS | PARTY_ROOM_PTRS
+
+
+def is_party_ptr(room_ptr):
+    """True if this is the PARTY room object of any known build."""
+    return room_ptr in PARTY_ROOM_PTRS
+
+
+def build_of(room_ptr):
+    """Game-version label for a room pointer, or None if the build is unknown."""
+    if room_ptr in CLIENT_BUILDS:
+        return CLIENT_BUILDS[room_ptr][0]
+    for ver, party in CLIENT_BUILDS.values():
+        if room_ptr == party:
+            return ver
+    return None
+
 # Cross-connection room registry (2026-08-16, party-join support). Every
 # room a connection creates via RoomCreate is registered here so that a
 # LATER 0x130 RoomJoin from a DIFFERENT connection can find it. Live
@@ -1031,7 +1077,7 @@ def start_member_refresher(conn, emit, members, room_id, max_players,
              f"room {room_id.hex()} (multi-member rooms are P2P-maintained; "
              f"re-broadcasting churns party membership)")
         return
-    if room_ptr == PARTY_ROOM_PTR:
+    if is_party_ptr(room_ptr):
         # A solo occupant of the PARTY room (host who opened a party, or a host
         # left alone after the joiner departed) must NOT be refreshed - the
         # party lobby churns on Member re-broadcast and spams "kicked from
@@ -1242,30 +1288,39 @@ def handle(conn, addr, log_lock, log):
                 # historical static id: it is single-console with no cross-conn
                 # join, so its collision is harmless and the live-confirmed
                 # solo-host path stays byte-for-byte untouched.
-                # VERSION CANARY (2026-08-18). PARTY_ROOM_PTR / ROOM_PTR are
-                # addresses of globals in the retail 1.00 EBOOT, and two
-                # BEHAVIOURAL decisions compare against them by equality: the
-                # unique-party-id mint just below, and the solo-keepalive skip
-                # in start_member_refresher. A game patch that relocates either
-                # global would make both comparisons silently fail - no error,
-                # just the Join Party host-lookup collision and the "kicked from
-                # party" churn quietly returning. Only 0x01383bd8 and 0x01387f58
-                # have ever been observed (331 frames). Anything else means the
-                # client build changed and these constants need re-deriving.
-                if room_ptr not in (ROOM_PTR, PARTY_ROOM_PTR):
-                    emit(f"   *** UNKNOWN room_ptr {room_ptr:#010x} - expected "
-                         f"{ROOM_PTR:#010x} (game) or {PARTY_ROOM_PTR:#010x} "
-                         f"(party). The client build may differ from retail "
-                         f"1.00; party detection and the unique-party-id mint "
-                         f"are BOTH keyed on these addresses and will not fire "
-                         f"for this client. Re-derive them for this build. ***")
+                # BUILD CANARY (2026-08-18, made multi-build 2026-08-19). Two
+                # BEHAVIOURAL decisions compare the client's room-object pointer
+                # by equality: the unique-party-id mint just below, and the
+                # solo-keepalive skip in start_member_refresher. Those objects
+                # are per-build globals, so an unknown build silently loses both
+                # - no error, just the Join Party host-lookup collision and the
+                # "kicked from party" churn quietly returning. That is not
+                # hypothetical: it happened live on 2026-08-19 when a 01.11
+                # client's party join bounced against 01.00-only constants.
+                # See CLIENT_BUILDS.
+                if room_ptr not in KNOWN_ROOM_PTRS:
+                    emit(f"   *** UNKNOWN room_ptr {room_ptr:#010x} - not a "
+                         f"game or party object of any known build "
+                         f"({', '.join(v for v, _ in CLIENT_BUILDS.values())}). "
+                         f"Party detection and the unique-party-id mint are "
+                         f"BOTH keyed on these addresses, so Join Party will "
+                         f"collide and bounce for this client until its build "
+                         f"is added. FIX: create a game room and a party on "
+                         f"this build, read room_ptr (0x12f wire offset 8) for "
+                         f"each, and add the pair to CLIENT_BUILDS. The party "
+                         f"pointer CANNOT be extrapolated - the inter-object "
+                         f"delta differs between builds. ***")
+                elif build_of(room_ptr) is not None:
+                    emit(f"   (client build {build_of(room_ptr)}, "
+                         f"{'PARTY' if is_party_ptr(room_ptr) else 'GAME'} "
+                         f"room object {room_ptr:#010x})")
                 if find_match_searching:
                     room_id = synth_public_room_id(room_ptr)
-                elif room_ptr == PARTY_ROOM_PTR:
+                elif is_party_ptr(room_ptr):
                     room_id = synth_party_room_id(room_ptr)
                     emit(f"   [party-id] minted unique party room_id "
                          f"{room_id.hex()} for {npid!r} (was shared static "
-                         f"{PARTY_ROOM_PTR:#010x}; disambiguates the RoomJoin "
+                         f"{room_ptr:#010x}; disambiguates the RoomJoin "
                          f"host lookup for direct Join Party)")
                 # RoomCreate's own wire offset 0xc:0x10 (4 bytes) - live-
                 # evidenced 2026-08-15 as a likely map/level identifier, see
