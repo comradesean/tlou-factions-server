@@ -259,14 +259,58 @@ CLIENT_BUILDS = {
 #
 # Ids 4 and 5 are unclaimed and sit exactly where a third mode's block would go
 # (Interrogation is the obvious candidate); add them once observed.
-MATCHMAKING_PLAYLISTS = {1, 2, 3, 6, 7, 8}
+# PER-BUILD playlist tables. The ids live in netN.bin, so the SAME number means
+# different things on different builds - 3 is Survivors on 01.00 but
+# Supply Raid/DLC on 01.11. Matchmaking is segregated by build (see
+# CLIENT_BUILDS), so the two never mix; these tables exist so logs name the
+# right playlist and so an id is only accepted as a playlist for a build that
+# actually has it.
+PLAYLIST_NAMES_BY_BUILD = {
+    "01.00": {
+        # 01.00 shipped one playlist per mode - no style variants.
+        2: "Supply Raid",
+        3: "Survivors",
+    },
+    "01.11": {
+        1: "Supply Raid / Parties Allowed",
+        2: "Supply Raid / No Parties",
+        3: "Supply Raid / DLC",
+        6: "Survivors / Parties Allowed",
+        7: "Survivors / No Parties",
+        8: "Survivors / DLC",
+        11: "Interrogation / Parties Allowed",
+        12: "Interrogation / No Parties",
+        13: "Interrogation / DLC",
+    },
+}
+# Union, used when the build is not yet known (the id alone is still a strong
+# signal that a create is a matchmaking host rather than a private lobby).
+MATCHMAKING_PLAYLISTS = set().union(*(set(t) for t in PLAYLIST_NAMES_BY_BUILD.values()))
+
+
+def playlist_name(playlist, build=None):
+    """Human-readable playlist name for logs, resolved for the client's build."""
+    if build and build in PLAYLIST_NAMES_BY_BUILD:
+        name = PLAYLIST_NAMES_BY_BUILD[build].get(playlist)
+        if name:
+            return f"{name} [{build}]"
+        return f"unknown playlist for {build}"
+    hits = {b: t[playlist] for b, t in PLAYLIST_NAMES_BY_BUILD.items() if playlist in t}
+    if not hits:
+        return "unknown playlist"
+    if len(hits) == 1:
+        b, n = next(iter(hits.items()))
+        return f"{n} [{b}]"
+    return "; ".join(f"{n} [{b}]" for b, n in sorted(hits.items()))
 
 # Playlist ids used by lobbies that must NEVER be advertised in the find-match
 # list, whatever the client was doing beforehand:
-#   88 (0x58) party room
-#   90 (0x5a) lobby state seen once at client start-up on the game object
-#   99 (0x63) PRIVATE match - live-confirmed for both Supply Raid (00:55:23)
-#             and Survivors (01:01:29), so it is not mode-specific
+#   88 (0x58) party room (on the party object)
+#   90 (0x5a) PRIVATE match - Interrogation (01:18:20)
+#   99 (0x63) PRIVATE match - Supply Raid (00:55:23) and Survivors (01:01:29)
+# The private value therefore varies by mode, though not in an obvious pattern
+# (two modes share 99 while Interrogation uses 90). Unnamed on purpose - what
+# matters here is only that none of them are ever advertised.
 # This is checked FIRST because the search flag can still be set from a
 # just-abandoned find-match queue; without it a private game created moments
 # after searching inherits that flag and gets advertised to searchers. The
@@ -1859,12 +1903,20 @@ def handle(conn, addr, log_lock, log):
                                if info.get("public") and info["conn"] is not conn
                                and len(info.get("members", []))
                                < info.get("max_players", 8)
-                               and info.get("mode") in (None, find_match_mode)
+                               # EXACT playlist match. No None tolerance here:
+                               # a public room always carries a real playlist
+                               # (see the "mode" tag at RoomCreate), so a None
+                               # would be a bug, and offering it to everyone
+                               # would leak one playlist into another - the
+                               # thing this filter exists to prevent.
+                               and (find_match_mode is None
+                                    or info.get("mode") == find_match_mode)
                                and (find_match_build is None
                                     or info.get("build") in (None, find_match_build))]
                     filtered = [info for info in active_rooms.values()
                                 if info.get("public") and info["conn"] is not conn
-                                and info.get("mode") not in (None, find_match_mode)]
+                                and find_match_mode is not None
+                                and info.get("mode") != find_match_mode]
                     # CROSS-BUILD SEGREGATION (2026-08-19). Two game builds
                     # cannot play together - different code and content - so a
                     # 1.00 client must never be matched into a 1.11 room or
@@ -1897,10 +1949,12 @@ def handle(conn, addr, log_lock, log):
                              f"(searcher={find_match_build}, rooms="
                              f"{[i.get('build') for i in wrong_build]})")
                     if filtered:
-                        emit(f"   [mode] withheld {len(filtered)} public room(s) "
-                             f"from this searcher - wrong playlist "
-                             f"(searcher mode={find_match_mode}, rooms="
-                             f"{[i.get('mode') for i in filtered]})")
+                        emit(f"   [playlist] withheld {len(filtered)} public "
+                             f"room(s) - wrong playlist. Searcher wants "
+                             f"{find_match_mode} "
+                             f"({playlist_name(find_match_mode, find_match_build)});"
+                             f" rooms are "
+                             f"{[(i.get('mode'), playlist_name(i.get('mode'), i.get('build'))) for i in filtered]}")
             elif opcode == ROOM_LEAVING_OPCODE and len(chunk) >= 16:
                 # No reply - confirmed fire-and-forget, see the constant's
                 # docstring. This firing means the client just gave up on
