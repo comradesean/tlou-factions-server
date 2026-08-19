@@ -25,6 +25,20 @@ doc: |
   Compare 0x139/RoomClosed, which uses the harder full-teardown path
   (zeroes the room slot and fires an additional vtable callback) - this
   message is the lighter "you personally are out" notification.
+  LIVE-VERIFIED 2026-08-18 (first retained capture of this opcode being sent -
+  it was previously disassembly-only, because the standing rule is to never send
+  it). A deliberate "Kick from Party" produced the correct exchange:
+
+    21:43:22.209  in   conn1  0x137 Kickout target=2 requester=1
+    21:43:22.210  out  conn2  0x138 Kickedout        <- to the TARGET only
+    21:43:22.211  out  conn1  0x134 RoomLeave member_id=2
+
+  The target left, the remaining member stayed, and the party survived - which
+  is the positive control for the Join Party rule: 0x138 is correct precisely
+  when it IS a kick, addressed to the member being kicked. Sending it to anyone
+  else (in particular as a reply/ack to the requester, the historical bug) makes
+  that member kick itself out of its own room. Live payload:
+  `00000138 00000000 6000000101387f58` - pad_4 zero, room_id echoed.
 doc-ref: ../docs/protocol/session_manager_and_matchmaking.md
 seq:
   - id: opcode

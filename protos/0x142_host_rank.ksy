@@ -27,6 +27,23 @@ doc: |
   the message is a per-player rank report. Only the exact numeric encoding of
   each u16 (vs a captured ranked-account value) remains to be pinned down.
 
+  LIVE ENTRY DATA (2026-08-18, 148 frames): the find-match path sends count=1
+  with a single entry 0x0002 in 138/138 frames; the custom-game path sends
+  count=0 (empty list) in 27/27 frames. Every sampled account is unranked, so
+  0x0002 is the unranked value; the count difference follows the player-array
+  state filter at send time rather than the room type as such. A ranked account
+  remains the capture needed to pin the encoding.
+
+  NEGATIVE RESULT worth keeping (it is a tempting coincidence): the entry value
+  is NOT common/member_data's rank_value. Both read 0x0002 in some frames, but
+  across 115 frames where the sender's own card is observable, this entry is a
+  CONSTANT 0x0002 while member_data.rank_value reads 0x0001 (x80) or 0x0002
+  (x35). Different quantities from different producers - the entry comes from the
+  player object's vtable[0] getter, member_data.rank_value from
+  FUN_00323818(journeys, matches/7). The 6:8 gap is sender-side
+  residue like the rest of this family (live: d740, fe30, 00e0) - see
+  research/notes/2026-08-18-wire-residue-and-field-corrections.md §1, §5.
+
   STATUS: variable-length message, a 16-byte header plus a `count * 2`-byte
   trailing payload copied verbatim from a caller-supplied buffer
   (`_opd_FUN_00e3e064`, a plain memcpy-shaped helper, not decompiled

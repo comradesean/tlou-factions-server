@@ -37,7 +37,7 @@ seq:
     doc: "Fixed 0x130 (304 decimal), passed through _opd_FUN_00ad5580 (offset 0 of the 3 words it touches) - a confirmed no-op, so this stays plain big-endian."
   - id: pad_4
     size: 4
-    doc: "Offset 4:8. Unused word between the opcode (wire 0) and local_room_ptr (wire 8). DEFINITION: not a field. REASON: the builder FUN_00ad6718 stores opcode@112 and local_room_ptr@120 but never writes 116(r1); the buffer is sent whole, so this is leaked stack. Send 0. (Was `unknown_4`.)"
+    doc: "Offset 4:8. Unused word between the opcode (wire 0) and local_room_ptr (wire 8). DEFINITION: not a field. REASON: the builder FUN_00ad6718 stores opcode@112 and local_room_ptr@120 but never writes 116(r1); the buffer is sent whole, so this is leaked stack. Send 0. (Was `unknown_4`.) CONFIRMED STATISTICALLY 2026-08-18: 99% of this gap word's live values are valid PS3 addresses (70% in the main-thread stack 0xd0001000-0xd0040fff, the range the client's own PPU dump reports) - see research/notes/2026-08-18-wire-residue-and-field-corrections.md §1."
   - id: local_room_ptr
     type: u4
     doc: "Offset 8:12. The sending client's own raw in-process room-object pointer at the time of the call (`stw r31,0x78(r1)` in FUN_00ad6718), passed through the same no-op helper as the opcode. An opaque client-local value, not a room_id."

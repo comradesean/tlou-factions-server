@@ -71,12 +71,25 @@ seq:
       Evidence (2026-08-18, server/logs/session_manager.log): logged host values
       0x09, 0x13, 0x63(99), 0x5a(90); combined with the earlier 0x02/0x12 that is
       six distinct values, which rules out the 3-value team field (team is 0/1/2
-      and lives at RoomCreate wire 0xb0). CAVEAT: an earlier controlled test
-      (research/notes/2026-08-16-map-id-vs-team-confound.md) saw the same 0x09 /
-      0x13 track TEAM with map held constant, so pure-map vs map+team-combined is
-      not fully separated - a map x team 2x2 capture settles it (see
-      docs/capture-howto.md). Its real home is room_obj+0x0c; the writer of that
-      offset (vtable-dispatched, not found statically) would name it definitively.
+      and lives at RoomCreate wire 0xb0).
+      TEAM COMPONENT RULED OUT 2026-08-18 - the map-vs-team confound is dead.
+      The earlier controlled test (research/notes/2026-08-16-map-id-vs-team-
+      confound.md) saw 0x09/0x13 track TEAM with map held constant, leaving
+      pure-map vs map+team-combined unseparated and calling for a 2x2 capture.
+      100 live RoomCreate frames settle it without one: pairing this field
+      against the team u16 at wire 0xb0 gives 0x13 with team 1 (x15) AND team 2
+      (x3), and 0x09 with team 1 (x9) AND team 0 (x1). If field_0c encoded team
+      in any bit, a fixed field_0c would force a fixed team; it does not, so this
+      field carries NO team component. Remaining reading: map (or map-like)
+      selection only.
+      OPEN SUB-QUESTION: find-match always sends 0x02 here (and 0x135 sends 0x02
+      in 411/411 frames), while custom games send 0x09/0x12/0x13 - so 0x02 may be
+      a real map id matchmaking always resolves to, or an any/random sentinel.
+      A custom game with a deliberately chosen map, repeated for a second map,
+      names the values directly. Its real home is room_obj+0x0c; the writer of
+      that offset (vtable-dispatched, not found statically) would name it
+      definitively. See research/notes/2026-08-18-wire-residue-and-field-
+      corrections.md §4.
   - id: region_language
     size: 4
     doc: "Offset 16:20. Region/language, built from the sceNpManagerGetAccountRegion / GetMyLanguages pair this function calls. Live-constant `75 73 00 01` = \"us\\0\" + language 1."

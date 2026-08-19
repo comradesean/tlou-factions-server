@@ -14,6 +14,31 @@ doc: |
   STATUS: confirmed 16 bytes (matching the declared size), sender fully
   identified 2026-08-15 via instruction-level disassembly of vtable+0x28
   (`FUN_00ad6408`). Every field's exact store instruction was located.
+
+  LIVE-VERIFIED 2026-08-18 (first retained wire capture of this opcode - it was
+  previously disassembly-only). Two promotions were captured in one party,
+  in both directions, with the full round trip:
+
+    21:43:03  in  conn1  0x13c new_owner=2        (host promotes the other member)
+    21:43:03  out both    0x13d OwnerMemberChanged + 0x13f HostFlagUpdated
+    21:43:03  in  conn1  0x13e SetHostFlag        (demoted host acknowledges)
+    21:43:17  in  conn2  0x13c new_owner=1        (promoted back)
+    21:43:17  out both    0x13d + 0x13f
+    21:43:17  in  both   0x13e SetHostFlag
+
+  So the server's correct response to a Promote is `0x13d OwnerMemberChanged`
+  plus `0x13f HostFlagUpdated` to EVERY member, and the clients confirm by
+  sending their own `0x13e`. Ownership changed both ways with no churn.
+
+  IMPORTANT CONTRAST with the join-in-progress rule: re-firing `0x13d` into an
+  already-established room is what broke JIP (see
+  research/notes/2026-08-18-jip-handoff.md), but that is not a contradiction -
+  there the owner had NOT changed and the re-announcement was spurious. Here the
+  owner genuinely changes, and `0x13d` is exactly the right message. The rule is
+  "never re-assert UNCHANGED ownership", not "never send 0x13d".
+
+  Note the live `pad_6` bytes are `f940` in both frames, not zero - sender-side
+  residue, consistent with the rest of the family.
 doc-ref: ../docs/protocol/session_manager_and_matchmaking.md
 seq:
   - id: opcode

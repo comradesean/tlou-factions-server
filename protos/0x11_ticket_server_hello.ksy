@@ -15,7 +15,7 @@ doc: |
   low-level TCP connect. Every byte of the 88-byte buffer is accounted for -
   either as an explicit store instruction (opcode/reserved/nonce/service-name
   fields) or as a proven *unwritten* region of FUN_00acc424's own fresh stack
-  frame (the leaked_stack_garbage field below). See
+  frame (the pad_08 field below). See
   docs/protocol/0x11_ticket_server_hello.md for the full disassembly evidence.
 
   This opcode namespace is UNRELATED to protos/common/opcodes.ksy's
@@ -39,9 +39,34 @@ seq:
   - id: client_nonce
     type: u4
     doc: "Output of the client's local PRNG (FUN_00e408d8, a 32-slot LCG-based generator seeded once per process), masked to 30 bits (top 2 bits always 0 - matches every captured sample). Also cached into the connection object at offset +0x4c for later use; what (if anything) later compares against it was not traced in this pass. Best-guess purpose: a client-side session/correlation nonce. Confirmed NOT derived from the RPCN ticket bytes (ruled out - see companion doc's evidence log)."
-  - id: leaked_stack_garbage
+  - id: pad_08
     size: 16
-    doc: "UNCONFIRMED CONTENT, CONFIRMED CAUSE: proven-uninitialized bytes. FUN_00acc424 byte-copies 16 bytes from its own fresh stack frame (r1+120..135, never written by this function before the copy) into the packet. This is a genuine client-side memory-disclosure bug, not an intentional protocol field - a server implementation MUST NOT depend on its value or try to validate it. Captures showing plausible-looking PS3 stack/heap addresses here (e.g. `d0 0f 78 80`) are coincidental - whatever happened to be on the stack at that depth when this function ran."
+    doc: |
+      Offset 8:24. NOT A FIELD - sender-side residue, and the largest single
+      leak in this protocol family. RENAMED 2026-08-18 from
+      `leaked_stack_garbage` to satisfy the repo's pad_<off> convention and the
+      name+definition+reason standard.
+      DEFINITION: an unwritten 16-byte gap between client_nonce and the 64-byte
+      service_name buffer. REASON: FUN_00acc424 byte-copies 16 bytes from its own
+      fresh stack frame (r1+120..135) which the function never writes before the
+      copy, then sends the whole 88-byte hello - so whatever the previous user of
+      that stack region left behind goes on the wire.
+      LIVE CONTENT (452 captured hellos, server/logs/ticket_server.log,
+      classified per 4-byte word): mostly zero (316-414 of 452 per word), plus
+      main-thread STACK addresses (0xd00f7880 x60, 0xd00f7780, 0xd0bf3b90),
+      globals (0x01383708 x34, 0x012a3908, 0x01305870), and a float around
+      138.8-139.6 (0x430acd88 x44, 0x430ae988 x15) that reads as a seconds-since-
+      boot timer.
+      IT ALSO LEAKS TEXT. In 36 hellos the 16 bytes are a contiguous slice of a
+      URL - `6f757475 62652f61 63636f75 6e74732f` = "outube/accounts/" - and in 2
+      more they are a slice of JSON - `526f6265 72747322 2c202269 64223a20` =
+      'Roberts", "id": '. That is HTTP/JSON buffer content from the client's web
+      stack showing through, i.e. this field can disclose account identifiers and
+      real names to whatever server the client connects to. Worth stating plainly
+      because it is a genuine privacy leak in the retail client, not merely an
+      untidy gap.
+      A server MUST ignore these bytes. Send 0 when generating a hello.
+      See research/notes/2026-08-18-wire-residue-and-field-corrections.md §1, §8.
   - id: service_name
     size: 64
     doc: "NUL-terminated ASCII service name identifying which backend this multiplexed connection is for (observed: \"ticket-server\"), left-justified in a 64-byte buffer via a strcpy-equivalent (FUN_00e45b10) with NO trailing zero-fill - bytes after the NUL terminator are leftover stack garbage from the same uninitialized region as leaked_stack_garbage, not meaningful padding. A caller-side strlen check (FUN_00e40ad8) rejects service names >= 64 bytes before this function is even entered, so the field's max useful length is 63 chars + NUL."

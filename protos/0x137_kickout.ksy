@@ -22,6 +22,23 @@ doc: |
   joining rather than as a deliberate "kick this member" action from the
   UI. Only treat this as a genuine kick request when requester_member_id is
   a real (nonzero) member id.
+
+  DISCRIMINATOR LIVE-PROVEN 2026-08-18. Previously this rule was inferred from
+  the join flow alone (every captured 0x137 had requester 0, so the "real kick"
+  half was unexercised). A deliberate "Kick from Party" was then captured
+  alongside them, and the two shapes are unambiguous:
+
+    4x  target=2 requester=0   <- fired ~0-10 ms after a RoomJoin, no UI action
+    1x  target=2 requester=1   <- the deliberate kick, 36 s into a live party
+
+  Server behaviour on the genuine kick, live-verified end to end: reply
+  `0x138 Kickedout` to the TARGET's connection and `0x134 RoomLeave`
+  (member_id = target) to each remaining member. The target left, the party
+  survived, and the remaining member stayed - no host self-kick, which is the
+  failure the 0x138 rule exists to prevent (see protos/0x138_kickedout.ksy).
+  Taking NO action on a requester=0 frame is also live-verified: the four such
+  frames were ignored and the parties they belonged to went on to promote and
+  kick normally.
 doc-ref: ../docs/protocol/session_manager_and_matchmaking.md
 seq:
   - id: opcode

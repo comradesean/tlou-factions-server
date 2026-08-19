@@ -33,5 +33,11 @@ seq:
       (add-chain @0xad7580-0xad758c) and byteswaps the result into this field.
       So it is reproducible from the session_seed, varies per session, and a
       server that ever needed to validate it would recompute via FUN_00db7f88 over
-      the session material. One live capture: 18 ac 7a d2. The stub does not
+      the session material. LIVE CORROBORATION 2026-08-18: 53 captured frames
+      carry exactly 3 distinct payloads (18ac7ad2 x32, ce2f229b x13, e3508434 x8)
+      across 3 client machines - one stable value per machine, unchanged over many
+      reconnects within a machine. That is the signature of a value derived from
+      persistent per-client session material, and rules out a per-connection
+      random nonce. See research/notes/2026-08-18-wire-residue-and-field-
+      corrections.md §7. The stub does not
       validate it (Init sends this fire-and-forget)."

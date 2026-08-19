@@ -115,9 +115,20 @@ seq:
       `a = (BE32(P+0x1E34) + BE32(P+0x1E38)) / 7` (matches-played counters,
       `li r0,7` / `divw` @ 0x003b1660/0x003b1664) and `b = BE32(P+0x1E44)`
       (journeys completed) - i.e. `rank_value = journeys*1000 + weeks_survived`,
-      weeks = matches/7, the Factions rank display. Zero for the two UNRANKED
-      test accounts; a ranked capture is only needed to watch it render nonzero,
-      not to define the encoding. High confidence (producer arithmetic verified).
+      weeks = matches/7, the Factions rank display.
+      LIVE-CONFIRMED NONZERO 2026-08-18: the field takes 0x0000, 0x0001 AND
+      0x0002 across the day's captures (all three test accounts), superseding the
+      earlier "zero for the two UNRANKED test accounts" reading - the accounts
+      simply had not played enough matches yet. The observed progression 0 -> 1
+      -> 2 with no jump to the 1000s is exactly what the formula predicts:
+      journeys = 0, so the value IS weeks_survived = matches/7, ticking up one
+      per seven matches played. That is the encoding confirmed end-to-end from
+      producer arithmetic to wire. A ranked account is still wanted only to
+      exercise the journeys*1000 term. High confidence.
+      NOT the same quantity as 0x142 HostRank's list entries: in 115 frames where
+      both are observable, the 0x142 entry is a constant 0x0002 while this field
+      reads 0x0001 (x80) or 0x0002 (x35). The two must not be conflated - see
+      protos/0x142_host_rank.ksy.
   - id: rank_tier
     type: u2
     doc: |
@@ -151,4 +162,18 @@ seq:
       0x003b17a0 before both FUN_00ad1fc0 pushes. Consumers select card cells
       0..3 only (offsets 14..21). The bytes vary randomly across captures
       (stale pointers `01 45 cd 40`, `d0 03 fa b0`, timestamp-shaped values) -
-      leftover stack, not a field that populates on ranked accounts. Send zero.
+      leftover stack, not a field that populates on ranked accounts.
+      LIVE CENSUS 2026-08-18 (research/tools/verify_wire.py over 5880 events)
+      confirms the residue reading and gives its shape: the 10 bytes decompose as
+      u16 + zero u32 + a 4-byte pointer, e.g. `0001 00000000 0137d700` (x264 in
+      one roster slot alone), `0002 00000000 0145cd40`, `0000 00000000 d003fab0`.
+      `0x0137d700` is the NetGameManager player-array base and `0xd003fab0` is a
+      main-thread stack address - two adjacent stack slots showing through, not a
+      counter and a field. See research/notes/2026-08-18-wire-residue-and-field-
+      corrections.md §1.
+      RELAY GUIDANCE (supersedes a bare "send zero" for servers): when RELAYING a
+      member's card - 0x131 rosters, 0x13b updates - replay the client's own 32
+      bytes VERBATIM, residue included. Do not zero this span selectively: the
+      same 32-byte struct carries party_id, team, recent_level and rank_value,
+      and rebuilding it risks corrupting those. Zeroing applies only when a
+      server SYNTHESIZES a card with no client blob to copy.

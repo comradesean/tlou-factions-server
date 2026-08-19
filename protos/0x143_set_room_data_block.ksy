@@ -40,6 +40,22 @@ doc: |
   BYTES, but the wire format itself places no other constraint on what
   goes in the block.
 
+  LIVE CONFIRMATION + A TRAP (2026-08-18, 15 frames). The leading string is
+  `<npid>.<unix-timestamp>` in every frame, with the npid equal to the ROOM OWNER
+  and the timestamp equal to the send time (e.g. `comradesean.1787080629` sent at
+  2026-08-18T19:17:09Z) - so it functions as a unique match-session identifier.
+
+  DO NOT MINE THE BYTES AFTER THE NUL. Because the transfer is a bare
+  two-argument strcpy, the remainder of the 128-byte field is whatever the send
+  buffer already held, and it is full of recognisable pointers: 0xd0040140 /
+  0xd00401b0 / 0xd00401e0 (main-thread stack), 0x0137d700 (NetGameManager player
+  array base), 0x0039e96c and 0x0039ac24 (code), 0x01383bd8 (room object). Two of
+  those residue words correlate PERFECTLY with room membership across all 15
+  frames (+0x48 is 0 for a 1-member room and 2 for a 2-member room; +0x6c is 0
+  and 1 respectively). That correlation describes what the sender happened to
+  have on its stack, NOT a wire field, and must not be promoted to one. See
+  research/notes/2026-08-18-wire-residue-and-field-corrections.md §6.
+
   Both senders are gated on `room_obj+0x10 != 0` (they set the dirty flag
   `room_obj+0xd8 = 1` and return without transmitting if the room has no id
   yet).

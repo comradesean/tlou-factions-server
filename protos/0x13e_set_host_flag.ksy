@@ -30,10 +30,21 @@ seq:
     doc: "Fixed 0x13e (318 decimal), passed through _opd_FUN_00a0e324 before send - a confirmed no-op (research/notes/2026-08-15-byteswap-helper-is-a-noop.md), so this stays plain big-endian."
   - id: flag
     type: u1
-    doc: "Offset 4:5. A single boolean-shaped byte (0 or 1), derived differently by each of the two confirmed sender call sites - see doc for both. Written into the matched room's +0x19f4 'is host' flag by 0x13f's handler on the round trip."
+    doc: |
+      Offset 4:5. Boolean WHEN WRITTEN (0 or 1), derived differently by each of
+      the two confirmed sender call sites - see doc for both. Written into the
+      matched room's +0x19f4 'is host' flag by 0x13f's handler on the round trip.
+      LIVE CAVEAT (117 frames, 2026-08-18): on the wire this byte takes 0, 1, 3
+      AND 4, and in the two most common shapes it EQUALS the frame's own kind
+      byte (0x0404, 0x0303) - the signature of a stale byte left by the previous
+      0x13e build in the same buffer slot rather than a freshly written boolean.
+      Observed (flag, kind) pairs: (4,4) x40, (0,3) x35, (3,3) x35, (0,4) x4,
+      (1,3) x2, (3,4) x1. A reader must treat only 0 and 1 as meaningful and
+      ignore values >1 as residue. See
+      research/notes/2026-08-18-wire-residue-and-field-corrections.md §3.
   - id: kind
     type: u1
-    doc: "Offset 5:6. A sender-path discriminator, 3 or 4 depending on which builder sent it - NOT a fixed constant. CORRECTED 2026-08-18 (objdump): builder FUN_00ad6a34 stores 3 (`li r0,3` @ 0xad6b64, `stb r0,117(r1)` @ 0xad6b6c), builder FUN_00ad7024 stores 4 (`li r0,4` @ 0xad7130, `stb r0,117(r1)` @ 0xad713c); buffer base r1+112 so wire 5. The companion doc's opcode-map row already had this right. Which UI/game path drives each builder was not traced; plausibly a request-reason/source tag."
+    doc: "Offset 5:6. A sender-path discriminator, 3 or 4 depending on which builder sent it - NOT a fixed constant. CORRECTED 2026-08-18 (objdump): builder FUN_00ad6a34 stores 3 (`li r0,3` @ 0xad6b64, `stb r0,117(r1)` @ 0xad6b6c), builder FUN_00ad7024 stores 4 (`li r0,4` @ 0xad7130, `stb r0,117(r1)` @ 0xad713c); buffer base r1+112 so wire 5. The companion doc's opcode-map row already had this right. Which UI/game path drives each builder was not traced; plausibly a request-reason/source tag. LIVE-CONFIRMED 2026-08-18: 3 or 4 in 117/117 captured frames, no other value."
   - id: pad_6
     size: 2
     doc: "Offset 6:8. ALIGNMENT PADDING (proven 2026-08-18): both builders (FUN_00ad6a34, FUN_00ad7024) store only wire+0 (opcode), wire+4 (flag byte) and wire+5 (kind); neither writes wire+6, and the 16-byte send leaves it as uninitialised stack. Definition: 2-byte gap aligning the 8-byte room_id after the kind byte. Not a field - send 0. (Was `unknown_2`.)"

@@ -17,10 +17,10 @@ doc: |
   reply, UpdatedAttrFlags/0x141) - client-to-server only.
 
   DEFINITION / PURPOSE: "set one room attribute". The client tells the server
-  the value of a host-configurable lobby attribute (a room setting the host just
-  changed) so the server can store it on the room and advertise it to searchers.
-  0x141 is the server's confirming echo. The wire carries an attribute SELECTOR
-  (4:6) plus the attribute VALUE (6:8).
+  which host-configurable lobby attribute changed, so the server can store it on
+  the room and advertise it to searchers. 0x141 is the server's confirming echo.
+  The only payload the wire actually carries is the attribute SELECTOR at 4:6;
+  offset 6:8 is leaked stack, not a value (see below).
 
   WIRE STRUCTURE (sender `_opd_FUN_00ad62dc`, vtable +0x2c; send buffer base
   r1+112):
@@ -33,23 +33,29 @@ doc: |
   effect of the round trip is inert; the ACTION is the value delivered to the
   server at 6:8).
 
-  CORRECTION 2026-08-18 - offset 6:8 is NOT uninitialised stack. A prior pass
-  (2026-08-16) read 6:8 as garbage because a small sample looked random. The
-  live server log (server/logs/session_manager.log) DISPROVES that: 6:8 takes
-  STRUCTURED, REPRODUCIBLE values - `ff50 fbe0 2f78` recur as an ordered sequence
-  across two separate solo-host lobby sessions, and two values (`0x2f78`,
-  `0xfbe0`) reproduce across captures taken on different days. Uninitialised
-  stack does not reproduce across reboots, so 6:8 is a real client->server field
-  the retail server consumed. Logged 6:8 values: ff50 / fbe0 / 2f78 (room
-  012723d8...), 03f0 / 0030 / 4fe0 (room 012a426c...). The selector at 4:6 was
-  0x0001 in every 2026-08-18 capture (an earlier capture also saw 0x0000).
+  OFFSET 6:8 IS SENDER-SIDE RESIDUE (settled 2026-08-18, second pass). An
+  intermediate revision promoted 6:8 to a real client->server attribute value
+  because its values recurred across captures taken on different days. That
+  inference was wrong: a leaked POINTER reproduces exactly on a deterministic
+  emulator, so cross-session reproducibility cannot distinguish a real field from
+  leaked stack. See research/notes/2026-08-18-wire-residue-and-field-corrections.md
+  for the statistical proof (99% of these gap words are valid PS3 addresses, and
+  the client's own PPU dump gives the matching stack range 0xd0001000-0xd0040fff).
 
-  MEANING of the 6:8 value: still capture-dependent. It is a real lobby-setting
-  payload, but which host option it encodes is not statically recoverable (no
-  EBOOT branch reads room_obj+0x1f0; the sender's caller is pure vtable dispatch)
-  and our logs are all solo-host, so the value can't yet be tied to a specific
-  toggle. Resolve by changing ONE lobby option at a time and diffing 6:8 (see
-  docs/capture-howto.md, "0x140 room-attribute value").
+  The larger capture (355 frames) refutes the field reading directly:
+    - ROOM-INDEPENDENT. The same five values appear against the static party room
+      012723d8... and against ~25 distinct synthesized public room ids
+      (50000001... through 50000030...). An attribute that is identical for every
+      room ever created is not an attribute of the room.
+    - CALL-SITE DETERMINED, not setting determined: `fbe0` follows a prior 0x140
+      in 28/28 cases, `197c` follows a 0x13a in 4/4 cases, and the cycle
+      ff50 -> fbe0 -> 2f78 repeats per lobby regardless of any host choice.
+    - Only 5 distinct values across 355 frames: ff50 (x238), 2f78 (x74),
+      fbe0 (x28), 197c (x4), 3954 (x1).
+  The `sth` at 4:6 overwrites the HIGH half of whatever pointer occupied the
+  slot, which is exactly why only a plausible low half is ever visible on the
+  wire. The selector at 4:6 was 0x0001 in every 2026-08-18 capture (an earlier
+  capture also saw 0x0000).
 
   Gating (unchanged, still confirmed): if `room_obj+0x10 == 0` the action
   only writes locally (`room_obj+0x1f0 = selector`, dirty flag
@@ -62,9 +68,9 @@ seq:
   - id: attr_selector
     type: u2
     doc: "Offset 4:6. `sth r28,116(r1)` @ 0x00ad6374 - low 16 bits of the sender's 3rd argument. The only half the client reads back (from the 0x141 echo, into room_obj+0x1f0, which is then never branched on). Logged 0x0001 in all 2026-08-18 captures; an earlier capture saw 0x0000. Selects/tags which room attribute is being set."
-  - id: attr_value
+  - id: pad_6
     type: u2
-    doc: "Offset 6:8. The attribute payload the client sends to the server (client->server only; the client never reads it back). REPRODUCIBLE, not stack garbage: logged values ff50/fbe0/2f78 (recurring in order) and 03f0/0030/4fe0, with 2f78/fbe0 reproduced across different-day captures. Encodes a host-set lobby option; which one is capture-dependent (see doc, toggle-one-and-diff)."
+    doc: "Offset 6:8. NOT A FIELD - sender-side residue. DEFINITION: the low half of a stale pointer left in the reused send buffer at r1+118; the builder's only stores are wire 0 (`stw`), wire 4:6 (`sth` selector) and wire 8:16 (`std` room_id), and the selector's `sth` clobbers the pointer's high half, leaving its low half on the wire. REASON: unwritten gap between the 2-byte selector and the 8-byte-aligned room_id. Live: 5 distinct values in 355 frames (ff50/2f78/fbe0/197c/3954), identical across ~25 different rooms, and call-site-determined (fbe0 follows a prior 0x140 28/28). Send 0. (Was `attr_value`; see research/notes/2026-08-18-wire-residue-and-field-corrections.md §2.)"
   - id: room_id
     size: 8
     doc: "Offset 8:16. Matches the room_id this server assigned via Member's header - echoed back verbatim in the stub's UpdatedAttrFlags reply."
