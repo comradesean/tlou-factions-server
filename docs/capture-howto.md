@@ -97,10 +97,26 @@ with a parsed summary). Vary ONE condition at a time.
 
 | # | Field | Message / offset | Capture procedure | Names it because |
 |---|---|---|---|---|
-| 1 | `field_0c` (map vs map+team combined index) | RoomCreate `0x12f` wire `0x0c`; also find_match `0x135` wire `0x0c` | Host 4 rooms: (a) same map, team Blue; (b) same map, team Red; (c) map A, fixed team; (d) map B, same fixed team. Read wire `0x0c` each time. | If `0x0c` moves only with map (a==b, c!=d) it is the map id; if it also moves with team it is a map+team combined index. Resolves the 2026-08-16 confound. |
-| 2 | `0x140` `attr_value` (wire `0x6:0x8`) | SetRoomFlags `0x140` | In a lobby, change ONE host option at a time (map, mode, round/score limit, friendly-fire, respawns, time limit) and note which change emits a `0x140` and what `0x6:0x8` becomes. | The option whose toggle moves the value names the field. Logged solo values already show it cycling `ff50/fbe0/2f78`, so it tracks a host-scrolled setting. |
-| 3 | Game mode (Supply Raid vs Survivors) | RoomCreate `0x12f` (whole message) + `0x140` | Host one lobby in Supply Raid, one in Survivors, all else equal; diff the two RoomCreate messages and any `0x140`. | The mode must be encoded somewhere the host advertises; the only bytes that differ between two otherwise-identical mode-A/mode-B lobbies carry it (candidate homes: `field_0c`, the `0x140` value, or the RoomCreate attribute block). |
-| 4 | Party-vs-solo deltas | any session-manager message | Repeat a given action solo, then in a 2-player party; diff. | Isolates any field that only takes a non-default value when real members are present (the current logs are ~95% solo, so party-only values are unobserved). |
+| 4 | Party-vs-solo deltas | any session-manager message | Repeat a given action solo, then in a 2-player party; diff. | Isolates any field that only appears with a party. |
+| 5 | Map ids | `member_data.recent_level` (card offset 10, two u16) | Play a KNOWN map and read slot 0 of the next card. Do NOT get booted in between - the boot-to-menu path clears the ring. | Slot 0 is the map just entered. |
+
+RESOLVED - rows 1-3 were answered on 2026-08-18/19 and are kept here only as a
+record of what the procedures were for:
+
+- **`field_0c`** is the PLAYLIST ID (mode + party rules; nine of them on 01.11,
+  two on 01.00, renumbered between builds). Resolved not by the 2x2 capture this
+  table proposed but by walking every lobby style in 01.11 and reading the value
+  off both the `0x135` search and the `0x12f` stamp. Full table in
+  `protos/0x12f_room_create.ksy`.
+- **`0x140` `attr_value`** is NOT a field - it is sender-side residue, the low
+  half of a stale pointer in the reused send buffer. No capture will name it.
+  See `research/notes/2026-08-18-wire-residue-and-field-corrections.md`.
+- **Game mode** is not a separate wire field; it is folded into the playlist id
+  above.
+
+Known map ids (01.11): `0x1f` Checkpoint, `0x31` Lakeside. 01.00's observed ids
+(`0x0e`-`0x17`) are unnamed, and it is not yet established whether map ids are
+stable across builds - one match on a known map on 01.00 would settle it.
 
 Practical notes:
 - Tail the log live: `tail -f server/logs/session_manager.log`; each entry prints

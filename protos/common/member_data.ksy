@@ -66,6 +66,9 @@ seq:
       47 captures (both test accounts had no MP DLC), which is why the old u16
       `team` read as a clean 0/1/2. Confidence: high (mechanism); bit-level
       semantics are DC-dependent.
+      NOW EXERCISED (2026-08-19): was 0x00 in 376/376 samples on 01.00, whose
+      test accounts own no MP DLC. A 01.11 client with the DLC installed sends
+      0x0d, so the AND-reduce above finally runs with a nonzero input.
   - id: team
     type: u1
     doc: |
@@ -95,12 +98,22 @@ seq:
       host's weighted-random map picker FUN_003a2310 reads them (`lbz r0,0xa(blob+k)`)
       and applies a DC penalty when a candidate map matches - i.e. "don't replay
       a map these players just played". 0xffff = unset.
-      LIVE MAP IDS observed 2026-08-18: 0x0e, 0x0f, 0x10, 0x13, 0x14, 0x15,
-      0x17 - seven distinct maps. This ring is the project's only ground-truth
-      source of map ids: play a KNOWN map, then read the id that appears at
-      entry 0 in the next card. NB the ids overlap the private-match value range
-      of room_field_0c (0x13 occurs in both), which is one of the two readings
-      under test for that field - see protos/0x12f_room_create.ksy.
+      LIVE MAP IDS. 01.00 (2026-08-18): 0x0e, 0x0f, 0x10, 0x13, 0x14, 0x15,
+      0x17 - seven, all unnamed. 01.11 (2026-08-19), NAMED by playing them:
+        0x1f (31) Checkpoint
+        0x31 (49) Lakeside
+      This ring is the project's only ground-truth source of map ids: play a
+      KNOWN map, then read the id at entry 0 of the next card.
+      CAVEAT: the ring is CLEARED when a client is booted back to the menu, not
+      only on a full game restart - two naming attempts were lost that way on
+      2026-08-18. Do not get booted between playing the map and reading a card.
+      Whether ids are stable ACROSS builds is unresolved: 01.11's named values
+      fall outside 01.00's observed range, but those accounts had no DLC so they
+      could only play base maps. One match on a known map on 01.00 settles it.
+      (An earlier note here wondered whether these ids overlapped
+      room_field_0c's private-match values. That question is closed:
+      room_field_0c is the PLAYLIST id, an unrelated quantity - see
+      protos/0x12f_room_create.ksy.)
       MP cosmetics are NOT in this blob - they come from the persisted profile
       (P+0x670..). See research/notes/2026-08-17-member-blob-vanity-semantics.md.
   - id: recent_level_1

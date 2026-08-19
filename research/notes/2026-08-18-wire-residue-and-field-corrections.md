@@ -94,6 +94,13 @@ only 0 and 1 are meaningful values.
 
 ## 4. `field_0c` is team-independent - the map-vs-team confound is dead
 
+> **RESOLVED 2026-08-19: `field_0c` is the PLAYLIST ID** (game mode + party
+> rules, a one-byte index into the table in netN.bin). Sections 4-4d below are
+> the working-out that got there, kept because the retractions are instructive;
+> the answer and the full nine-playlist table live in
+> `protos/0x12f_room_create.ksy`. The "team-independent" conclusion here still
+> stands - a playlist has no team component.
+
 `0x12f` `room_field_0c` and `0x135` `field_0c` (both `*(u32*)(obj+0x0c)`) carried
 an unresolved caveat: an earlier controlled test saw values 0x09/0x13 track TEAM
 with the map held constant, so "map id" could not be separated from "map+team

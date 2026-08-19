@@ -52,9 +52,10 @@ message is now live-verified.
 
 **Live but unexercised** (the message is observed; the claim is not):
 
-- `member_data.capability_flag` - `0x00` in 376/376 samples. The AND-reduce map
-  filtering that IS its stated reason has never run with a nonzero input; needs
-  an account owning MP DLC.
+- `member_data.capability_flag` - was `0x00` in 376/376 samples on 01.00 (no MP
+  DLC on those accounts). NOW EXERCISED: 01.11 clients with DLC installed send
+  `0x0d` (2026-08-19), so the AND-reduce that gates map/mode availability finally
+  has a nonzero input. Individual bit meanings remain DC-defined.
 - `region_language` - observed, but constant `"us\0"`+1 in every frame.
 - `party_id` - nonzero in only 21/376 samples.
 
@@ -186,19 +187,19 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
 
 ## TIER 2 - MECHANISM KNOWN, MEANING PARTIAL
 
-34. **`field_0c`** - two DIFFERENT fields that share a struct offset, and were
-    wrongly treated as one. `0x135`'s is `search_obj+0x0c`: the GAME MODE the
-    player is queueing for (`0x02` Supply Raid, `0x03` Survivors, 565 searches,
-    matches the client UI) - well supported, and the correct key for filtering
-    the `0x136` list. `0x12f`'s `room_field_0c` is `room_obj+0x0c` and is NOT
-    the same quantity: a client searched `0x02` and 14 s later created a
-    matchmade room stamped `0x13`. Best reading of the room field is a genuine
-    member that nothing reliably resets, so a dirty client state carries a stale
-    value (possibly the last map id - the crossover value `0x13` is in the
-    recent-level MAP id space, from a client that had just played a map). Team
-    component ruled out for both. IMPLEMENTATION: the stub ignores `field_0c`
-    entirely when answering `0x136`, so it will cross-match playlists as soon as
-    two are in use.
+34. **`field_0c` - RESOLVED 2026-08-19: the PLAYLIST ID.** A playlist bundles
+    game MODE with PARTY RULES in one byte, indexed into a table shipped in
+    netN.bin - which is why the numbering is per build. 01.11 has nine, all
+    live-confirmed on both the searcher's `0x135` and the host's `0x12f` stamp:
+    Supply Raid `1`/`2`/`3`, Survivors `6`/`7`/`8`, Interrogation `11`/`12`/`13`
+    (Parties Allowed / No Parties / DLC), in five-slot blocks at `1`/`6`/`11`.
+    01.00 had only `2` and `3`, one per mode, which is why "mode" and "playlist"
+    were indistinguishable on that build and the field was misread three times.
+    Id `3` is Survivors on 01.00 but Supply Raid/DLC on 01.11 - **ids are not
+    comparable across builds**. Non-matchmaking lobbies use the same space:
+    `0x58` party, `0x63` private (Supply Raid, Survivors), `0x5a` private
+    (Interrogation). Implemented: the `0x136` list is filtered on the SEARCHER's
+    playlist and the client's build, exact match, never on the host's room field.
 
 35. **`room_flags_e8` / `room_flags_10`** - `*(u32*)(obj+0xE8)` conditionally
     OR'd with `0x40000000`. Low 20 bits constant across captures; the `oris` gate
