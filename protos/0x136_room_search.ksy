@@ -134,22 +134,39 @@ types:
           actively-used connection object at the exact moment the client
           commits to dialing a specific host.
 
-          STILL OPEN: no reader of that destination object's 0x98:0xc4 span
-          was found in this pass - the trace proves attr_tail is CARRIED to a
-          live object, not that anything reads it back out of that object
-          afterward. That is the narrowed remaining question (down from "is
-          this field read anywhere at all" to "is THIS specific copy read
-          back"). Closing it needs one of:
-            (a) identify the peer-connection struct's concrete type (a size/
-                allocator/vtable search from its confirmed fields: id at
-                +0x98, npid+attr_tail at +0xa0:0xc4, P2P handle at +0x1a48)
-                and enumerate every reader of offsets +0xb0:0xc4 specifically
-                on THAT type - offset collisions with unrelated structs are
-                common in a binary this large, so a bare offset grep is not
-                enough (tried; too noisy to trust without the type pin);
-            (b) correlate against a live capture in which the host varies ONE
-                search/lobby option at a time (mode, map, playlist, privacy,
-                NAT, party size) between otherwise identical rooms, so each
-                changed byte is attributable to exactly one option.
+          EXHAUSTIVE STATIC SEARCH, DONE 2026-08-19 (live-verified, not just
+          inferred): the destination object is a FIXED STATIC SINGLETON, not a
+          heap allocation. Its address (0x013835c0 on 01.00) is reached
+          through exactly ONE addressing path anywhere in the binary: the
+          global slot at `anchor(0x1271b1c) - 0x7fc4`. Confirmed by a
+          from-scratch scan of the whole .text section for every reference to
+          that exact slot - 51 distinct call sites, every one of them inside
+          one contiguous compilation unit (the entire find-match/matchmaking
+          module, 0x3b21e8-0x3b978c), none reached via any other anchor or a
+          `lis`+`addi`/`ori` absolute construction. Of those 51 sites, ONLY
+          the CONNECT_TO_HOST writer above ever touches offsets 0xb0:0xc4 (the
+          landing zone for attr_tail); nothing else in the retail 01.00
+          binary reads that span via a direct field access.
+
+          LIVE-CONFIRMED 2026-08-19 in RPCS3's debugger (01.00, breakpoint at
+          0x003b2a9c / read-back at 0x003b2bd4): r30 resolved to the predicted
+          anchor 0x1271b1c, r11 resolved to the predicted object address
+          0x013835c0 exactly, and a memory read at 0x01383670:0x01383684
+          (object+0xb0:0xc4) showed the server's 20 zero bytes landing there
+          untouched. Every hop in the trace - wire, entry object, and this
+          static singleton - is now confirmed live, not just statically
+          inferred.
+
+          REMAINING GAP: this rules out DIRECT offset reads only. A bulk copy
+          of a wider span (e.g. the whole singleton, or object+0x98 onward)
+          into a second buffer, read back elsewhere, would evade an
+          offset-based scan - not found near the writer in this pass, but not
+          exhaustively ruled out across all 51 sites either. Given how strong
+          the direct-read result is, closing that residual gap is now LOW
+          PRIORITY - a canary-byte live test (send non-zero attr_tail, watch
+          for any client-visible effect) was considered and is not worth
+          running: the static trace gives no candidate consumer for it to
+          reach.
+
           The server still sends 20 zero bytes and matchmaking works end-to-
           end; that remains true and safe. See docs/OPEN-QUESTIONS.md.

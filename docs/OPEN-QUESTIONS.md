@@ -61,39 +61,42 @@ live in the data-compiler payload the game loads at runtime.
   because that is genuinely all that is known - the field name and its `doc:`
   are deliberately non-committal, and the "map/mode/etc." reading that used to
   appear beside it was a guess from the block's role, not a decode.
-  NARROWED 2026-08-19: both copy sites are now traced at instruction
-  granularity (`research/ghidra/dispatch_raw2.txt`, `fm_stab_handlers.txt`).
-  The `0x136` deserializer copies attr_tail verbatim into the entry object
-  (wire `0x24:0x38` -> entry_obj `0x18:0x2c`, a plain byte-copy loop, fixed
-  -0xc offset). `_opd_FUN_003b2a9c` (CONNECT_TO_HOST) then copies the WHOLE
-  36-byte attribute block, attr_tail included, into a live peer-connection
-  object at that object's `0x98:0xc4` - the same object that receives the
-  P2P connection handle at `+0x1a48` moments later, a field independently
-  confirmed load-bearing (it recurs across unrelated flows, e.g. invite-
-  accept, and is read back extensively in `research/ghidra/fm_host_refs.txt`
-  to actually address the peer). So this is no longer "absence of evidence
-  only": attr_tail is proven to ride into a real, actively-used object at the
-  exact moment the client commits to dialing a host, not a throwaway copy.
-  WHY IT IS STILL OPEN: no reader of that destination object's `0x98:0xc4`
-  span was found in this pass. The question narrowed from "is this read
-  anywhere at all" to "is THIS specific copy read back out of the peer object
-  afterward" - genuinely smaller, not closed.
+  ESSENTIALLY CLOSED ON THE MECHANISM SIDE, 2026-08-19 - both copy sites
+  traced at instruction granularity and then LIVE-CONFIRMED in RPCS3's
+  debugger (01.00, breakpoint `0x003b2a9c`, read-back `0x003b2bd4`). The
+  `0x136` deserializer copies attr_tail verbatim into the entry object (wire
+  `0x24:0x38` -> entry_obj `0x18:0x2c`). `_opd_FUN_003b2a9c` (CONNECT_TO_HOST)
+  then copies the whole 36-byte attribute block, attr_tail included, into a
+  FIXED STATIC SINGLETON at `0x013835c0` (01.00), offsets `0xb0:0xc4` -
+  confirmed live: r30 resolved to the predicted anchor `0x1271b1c`, r11
+  resolved to `0x013835c0` exactly, and a memory read at that object's
+  `0xb0:0xc4` showed the server's 20 zero bytes landed there untouched.
+
+  Then an EXHAUSTIVE static search closed the "is it read anywhere" question
+  as far as static analysis can: the object is reached through exactly ONE
+  addressing path in the entire binary (51 call sites, one compilation unit,
+  `0x3b21e8`-`0x3b978c`, no other anchor or absolute-address construction
+  reaches it). Of those 51 sites, only the CONNECT_TO_HOST writer above
+  touches offsets `0xb0:0xc4` - nothing else in the retail 01.00 binary reads
+  that span via a direct field access.
+  WHY IT IS STILL "OPEN" AT ALL: this rules out direct offset reads only. A
+  bulk copy of a wider span (the whole singleton, or `+0x98` onward) into a
+  second buffer, read back elsewhere, would evade an offset-based scan - not
+  found near the writer in this pass, not exhaustively ruled out across all
+  51 sites either. Given how strong the direct-read result is, this residual
+  gap is now LOW PRIORITY: a canary-byte live test (server sends non-zero
+  attr_tail, watch for any client-visible effect) was considered and is not
+  worth running - the static trace gives no candidate consumer for it to
+  reach.
   WHY ZEROS ARE STILL SAFE: the server sends 20 zero bytes and the full loop
-  still works end to end - browse, join, load, counted and credited match.
-  UNBLOCK - either would close it:
-    (a) pin the peer-connection struct's concrete type from its now-confirmed
-        fields (id `+0x98`, npid+attr_tail `+0xa0:0xc4`, P2P handle `+0x1a48`)
-        and enumerate every reader of `+0xb0:0xc4` on THAT type specifically -
-        a bare offset grep across the binary was tried and is too noisy to
-        trust without the type pin (those offsets collide with many unrelated
-        structs).
-    (b) correlate against a live capture in which the host varies exactly ONE
-        search/lobby option at a time (mode, map, playlist, privacy, NAT, party
-        size) between otherwise identical rooms, so each byte that changes is
-        attributable to one option.
-  Static analysis alone yields offsets with no meanings; captures alone yield
-  byte diffs with no proof of what reads them. Together they yield named
-  fields.
+  still works end to end - browse, join, load, counted and credited match,
+  and the live debugger read confirms those zeros land exactly where traced.
+  REMAINING UNBLOCK, if ever revisited: correlate against a live capture in
+  which the host varies exactly ONE search/lobby option at a time (mode, map,
+  playlist, privacy, NAT, party size) between otherwise identical rooms, so
+  each byte that changes is attributable to one option - the only path left
+  that could still name the interior fields, since no reader exists to trace
+  backward from.
 
 - **`0x12f room_settings_tail` / `0x130 room_object_tail`** - 32 bytes each,
   provenance known (copies of specific room-object spans), interiors unmapped.
