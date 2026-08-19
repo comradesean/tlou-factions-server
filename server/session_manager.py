@@ -245,13 +245,33 @@ CLIENT_BUILDS = {
     0x01383bd8: ("01.00", 0x01387f58),
     0x013babd8: ("01.11", 0x013bf068),
 }
-# Matchmaking MODE values seen in room_field_0c / 0x135 field_0c on the
-# find-match path, stable across builds: 0x02 = Supply Raid, 0x03 = Survivors.
-# Private and party creates never carry these - they carry build-specific values
-# (0x09/0x12/0x13 on 01.00, 0x58/0x5a on 01.11). This is the ONLY use we make of
-# room_field_0c, and it is deliberately narrow: see protos/0x12f_room_create.ksy
-# for why that field is otherwise not trusted.
-MATCHMAKING_MODES = {0x02, 0x03}
+# field_0c is the PLAYLIST ID - a one-byte index into the playlist table that
+# ships in netN.bin, bundling game mode WITH party rules. The binary asserts
+# `(playlist & 0xFFFFFF00) == 0`. Numbering is PER BUILD, because the table is
+# per-build DC data:
+#
+#   01.11                Parties Allowed   No Parties   DLC
+#     Supply Raid                1              2         3
+#     Survivors                  6              7         8
+#   01.00  had only two playlists, one per mode: 2 and 3.
+#          So id 3 = Survivors on 01.00 but Supply Raid/DLC on 01.11 - which is
+#          why cross-build matchmaking has to be segregated by build.
+#
+# Ids 4 and 5 are unclaimed and sit exactly where a third mode's block would go
+# (Interrogation is the obvious candidate); add them once observed.
+MATCHMAKING_PLAYLISTS = {1, 2, 3, 6, 7, 8}
+
+# Playlist ids used by lobbies that must NEVER be advertised in the find-match
+# list, whatever the client was doing beforehand:
+#   88 (0x58) party room
+#   90 (0x5a) lobby state seen once at client start-up on the game object
+#   99 (0x63) PRIVATE match - live-confirmed for both Supply Raid (00:55:23)
+#             and Survivors (01:01:29), so it is not mode-specific
+# This is checked FIRST because the search flag can still be set from a
+# just-abandoned find-match queue; without it a private game created moments
+# after searching inherits that flag and gets advertised to searchers. The
+# equivalent bug was live-observed for the PARTY object at 01:00:50.
+NON_MATCHMAKING_PLAYLISTS = {0x58, 0x5a, 0x63}
 
 GAME_ROOM_PTRS = set(CLIENT_BUILDS)
 PARTY_ROOM_PTRS = {party for _ver, party in CLIENT_BUILDS.values()}
@@ -1358,8 +1378,15 @@ def handle(conn, addr, log_lock, log):
                 # untrusted. A matchmaking host carries the MODE here (0x02/
                 # 0x03); private and party creates carry build-specific values.
                 room_field_0c = struct.unpack(">I", chunk[0xc:0x10])[0]
-                is_matchmaking_host = (find_match_searching
-                                       or room_field_0c in MATCHMAKING_MODES)
+                # A known private/party playlist is NEVER a matchmaking host,
+                # even if a stale search flag is still set from a queue the
+                # client just left. Otherwise: a preceding search, or a known
+                # matchmaking playlist id (01.11 self-hosts BEFORE searching, so
+                # there is no search to key on - see the "public" comment below).
+                is_matchmaking_host = (
+                    room_field_0c not in NON_MATCHMAKING_PLAYLISTS
+                    and (find_match_searching
+                         or room_field_0c in MATCHMAKING_PLAYLISTS))
                 # RoomCreate's own wire offset 0xb0:0xb2 (2 bytes) - CONFIRMED
                 # 2026-08-16 via ~24 live captures spanning every map and both
                 # teams, zero exceptions: 0x0000=unset/spectator, 0x0001=Blue,
