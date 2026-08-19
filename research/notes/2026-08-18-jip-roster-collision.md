@@ -50,7 +50,7 @@ would take seconds), placing this in the same self-inflicted-teardown class as
 the earlier party-collapse bug.
 
 Confirmed not-a-timeout: the in-game timeout thresholds are all ≥ 5 s (see
-`docs/ingame-timeout-patches.md`); a 130 ms leave cannot be any of them.
+the in-game timeout branches, since removed - see git history at 23db204..de9db95); a 130 ms leave cannot be any of them.
 
 ## What a correct 3rd-member join requires
 

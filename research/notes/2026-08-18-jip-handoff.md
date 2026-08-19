@@ -63,6 +63,8 @@ the same reason (party churn / "kicked from the party" spam).
 
 ## Unrelated cleanup
 
-`client/patches/ingame_timeouts_patch.yml` + `docs/ingame-timeout-patches.md` —
-in-game timeout-disable patches. **BAD: they crash the game (static-only, never
-validated). Delete or leave disabled. Do not apply.**
+The in-game timeout-disable patches (`client/patches/ingame_timeouts_patch.yml`
+and `docs/ingame-timeout-patches.md`) were REMOVED 2026-08-19: static-only,
+never validated, and they crashed the game. JIP was solved without them. The
+located timeout branches survive in git history at 23db204..de9db95 if those
+addresses are ever wanted.
