@@ -187,6 +187,8 @@ three times on 01.00. Ids are **not comparable across builds**.
 | `profile_21` zero region `P+0x1E74..0x5008` | Purpose unknown. | - |
 | DC-blocked set | All net-stat slots (including the supplies gate), `rank_tier` thresholds, and every id->asset map (cosmetics, character and name pools). | Extract the `net1.bin`/`net10.bin` registries. Not reachable by decompiling the EBOOT. |
 | Intermittent "Host quit for cheating" | Rare teardown, no packet correlated with it yet. | Catch it in a capture. |
+| `stat_line` task line's 2nd `%s` | The accessor is pinned (`base+0x2e6c` string field, `_opd_FUN_00952520`), but `base` resolves through a double pointer indirection to `0x01441194` - outside the static file image, so it is a runtime-allocated object with no file-backed content to read. | A live memory read at that address while a campaign autosave is in flight (debugger or emulator), not reachable by static analysis alone. |
+| `stat_line` task line's `%x` (`task-%x`) | `param_1[0x1b]` is read with the same idiom across leaderboard's and find-match's own connection-state structs too, suggesting a shared per-connection/job-id field rather than a campaign objective id - but no single writer of the field was traced to confirm it. | Trace a writer of offset `0x1b` in one of the structs that share this read idiom. |
 | `common/packet_header` | Wrong shape for the layer it describes, and that layer is out of scope. The envelope it gets wrong is already correctly documented in `net_event_dispatch_and_simple_opcodes.md`. | Nothing - delete or rewrite against the dispatch doc. See the scope boundary above. |
 
 ---

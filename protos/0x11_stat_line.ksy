@@ -27,11 +27,29 @@ doc: |
   FIELD MEANINGS, task line (all confirmed by tracing FUN_007f1acc):
     %s (1st) = the player's own online_id, from sceNpManagerGetNpId - same
         source as every other sibling service's identity field.
-    %x       = param_1[0x1b], a per-save-thread integer never independently
-        traced in this pass - a task/objective id is the reading implied by
-        the literal "task-" prefix, not yet confirmed against a decompiled
-        writer of that field.
-    %s (2nd) = the return of _opd_FUN_00952520(...) - untraced this pass.
+    %x       = param_1[0x1b]. RESOLVED 2026-08-19 to a MECHANISM, not yet a
+        firm semantic: this exact offset is read with the identical idiom
+        (`uVarNN = param_1[0x1b]`, immediately adjacent to a call into the
+        shared connect routine _opd_FUN_00acc424) in several otherwise-
+        unrelated service handlers - leaderboard's and find-match's own
+        connection-state structs, not just this one. That recurrence across
+        independently-compiled handlers is consistent with 0x1b being a
+        common field of a shared per-connection/per-async-job state struct
+        (a generic ND job/task-dispatch id), not a campaign objective id -
+        which would also explain the literal "task-" prefix without requiring
+        gameplay-specific state. Not fully proven: no single writer of this
+        field was traced to confirm it, only the read-site idiom's recurrence.
+    %s (2nd) = _opd_FUN_00952520(**(anchor-0x7f3c)) - RESOLVED 2026-08-19 to a
+        MECHANISM, not a value: the "function" is a 3-instruction accessor
+        (`addi r3,r3,0x2e6c; clrldi r3,r3,32; blr`, i.e. `return base +
+        0x2e6c`), so this is a string field at offset 0x2e6c of some global
+        object. The object's address is reached through a double pointer
+        indirection whose final hop (0x01441194) falls outside the static
+        file image - i.e. it is a runtime-allocated (heap/BSS-resident)
+        object, not static data. DC/RUNTIME-BLOCKED: the field's content
+        cannot be recovered by static analysis alone; a live memory read
+        (debugger or emulator) at that address while a save is in flight
+        would close this.
     %s (3rd) = one of two fixed 2-byte string literals chosen by a size/
         threshold comparison (`*(uint*)(anchor-0x7eb4) < 0x2d0`): "SD" (slot
         anchor-0x7eac, 0xe9d170) or "HD" (slot anchor-0x7eb0, 0xe9d168). Reads
