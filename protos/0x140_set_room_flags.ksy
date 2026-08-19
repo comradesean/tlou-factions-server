@@ -61,52 +61,95 @@ doc: |
   only writes locally (`room_obj+0x1f0 = selector`, dirty flag
   `room_obj+0xe0 = 1`) and nothing reaches the wire at all.
 
-  ATTR_SELECTOR'S IDENTITY - STRONGLY NARROWED 2026-08-19 (disasm + live
-  RPCS3 debugger, three consecutive live hits). Live breakpoints at the
-  sender itself (`0x00ad62dc`) across a full private-match load-in showed
-  `LR = 0x00ad1234` and `r5 = 1` on EVERY hit - at room creation during level
-  load, at the "Starting Game..." loadout-render moment, and again when the
-  load timer finished. All three trace back through the SAME generic thunk
-  (`_opd_FUN_00ad11fc`, which forwards `(room_ptr, selector)` to this
-  vtable+0x2c method) to real game-logic callers. A full-corpus search of
-  every `_opd_FUN_00ad11fc(...)` call site in the decompiled disassembly
-  (deduplicated by address - several `research/ghidra/*.txt` files are
-  independent re-decompiles of the same underlying functions) found only
-  TWO literal values ever passed, never anything else:
+  ATTR_SELECTOR'S TRIGGER CONDITIONS - RESOLVED AT THE WIRE LEVEL, 2026-08-19
+  (its PURPOSE is still inferred, not confirmed - see the READING note below
+  and docs/protocol/proto-map.md's tier-B row; the round-trip is proven
+  inert client-side, so there is no client-visible consequence to point to,
+  only the sender's own trigger conditions). Evidence (disasm +
+  an extended live RPCS3 debugging session spanning a full private match AND
+  a full find-match search). Live breakpoints at the sender itself
+  (`0x00ad62dc`) fired repeatedly with `LR = 0x00ad1234` (the same generic
+  thunk, `_opd_FUN_00ad11fc`, forwarding `(room_ptr, selector)` to this
+  vtable+0x2c method) across every phase observed:
+    - `r5 = 1` - room creation during level load, "Starting Game..." loadout
+      render, load-timer completion, and again during find-match's
+      "Searching for players..." state.
+    - `r5 = 0` - mid-match (unlabeled), and explicitly at END OF MATCH, where
+      the surrounding float registers held plainly stat-shaped values (85,
+      100, 75, 67, 20 among them - accuracy/score/percentage-range numbers),
+      corroborating the call-site analysis below.
+    - `r5 = 8` - ONE additional value, seen live during "Searching for Close
+      Game" (an earlier find-match sub-state, before a room/host is
+      resolved).
+  A CROSS-CHECK AGAINST THE ACTUAL WIRE (the full `server/logs/wire.jsonl`
+  capture, not just call sites) resolves the apparent 3-value complication:
+  every 0x140 frame that ever reached the wire carries ONLY 0 or 1 - 926
+  frames at selector=1, 23 at selector=0, ZERO at selector=8 across the whole
+  capture. The `r5=8` call is real but never reaches the network: it fires
+  before the room object has a registered network id (the documented gating
+  rule below - `room_obj+0x10 == 0` - applies, since "Searching for Close
+  Game" precedes room creation/join). So the SENDER FUNCTION is used more
+  broadly by the client than the wire protocol ever needs to represent; the
+  earlier claim in this doc that the disassembly corpus search "found only
+  TWO literal values ever passed" was based on an incomplete scan and is
+  corrected here - a third value exists client-side, it just never leaves
+  the console.
+  A full-corpus search of `_opd_FUN_00ad11fc(...)` call sites in the
+  decompiled disassembly (deduplicated by address - several
+  `research/ghidra/*.txt` files are independent re-decompiles of the same
+  underlying functions) found the wire-relevant pair:
     - selector=1: `FUN_0035a7dc` (research/ghidra/fm_alt_decomp.txt) - the
       FIRST thing this function does, followed immediately by heavy setup
       (`_opd_FUN_0040ee24(0)` then `(1)`, a conditional loop over what reads
-      as a player/item list). Matches all three live hits: this function (or
-      one that reaches the same code path) runs at every match-start-adjacent
-      moment observed.
+      as a player/item list). NAMED by pre-existing, independent project
+      research (research/notes/2026-08-17-member-blob-vanity-semantics.md
+      §9d, written 2026-08-17 - BEFORE today's live session, so this is a
+      cross-check, not a rationalization built to fit): `FUN_0035a7dc` is
+      "the lobby / party-screen member-list model rebuild", reached from
+      `FUN_0035cde0` under UI state `0x11` - it loops every roster member,
+      recreates their entry, and resets each one's character-preview to a
+      random pool pending a later resolved override. This matches every live
+      trigger observed today (room creation, loadout render, load-timer
+      completion, and while actively searching for players) - all moments
+      where the lobby/roster UI model plausibly needs rebuilding.
     - selector=0: `FUN_003f208c` (research/ghidra/lb_trigger.txt - the
-      working filename itself is a strong hint) - heavy float/vector math
+      working filename itself is a strong hint, and the live end-of-match
+      float registers now directly corroborate it) - heavy float/vector math
       consistent with score/stat computation, gated behind a "has this
       already fired" flag check (`*(char*)(iVar34+0x1a4d) == '\0'` and two
-      other conditions), i.e. a fire-once completion handler.
+      other conditions), i.e. a fire-once completion handler. NAMED by
+      pre-existing, independent project research
+      (research/notes/2026-08-17-match-counts-latch.md §1.4, also written
+      2026-08-17): this exact function is the client's `NET_SM_RESULTS`
+      handler - it reads the "counted game" latch and, when armed, runs the
+      matches/wins/supplies/`OnMatchEnd` crediting body. Directly matches
+      today's live hit, which fired with plainly stat-shaped register values
+      (85, 100, 75, 67, 20) present at the same breakpoint.
     - A THIRD, independent function (research/ghidra/fm_handlers.txt, near
       `_opd_FUN_00358924` event-id checks 0x25/0x26) contains a direct
       if/else choosing selector=1 on one boolean flag branch
       (`param_1[0x30] != 0`, the "success" path storing `1` into a result
       slot) and selector=0 on the other (the "not success" path) - the same
       binary meaning, from a third, structurally different call site.
-  READING (inferred from the above, not proven at the byte level): this is
-  very likely NOT a "which of several room attributes changed" selector
-  despite the field's inherited name - every real call site is consistent
-  with a single boolean ACTIVE/READY STATE FLAG: 1 = the room is
-  entering/starting its active phase, 0 = that phase is ending/complete
-  (or a transition failed). The generic "attribute selector" framing comes
-  from this message's OPCODE/API shape (`SetAttrFlags`, a general-purpose
-  room-property setter used by several unrelated flags across the game), not
-  from anything actually observed being selected here - only two values were
-  ever found, both consistent with one active/inactive toggle.
-  STILL OPEN: no live capture has yet shown selector=0 on THIS project's
-  wire (only 1 has been observed end-to-end, live or in the 355-frame
-  capture) - the FUN_003f208c/leaderboard-trigger hypothesis for what
-  produces a 0 is call-site evidence, not a confirmed live 0x140 selector=0
-  frame. Watching a match run all the way to completion and checking
-  wire.jsonl for a 0x140 with selector 0x0000 shortly after would close that
-  last gap.
+  READING - the CLIENT-SIDE PURPOSE is now well-evidenced, not just the
+  trigger pattern: `attr_selector` is NOT a "which of several room
+  attributes changed" selector despite the field's inherited name. It is the
+  client announcing, to the session-manager server, which of two named
+  client-side phases it has just entered - 1 = the lobby/roster model is
+  being (re)built (`FUN_0035a7dc`, UI state `0x11`), 0 = the match has ended
+  and results/stats are being processed (`FUN_003f208c`, the `NET_SM_RESULTS`
+  handler). Both identities come from project research written independently
+  of and BEFORE today's live session, so this is convergent evidence, not a
+  single investigation reasoning in a circle. What remains genuinely
+  unconfirmed is the SERVER-SIDE consequence: no client branch anywhere
+  reads the `0x141` echo back into any decision (see pad/gating notes
+  above), so there is no client-visible effect for either value, and there
+  is no retail server left to observe what Naughty Dog's own backend did
+  with a lobby-rebuild vs results notification. The generic "attribute
+  selector" framing comes from this message's OPCODE/API shape
+  (`SetAttrFlags`, a general-purpose room-property setter used by several
+  unrelated client-side flags, including the gated-out selector=8 case
+  above), not from anything actually selected on THIS project's wire.
 doc-ref: ../docs/protocol/session_manager_and_matchmaking.md
 seq:
   - id: opcode
@@ -114,7 +157,7 @@ seq:
     doc: "Fixed 0x140 (320 decimal). Confirmed live, big-endian."
   - id: attr_selector
     type: u2
-    doc: "Offset 4:6. `sth r28,116(r1)` @ 0x00ad6374 - low 16 bits of the sender's 3rd argument. The only half the client reads back (from the 0x141 echo, into room_obj+0x1f0, which is then never branched on). Logged 0x0001 in all 2026-08-18 captures and in three consecutive live 2026-08-19 RPCS3 breakpoint hits (room creation, loadout render, load-timer completion); an earlier capture saw 0x0000. STRONGLY NARROWED 2026-08-19 (see the message-level doc above): every real call site found in the decompiled disassembly passes only 1 or 0, and both values line up with a single active/ready STATE FLAG (1 = entering the active phase, 0 = a fire-once completion/leaderboard-trigger path) rather than a selector choosing among several distinct room attributes, despite the inherited name."
+    doc: "Offset 4:6. `sth r28,116(r1)` @ 0x00ad6374 - low 16 bits of the sender's 3rd argument. The only half the client reads back (from the 0x141 echo, into room_obj+0x1f0, which is then never branched on) - so this value has NO confirmed client-visible effect either way. RESOLVED 2026-08-19 to a binary CLIENT-PHASE ANNOUNCEMENT, not a selector choosing among several distinct room attributes despite the inherited name (see the message-level doc above for the full live session and the independent, pre-existing project research that names both call sites): 1 = the client's lobby/roster model is being (re)built (`FUN_0035a7dc`, UI state 0x11) - fires at room creation, loadout render, load-timer completion, and while actively searching for players. 0 = the client has reached its `NET_SM_RESULTS` state and is processing match-end stats (`FUN_003f208c`) - live-confirmed with stat-shaped register values (85, 100, 75, 67, 20) present at the same breakpoint hit. Exhaustively 0x0000 or 0x0001 across the whole wire.jsonl capture (926:23). A third client-side value (8) exists in the sender function but is gated out before reaching the wire (fires during find-match's pre-room-resolution \"Searching for Close Game\" state, when room_obj+0x10 is still 0) - see the gating note above. The SERVER-SIDE consequence of either value remains unconfirmed - no client branch reads it back, and no retail server is left to observe."
   - id: pad_6
     type: u2
     doc: "Offset 6:8. NOT A FIELD - sender-side residue. DEFINITION: the low half of a stale pointer left in the reused send buffer at r1+118; the builder's only stores are wire 0 (`stw`), wire 4:6 (`sth` selector) and wire 8:16 (`std` room_id), and the selector's `sth` clobbers the pointer's high half, leaving its low half on the wire. REASON: unwritten gap between the 2-byte selector and the 8-byte-aligned room_id. Live: 5 distinct values in 355 frames (ff50/2f78/fbe0/197c/3954), identical across ~25 different rooms, and call-site-determined (fbe0 follows a prior 0x140 28/28). Send 0. (Was `attr_value`; see research/notes/2026-08-18-wire-residue-and-field-corrections.md §2.)"
