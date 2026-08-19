@@ -44,59 +44,85 @@ LEADERBOARD_DB = os.environ.get(
 
 
 # The leaderboard "blob" (the <base64-metadata> in leaderboard-update / the
-# trailing field of each reply row) is NOT opaque: it is a 5-field big-endian
-# u32 struct, trailing-zero-truncated on the wire (the client keeps >=1 byte).
-# Fields, verified against the on-screen Supply Raid columns (board 406; board
+# trailing field of each reply row) is NOT opaque: it is an array of big-endian
+# u32 slots, trailing-zero-truncated on the wire (the client keeps >=1 byte).
+# Every blob observed is a whole number of u32s - no partial slot, no remainder.
+# Slots, verified against the on-screen Supply Raid columns (board 406; board
 # 404 shares the layout; the clan board 405 reuses the slots but leaves the
 # stats zero, its score being MAX CLAN SIZE):
 #   [0] best_game  [1] time_played_sec  [2] executions  [3] deaths  [4] rank
-# So we decode it into named columns and re-encode on read. We serve the FULL
-# 5-field struct (see encode_blob) rather than reproducing the client's
-# trailing-zero truncation, so the `rank` field is always present - otherwise a
-# rank-0 player's blob has no rank and a peer's Friends-filter view falls back to
-# showing their standing instead of 0. `extra` carries any bytes beyond the 5
-# fields (none observed) so an unexpected longer blob still survives round-trip.
+#   [5..8] MODE-SPECIFIC, semantics unknown. Interrogation (board 407) sends 8-9
+#          slots where Supply Raid sends 4-5. Live 2026-08-19:
+#            407 comradesean -> (4485, 3607, 42, 17, 2, 0, 5, 1)
+#            407 mgnomad2    -> (3740, 3144, 16, 38, 1, 0, 4, 0, 5)
+#          Named slot_5..slot_8 and stored as integers, NOT as an opaque tail:
+#          every slot the client sends gets its own decoded column. Naming them
+#          properly needs a board-407 capture correlated with the on-screen
+#          Interrogation columns, the same way 406 was pinned.
+# The blob is decomposed on receipt and re-encoded on read; nothing is stored in
+# its wire form. (A legacy opaque `blob` column existed until 2026-08-19 and is
+# rebuilt away by _migrate - see that method for the damage it caused.)
 BLOB_FIELDS = ("best_game", "time_played_sec", "executions", "deaths", "rank")
+EXTRA_SLOTS = ("slot_5", "slot_6", "slot_7", "slot_8")
+ALL_SLOTS = BLOB_FIELDS + EXTRA_SLOTS
+MIN_EMITTED_SLOTS = len(BLOB_FIELDS)
 
 
 def decode_blob(b64):
-    """base64 blob -> ({field: u32, ...}, extra_bytes). Missing trailing fields
-    read back as 0 (the client inflates a memset-0 struct the same way)."""
+    """base64 blob -> {slot_name: u32, ...}.
+
+    Trailing-zero truncation carries NO information: the client simply declines
+    to spend bytes on zeros, so a slot the wire omits IS zero. We decode it as 0
+    and store 0 - there is no truncated-vs-untruncated distinction to preserve.
+    Slots past slot_8 are dropped; none have ever been observed, and a silent
+    opaque tail is exactly what this rewrite removed. If one ever appears, widen
+    EXTRA_SLOTS rather than reintroducing a catch-all column."""
     try:
         raw = base64.b64decode(b64) if b64 else b""
     except (ValueError, TypeError):
         raw = b""
-    extra = raw[20:]
-    vals = struct.unpack(">IIIII", raw.ljust(20, b"\x00")[:20])
-    return dict(zip(BLOB_FIELDS, vals)), extra
+    usable = min(len(raw) // 4, len(ALL_SLOTS))
+    vals = struct.unpack(">%dI" % usable, raw[:usable * 4]) if usable else ()
+    fields = dict(zip(ALL_SLOTS, vals))
+    for name in ALL_SLOTS:
+        fields.setdefault(name, 0)
+    return fields
 
 
-def encode_blob(fields, extra=b""):
-    """Named fields -> wire blob. We emit the FULL 5-field struct (we deliberately
-    do NOT reproduce the client's trailing-zero truncation), so the `rank` field
-    is always present.
+def encode_blob(fields):
+    """Named slots -> wire blob. The emitted length is DERIVED from the data:
+    enough slots to carry every non-zero value, with a floor of the five
+    universally-named ones.
 
-    Why: a client trailing-zero-truncates its blob when it submits, so a rank-0
-    player ships only 4 fields (no rank). If we re-served that truncated form, a
-    PEER's Friends-filter view - whose leaderboard-get reply carries its own rank
-    field - finds no rank in the blob and falls back to showing that player's
-    leaderboard STANDING instead of their real rank, while the Global view
-    (leaderboard-range, no such field) correctly shows 0. Emitting rank=0
-    explicitly puts the field back so both views read the real, decoded rank.
-    This changes no stat value; it just serves the fully-decoded record rather
-    than the client's compressed wire form."""
-    raw = struct.pack(">IIIII", *(int(fields.get(k, 0)) for k in BLOB_FIELDS)) + extra
-    return base64.b64encode(raw).decode("ascii")
+    This is not padding and not a deviation from what the client sent - a slot
+    the client truncated away is zero, and we serve it back as zero. The floor
+    matters because a peer's Friends-filter view reads `rank` out of the blob;
+    if the field is absent it falls back to showing that player's leaderboard
+    STANDING instead of their real rank, while the Global view (leaderboard-
+    range, which carries no such field) correctly shows 0. Emitting the decoded
+    zero puts both views on the same value.
+
+    Every blob whose data reaches slot N rebuilds byte-identically, including
+    Interrogation's 8- and 9-slot forms."""
+    n = MIN_EMITTED_SLOTS
+    for i, name in enumerate(ALL_SLOTS):
+        if int(fields.get(name, 0)):
+            n = max(n, i + 1)
+    return base64.b64encode(
+        struct.pack(">%dI" % n, *(int(fields.get(k, 0)) for k in ALL_SLOTS[:n]))
+    ).decode("ascii")
 
 
 class ScoreStore:
     """Thread-safe leaderboard store keyed by (board_id, player). One row per
-    player per board, holding the score plus the blob's DECODED named fields
-    (best_game / time_played_sec / executions / deaths / rank) - no opaque blob.
-    leaderboard-update decodes into these columns; get/range re-encode the exact
-    wire blob from them."""
+    player per board, holding the score plus EVERY decoded slot of the wire blob
+    (best_game / time_played_sec / executions / deaths / rank / slot_5..slot_8).
 
-    _COLS = BLOB_FIELDS + ("extra",)
+    THE BLOB NEVER EXISTS SERVER-SIDE. It is decomposed on receipt and rebuilt
+    on read; no column holds wire-form or base64 data. Anything the client sends
+    that we cannot name still gets its own integer column - never a catch-all."""
+
+    _SLOT_COLS = ALL_SLOTS
 
     def __init__(self, path):
         self._lock = threading.Lock()
@@ -111,56 +137,93 @@ class ScoreStore:
             " executions      INTEGER NOT NULL DEFAULT 0,"
             " deaths          INTEGER NOT NULL DEFAULT 0,"
             " rank            INTEGER NOT NULL DEFAULT 0,"
-            " extra    TEXT    NOT NULL DEFAULT '',"
+            " slot_5          INTEGER NOT NULL DEFAULT 0,"
+            " slot_6          INTEGER NOT NULL DEFAULT 0,"
+            " slot_7          INTEGER NOT NULL DEFAULT 0,"
+            " slot_8          INTEGER NOT NULL DEFAULT 0,"
             " PRIMARY KEY (board_id, player))")
         self._migrate()
         self._db.commit()
 
     def _migrate(self):
-        """Upgrade a pre-existing opaque-`blob` table: add the named columns and
-        backfill them by decoding each stored blob. Idempotent; the old `blob`
-        column is left in place (SQLite can't drop it) but no longer read."""
+        """One-time rebuild of any older schema into the slot columns, then the
+        legacy columns are DROPPED so they can never be read back as truth.
+
+        History (2026-08-19): an earlier schema kept the raw base64 `blob` and an
+        opaque `extra` tail alongside the named columns, and re-derived the named
+        columns from `blob` on EVERY startup. SQLite cannot drop a column with
+        plain ALTER, so the guard `if "blob" in cols` was true forever and the
+        backfill ran every restart - wiping the stats of every row written by the
+        current code path, whose `blob` was empty. Live symptom: board 407
+        (Interrogation) served a correct score with rank/best-game/time-played/
+        executions/deaths all 0. This rebuild removes the crutch entirely rather
+        than guarding it: decode once, drop the columns, never look at wire form
+        again."""
         cols = {r[1] for r in self._db.execute("PRAGMA table_info(scores)")}
-        for name, decl in (("best_game", "INTEGER NOT NULL DEFAULT 0"),
-                           ("time_played_sec", "INTEGER NOT NULL DEFAULT 0"),
-                           ("executions", "INTEGER NOT NULL DEFAULT 0"),
-                           ("deaths", "INTEGER NOT NULL DEFAULT 0"),
-                           ("rank", "INTEGER NOT NULL DEFAULT 0"),
-                           ("extra", "TEXT NOT NULL DEFAULT ''")):
+        for name in self._SLOT_COLS:
             if name not in cols:
-                self._db.execute(f"ALTER TABLE scores ADD COLUMN {name} {decl}")
+                self._db.execute(
+                    f"ALTER TABLE scores ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0")
+        legacy = [c for c in ("blob", "extra") if c in cols]
+        if not legacy:
+            return
+        # Decode each legacy row ONCE. Prefer the stored blob when present; a row
+        # written by the newer code has an empty blob but real slot columns, so
+        # it must be left exactly as-is.
         if "blob" in cols:
             for board, player, blob in self._db.execute(
-                    "SELECT board_id, player, blob FROM scores").fetchall():
-                f, extra = decode_blob(blob)
+                    "SELECT board_id, player, blob FROM scores "
+                    "WHERE blob IS NOT NULL AND blob != ''").fetchall():
+                fields = decode_blob(blob)
                 self._db.execute(
-                    "UPDATE scores SET best_game=?, time_played_sec=?, executions=?, "
-                    "deaths=?, rank=?, extra=? WHERE board_id=? AND player=?",
-                    (f["best_game"], f["time_played_sec"], f["executions"],
-                     f["deaths"], f["rank"], base64.b64encode(extra).decode("ascii"),
-                     board, player))
+                    "UPDATE scores SET " +
+                    ", ".join(f"{c}=?" for c in ALL_SLOTS) +
+                    " WHERE board_id=? AND player=?",
+                    tuple(fields[c] for c in ALL_SLOTS) + (board, player))
+        if "extra" in cols:
+            # An intermediate schema kept slots past rank as a base64 `extra`
+            # tail. Decode it into the named trailing slots so nothing is lost
+            # when the column is dropped - board 407 rows repaired on 2026-08-19
+            # carry their 3-4 Interrogation slots here.
+            for board, player, extra in self._db.execute(
+                    "SELECT board_id, player, extra FROM scores "
+                    "WHERE extra IS NOT NULL AND extra != ''").fetchall():
+                try:
+                    raw = base64.b64decode(extra)
+                except (ValueError, TypeError):
+                    continue
+                n = min(len(raw) // 4, len(EXTRA_SLOTS))
+                if not n:
+                    continue
+                vals = struct.unpack(">%dI" % n, raw[:n * 4])
+                self._db.execute(
+                    "UPDATE scores SET " +
+                    ", ".join(f"{c}=?" for c in EXTRA_SLOTS[:n]) +
+                    " WHERE board_id=? AND player=?",
+                    vals + (board, player))
+        for c in legacy:
+            self._db.execute(f"ALTER TABLE scores DROP COLUMN {c}")
 
     def update(self, board_id, player, score, blob):
-        f, extra = decode_blob(blob)
+        """Decode the wire blob into slot columns. The blob itself is discarded."""
+        fields = decode_blob(blob)
+        cols = ALL_SLOTS
+        vals = tuple(fields[c] for c in ALL_SLOTS)
         with self._lock:
             self._db.execute(
-                "INSERT INTO scores (board_id, player, score, best_game, "
-                "time_played_sec, executions, deaths, rank, extra) "
-                "VALUES (?,?,?,?,?,?,?,?,?) "
-                "ON CONFLICT(board_id, player) DO UPDATE SET score=excluded.score, "
-                "best_game=excluded.best_game, time_played_sec=excluded.time_played_sec, "
-                "executions=excluded.executions, deaths=excluded.deaths, "
-                "rank=excluded.rank, extra=excluded.extra",
-                (board_id, player, score, f["best_game"], f["time_played_sec"],
-                 f["executions"], f["deaths"], f["rank"],
-                 base64.b64encode(extra).decode("ascii")))
+                "INSERT INTO scores (board_id, player, score, " +
+                ", ".join(cols) + ") VALUES (?,?,?," +
+                ",".join("?" * len(cols)) + ") "
+                "ON CONFLICT(board_id, player) DO UPDATE SET score=excluded.score, " +
+                ", ".join(f"{c}=excluded.{c}" for c in cols),
+                (board_id, player, score) + vals)
             self._db.commit()
 
     def _blob_of(self, row):
-        """Re-encode the exact wire blob from a (best_game..rank, extra) row."""
-        f = dict(zip(BLOB_FIELDS, row[:5]))
-        extra = base64.b64decode(row[5]) if row[5] else b""
-        return encode_blob(f, extra)
+        """Rebuild the wire blob from decoded slot columns."""
+        return encode_blob(dict(zip(ALL_SLOTS, row)))
+
+    _SEL = ", ".join(ALL_SLOTS)
 
     def lookup(self, board_id, player):
         """Return (rank0, score, blob) for one player, or None if absent.
@@ -168,8 +231,7 @@ class ScoreStore:
         parser stores rank = atoi(<wire>) + 1."""
         with self._lock:
             row = self._db.execute(
-                "SELECT score, best_game, time_played_sec, executions, deaths, "
-                "rank, extra FROM scores WHERE board_id=? AND player=?",
+                f"SELECT score, {self._SEL} FROM scores WHERE board_id=? AND player=?",
                 (board_id, player)).fetchone()
             if row is None:
                 return None
@@ -192,12 +254,11 @@ class ScoreStore:
             return []
         with self._lock:
             rows = self._db.execute(
-                "SELECT player, score, best_game, time_played_sec, executions, "
-                "deaths, rank, extra FROM scores WHERE board_id=? "
+                f"SELECT player, score, {self._SEL} FROM scores WHERE board_id=? "
                 "ORDER BY score DESC, player ASC LIMIT ? OFFSET ?",
                 (board_id, end - start + 1, start)).fetchall()
         return [(player, score, self._blob_of(rest))
-                for (player, score, *rest) in rows]
+                for player, score, *rest in [(r[0], r[1], *r[2:]) for r in rows]]
 
 
 STORE = ScoreStore(LEADERBOARD_DB)
