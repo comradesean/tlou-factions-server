@@ -187,8 +187,18 @@ live in the data-compiler payload the game loads at runtime.
       ceiling applies: what a real backend does with either notification is
       unrecoverable without a retail capture.
 
-- **`0x12f room_settings_tail` / `0x130 room_object_tail`** - 32 bytes each,
-  provenance known (copies of specific room-object spans), interiors unmapped.
+- **`0x12f room_settings_tail` / `0x130 room_object_tail`** - RESOLVED
+  2026-08-19. `room_settings_tail` is not a room-object field at all: its
+  sender (`FUN_00ad5b78`) was exhaustively disassembled and never writes
+  that stack region, nor calls any copy/memset helper touching it - pure
+  uninitialised residue. `room_object_tail` IS a real copy (`room_obj
+  [0x20:0x40]`, confirmed via its sender `FUN_00ad6718`'s 64-byte copy
+  loop), with `room_obj` live-confirmed as the party object (`0x01387f58`)
+  during a real party join. An exhaustive whole-binary scan for any reader
+  of that address range found none - same status as `attr_tail` and
+  `member_slot_ec`. Untested: whether a game-room join uses a different
+  `room_obj` than a party join does. See `protos/0x12f_room_create.ksy` and
+  `protos/0x130_room_join.ksy`.
 
 ## Unhandled sibling services
 

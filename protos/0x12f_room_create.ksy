@@ -185,8 +185,21 @@ seq:
   - id: room_settings_tail
     size: 32
     doc: |
-      Offset 200:232 (wire 0xc8:0xe8). The remaining 32 bytes of the
-      `room_obj+0x19fc..+0x1a3b` copy - the room's own stat/settings tail (as
-      opposed to the per-player member_data above). Not field-mapped yet; in
-      live captures it is mostly zero with occasional stale-stack values. Send
-      the room object's real bytes if hosting; the stub sends what it has."
+      Offset 200:232 (wire 0xc8:0xe8). RESOLVED 2026-08-19: this is NOT a
+      room-object field copy at all - it is uninitialised sender-side stack,
+      the same class of residue as this project's many `pad_N` fields
+      elsewhere. Confirmed by exhaustively disassembling the sender
+      (`FUN_00ad5b78`, opcode literal `li r0,303` @0xad5c38, send call
+      `_opd_FUN_00acb93c(this+0x25060, buf, 0xe8, 1)` @0xad5fac, buffer base
+      r1+144): the stack range corresponding to wire 0xc8:0xe8 (r1+344
+      through r1+376) has ZERO stores anywhere in the function - no `stb`/
+      `stw`/`std` targets that range, and no `bl` to a copy/memset helper
+      touches it either. The function's own frame (`stdu r1,-480(r1)`) is
+      never zero-filled. So the "mostly zero with occasional stale-stack
+      values" behaviour already observed live is exactly what leaked,
+      never-written stack looks like - not a room field that happens to be
+      usually zero. The earlier "room_obj+0x19fc..+0x1a3b copy" framing was
+      never verified against this function's actual disassembly and is
+      retracted. Send 0. (This closes the same class of question
+      `room_object_tail` in 0x130_room_join.ksy has - see that file for the
+      contrasting case where the copy IS real.)

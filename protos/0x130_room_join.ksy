@@ -81,6 +81,33 @@ seq:
   - id: room_object_tail
     size: 32
     doc: |
-      Offset 56:88 (wire 0x38:0x58). The remaining 32 bytes of the room
-      object's 0x0-0x3f copy (room bookkeeping, not per-player card data). Not
-      field-mapped this pass."
+      Offset 56:88 (wire 0x38:0x58). RESOLVED 2026-08-19, unlike its `0x12f`
+      sibling `room_settings_tail` (which turned out to be pure sender-side
+      stack residue, never written at all - see that field's doc for the
+      contrast): this one IS a real copy. Confirmed by exhaustively
+      disassembling the sender (`FUN_00ad6718`, opcode literal `li r0,304`
+      @0xad67a4, send call `_opd_FUN_00acb93c(this+0x25060, buf, 0x58, 1)`
+      @0xad69fc, buffer base r1+112): a 64-byte byte-copy loop
+      (0xad67a8-0xad69bc) reads `room_obj[0x0:0x40]` into wire offset
+      24:88 - `member_data` is `room_obj[0x0:0x20]`, and `room_object_tail`
+      specifically is `room_obj[0x20:0x40]`.
+
+      `room_obj` (the function's own `param_2`, `r31`) LIVE-CONFIRMED
+      2026-08-19 in RPCS3's debugger: breakpoint at `0x00ad6718` during a
+      real party join hit with `r4 = 0x01387f58` - the well-known PARTY
+      object, not the game-room object. (The breakpoint fired only on the
+      JOINER's client, never the party owner's, confirming this message's
+      documented client-to-server/joiner-only direction.) So for this
+      sample, `room_object_tail`'s absolute source is
+      `0x01387f78:0x01387f98`.
+
+      An exhaustive scan of the whole binary for any reader of that address
+      range (both known addressing idioms - the r2-anchor chain and
+      `lis`+`addi`/`ori` absolute construction, the same method used for
+      `attr_tail` and `member_slot_ec`) found NOTHING - no reader anywhere.
+      Same status as those two fields: mechanism and source fully pinned,
+      live-verified, no consumer found. RESIDUAL GAPS: (a) this is one
+      sample (a party join) - whether a game-room join sends a DIFFERENT
+      `room_obj` (and therefore a different absolute range) is untested;
+      (b) same as the other two fields, an indexed/bulk-copy reader would
+      evade this scan. Send 0.

@@ -257,12 +257,16 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     not read by the traced portion.
 48. **`np_id.opt` / `np_id.reserved`** - Sony's opaque SceNpId bytes, copied
     verbatim; readers past the handle untraced.
-49. **`0x12f room_settings_tail`** / **`0x130 room_object_tail`** - provenance
-    known (copies of specific room-object spans), interiors not field-mapped.
-    Not yet re-investigated with the exhaustive live-debugger method used
-    below for `attr_tail` - a 2026-08-19 attempt found an inconsistency in the
-    existing sender-address citation for `0x130`'s builder that needs
-    re-verifying before trusting any destination-object math built on it.
+49. **`0x12f room_settings_tail`** / **`0x130 room_object_tail`** - RESOLVED
+    2026-08-19, two different findings after re-verifying the earlier
+    citation inconsistency properly. `room_settings_tail`'s sender
+    (`FUN_00ad5b78`) was exhaustively disassembled and never writes that
+    stack region at all - pure uninitialised residue, not a room-object
+    field. `room_object_tail` IS a real copy (`room_obj[0x20:0x40]`, via
+    sender `FUN_00ad6718`'s 64-byte copy loop), with `room_obj`
+    live-confirmed as the party object (`0x01387f58`) during a real party
+    join, and an exhaustive whole-binary scan of that range found no reader
+    - same status as `attr_tail`/`member_slot_ec`.
 49a. **`0x136 attr_tail`** - MECHANISM FULLY RESOLVED 2026-08-19, interior
     meaning still unknown. Both copy sites traced at instruction granularity
     and live-confirmed in RPCS3's debugger: lands in `g_70`/NetInfo
@@ -281,29 +285,29 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
 50. **`report-server` response grammar** - the request is captured, the reply is
     not. Deliberately not guessed. Also an implementation risk: our stub answers
     a ban check with a ticket blob.
-51. **`0x12f room_settings_tail`** (32 bytes) and **`0x130 room_object_tail`**
-    (32 bytes) - unmapped room-object spans. See item 49 above.
-52. **`profile_21.game_data` interior** - the 0x5000-byte payload; subsystem
+51. **`profile_21.game_data` interior** - the 0x5000-byte payload; subsystem
     index ranges only partly claimed.
-53. **`profile_21` zero region `P+0x1E74..0x5008`** - purpose unknown.
-54. **DC-blocked set** - all net-stat slots (including the supplies gate),
+52. **`profile_21` zero region `P+0x1E74..0x5008`** - purpose unknown.
+53. **DC-blocked set** - all net-stat slots (including the supplies gate),
     `rank_tier` thresholds, and every id→asset map (cosmetics, character/name
     pools). Blocked on extracting `net1.bin`/`net10.bin` registries; not
     reachable by decompiling the EBOOT.
-55. **`0x142` numeric encoding for a ranked account** - needs a ranked capture.
-56. **Intermittent "Host quit for cheating"** teardown - rare, unexplained, no
+54. **`0x142` numeric encoding for a ranked account** - needs a ranked capture.
+55. **Intermittent "Host quit for cheating"** teardown - rare, unexplained, no
     packet correlated with it yet.
-57. **`stat_line` task line's 2nd `%s`** - the accessor is pinned (`base+0x2e6c`
+56. **`stat_line` task line's 2nd `%s`** - the accessor is pinned (`base+0x2e6c`
     string field), but `base` resolves to a runtime-allocated object with no
     file-backed content - needs a live memory read during a campaign autosave.
-58. **`stat_line` task line's `%x`** (`task-%x`) - likely a shared connection/
+57. **`stat_line` task line's `%x`** (`task-%x`) - likely a shared connection/
     job-id field (same read idiom recurs in unrelated structs), not confirmed.
 
 RESOLVED OUT OF THIS TIER since 2026-08-18 and removed from the numbered list
 above (kept here so old cross-references aren't silently broken): `single-
 player-server` line protocol (now `protos/0x11_stat_line.ksy`, 2026-08-19),
 `0x136 attr_tail` contents' mechanism (see item 49a above; interior meaning
-still open but promoted to tier 2), `0x140`'s attribute identity (resolved,
+still open but promoted to tier 2), `0x12f room_settings_tail` /
+`0x130 room_object_tail` (both resolved, see item 49 above), `0x140`'s
+attribute identity (resolved,
 `protos/0x140_set_room_flags.ksy`), `0x13e` kind 3 vs kind 4 (resolved,
 `protos/0x13e_set_host_flag.ksy`), `gamelist_line` grammar (resolved
 2026-08-19).
