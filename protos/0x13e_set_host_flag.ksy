@@ -44,7 +44,57 @@ seq:
       research/notes/2026-08-18-wire-residue-and-field-corrections.md §3.
   - id: kind
     type: u1
-    doc: "Offset 5:6. A sender-path discriminator, 3 or 4 depending on which builder sent it - NOT a fixed constant. CORRECTED 2026-08-18 (objdump): builder FUN_00ad6a34 stores 3 (`li r0,3` @ 0xad6b64, `stb r0,117(r1)` @ 0xad6b6c), builder FUN_00ad7024 stores 4 (`li r0,4` @ 0xad7130, `stb r0,117(r1)` @ 0xad713c); buffer base r1+112 so wire 5. The companion doc's opcode-map row already had this right. Which UI/game path drives each builder was not traced; plausibly a request-reason/source tag. LIVE-CONFIRMED 2026-08-18: 3 or 4 in 117/117 captured frames, no other value."
+    doc: |
+      Offset 5:6. A sender-path discriminator, 3 or 4 depending on which
+      builder sent it - NOT a fixed constant. CORRECTED 2026-08-18 (objdump):
+      builder FUN_00ad6a34 stores 3 (`li r0,3` @ 0xad6b64, `stb r0,117(r1)` @
+      0xad6b6c), builder FUN_00ad7024 stores 4 (`li r0,4` @ 0xad7130,
+      `stb r0,117(r1)` @ 0xad713c); buffer base r1+112 so wire 5.
+      LIVE-CONFIRMED 2026-08-18: 3 or 4 in 117/117 captured frames, no other
+      value.
+
+      KIND=3'S CALLING CONTEXT, LIVE-TRACED 2026-08-19 (RPCS3 debugger,
+      breakpoint at 0x00ad6a34, ~12 hits across an extended session with two
+      independent clients, comradesean and mgnomad2). EVERY hit fired
+      through the identical caller (a vtable+0x20 dispatch thunk at
+      0x00ad1150-0xad11a8, confirmed by disassembly: `lwz r9,32(r9)` = offset
+      0x20) - so this is genuinely one calling site, not several. The target
+      object (`param_2`, this function's own `r4`) and the requested state
+      (`param_3`, `r5`: 1=become host, 0=cease host) varied with context:
+        - Connect-time bootstrap (both clients, independently): party object
+          (`0x01387f58`), 1 then 0 - set then immediately clear.
+        - Party join / voluntary leave / getting kicked / a failed kick
+          retried and then succeeding: party object, 0 (cease) on whichever
+          side's own membership just changed - never on the side acting on
+          someone else (the kicker never fires; the kicked client does).
+        - Starting a private match: party object, 0 (cease) - the handoff
+          away from party-level host status.
+        - Clicking Find Match: party object, 1 (become) - re-claiming solo
+          party host at the start of a fresh matchmaking search.
+        - THE HOST'S LOBBY BEING CREATED (end of a find-match search that
+          elected this client as host): GAME ROOM object (`0x01383bd8`,
+          the same well-known static game-room pointer used throughout this
+          project's find-match research), 1 (become host) - the FIRST
+          confirmed hit on the game-room object, not the party object.
+      CORRECTION: an earlier pass of this note claimed kind=3 was
+      "exclusively" the party object's host-flag toggle and never touched
+      the game-room object. The lobby-creation hit above disproves that
+      directly. The corrected reading: kind=3 (`FUN_00ad6a34`) is a GENERIC
+      is-host-flag setter that operates on WHATEVER object (`+0x19f4`) is
+      passed to it - party or game room - fired by the client itself
+      whenever ITS OWN local host status on that specific object needs to
+      change. "kind" is not "which object type"; every observed trigger is
+      still consistent with "a direct, locally-initiated host-flag change,"
+      which may be the real axis kind=3 vs kind=4 splits on - kind=4's
+      builder (`FUN_00ad7024`) is confirmed by static disassembly to never
+      touch `+0x19f4` at all (see its own doc above), so kind=4 is
+      structurally NOT this same "I am claiming/releasing host" action.
+      kind=4's calling context (vtable+0x34) has NOT been live-captured in
+      any session so far, despite covering party bootstrap, join, leave,
+      kick (both directions, both outcomes), private-match creation,
+      find-match search, and host lobby creation - genuinely still open,
+      and the search for it should now look OUTSIDE "local client claims or
+      releases its own host flag," since that whole category is kind=3's.
   - id: pad_6
     size: 2
     doc: "Offset 6:8. ALIGNMENT PADDING (proven 2026-08-18): both builders (FUN_00ad6a34, FUN_00ad7024) store only wire+0 (opcode), wire+4 (flag byte) and wire+5 (kind); neither writes wire+6, and the 16-byte send leaves it as uninitialised stack. Definition: 2-byte gap aligning the 8-byte room_id after the kind byte. Not a field - send 0. (Was `unknown_2`.)"
