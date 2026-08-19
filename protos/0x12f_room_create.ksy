@@ -66,57 +66,54 @@ seq:
     type: u4
     doc: |
       Offset 12:16. Verbatim copy of `*(u32*)(room_obj + 0x0c)` (`lwz r0,12(r31)`
-      / `stw r0,156(r1)` @ 0x00ad5f30). DEFINITION: the selected MAP identifier
-      (or a map-dominated map+team combined index) - NOT the team field.
-      Evidence (2026-08-18, server/logs/session_manager.log): logged host values
-      0x09, 0x13, 0x63(99), 0x5a(90); combined with the earlier 0x02/0x12 that is
-      six distinct values, which rules out the 3-value team field (team is 0/1/2
-      and lives at RoomCreate wire 0xb0).
-      TEAM COMPONENT RULED OUT 2026-08-18 - the map-vs-team confound is dead.
-      The earlier controlled test (research/notes/2026-08-16-map-id-vs-team-
-      confound.md) saw 0x09/0x13 track TEAM with map held constant, leaving
-      pure-map vs map+team-combined unseparated and calling for a 2x2 capture.
-      126 live RoomCreate frames settle it without one. Pairing this field
-      against the team u16 at wire 0xb0:
-        field_0c=0x13 occurs with team 0 (x1), team 1 (x15) AND team 2 (x3)
-        field_0c=0x09 occurs with team 0 (x2) AND team 1 (x9)
-        field_0c=0x12 occurs with team 1 (x4)
-        field_0c=0x02 occurs with team 0 (x92, the find-match path)
-      A single field_0c value (0x13) spans the COMPLETE team domain - team takes
-      only 0, 1 and 2. If field_0c encoded team in any bit, a fixed field_0c
-      would force a fixed team; instead one value covers every team there is, so
-      this field carries NO team component. Remaining reading: map (or map-like)
-      selection only.
-      NOT A PURE MAP ID - IT SPLITS BY ROOM OBJECT (2026-08-18, 131 live
-      RoomCreate frames, zero crossover):
-        field_0c=0x12 occurs ONLY on the PARTY room object (room_ptr 0x01387f58), x6
-        field_0c=0x02 occurs ONLY on the GAME room object (0x01383bd8), x92
-        field_0c=0x09 occurs ONLY on the GAME room object, x12
-        field_0c=0x13 occurs ONLY on the GAME room object, x21
-      A party lobby has no map, so a value that is constant for every party room
-      and never appears on a game room cannot be a map identifier. Better
-      reading: obj+0x0c is a ROOM CONTEXT / MODE descriptor, read from whichever
-      room object is being created - the party object carries a constant 0x12,
-      while game rooms carry 0x02 on the matchmade path and 0x09/0x13 on custom
-      games.
-      LEAD on the custom-game pair: a friend-card presence capture during a live
-      custom game read "Checkpoint / SUPPLY RAID", and Factions custom games are
-      mode-selectable, so 0x09/0x13 plausibly encode MODE (e.g. Supply Raid vs
-      Survivors) rather than map. That would also explain the old 2026-08-16
-      confound where 0x09/0x13 appeared to track TEAM with map held constant -
-      mode and faction are set on the same lobby screen. Unresolved: the
-      historically logged 0x5a (90) and 0x63 (99), which are too many values for
-      a two-mode reading and may be a third mode or a genuine map component.
-      Naming these needs a capture that changes ONE lobby option at a time.
+      / `stw r0,156(r1)` @ 0x00ad5f30). The same struct offset is sent by 0x135
+      FindMatch as its own `field_0c`, so the two carry the same quantity.
 
-      OPEN SUB-QUESTION: find-match always sends 0x02 here (and 0x135 sends 0x02
-      in 411/411 frames) - so 0x02 is either the matchmade-game context id or an
-      any/random sentinel.
-      A custom game with a deliberately chosen map, repeated for a second map,
-      names the values directly. Its real home is room_obj+0x0c; the writer of
-      that offset (vtable-dispatched, not found statically) would name it
-      definitively. See research/notes/2026-08-18-wire-residue-and-field-
-      corrections.md §4.
+      DEFINITION: the room's SELECTOR - what kind of session this is. Its value
+      range is disjoint by room class, and on the matchmaking path it is the
+      game mode.
+
+      MATCHMADE PATH - RESOLVED 2026-08-18: this is the GAME MODE / PLAYLIST.
+      It had looked invariant at 0x02 only because every earlier capture was of
+      one playlist; a second playlist produced 0x03, in both the searcher's
+      request and the host's RoomCreate:
+        0x135 FindMatch:              0x02 x554,  0x03 x11
+        0x12f RoomCreate (PUBLIC):    0x02 x94,   0x03 x2
+      The searcher ASKS for a mode in 0x135; the elected host STAMPS it on the
+      room it creates. 0x02 = Supply Raid, 0x03 = Survivors (read off the live
+      client UI). REASON it exists: it is the matchmaking filter - a server
+      should only offer a searcher rooms whose field_0c matches its own, or
+      players get matched into the wrong playlist.
+
+      VALUE RANGES ARE DISJOINT BY ROOM CLASS (131 live RoomCreate frames,
+      zero crossover):
+        PUBLIC  (find-match)   -> 0x02, 0x03      = game mode, per above
+        PRIVATE (custom game)  -> 0x09, 0x13      = open, see below
+        PARTY                  -> 0x12 (constant) = a party has no mode or map
+
+      PRIVATE PAIR - OPEN. Two readings that make different predictions:
+        (a) the same two modes in a private-match encoding; or
+        (b) a different quantity entirely - on find-match you choose a PLAYLIST
+            and the map is voted, whereas in a private match you choose the MAP,
+            so the field may carry map there.
+      Reading (b) better fits the historically logged 0x5a (90) and 0x63 (99),
+      which are too many values for a two-mode reading.
+      DECIDING TEST: two private matches differing ONLY in mode (map fixed) - if
+      field_0c changes it is mode; then two differing ONLY in map (mode fixed) -
+      if it changes it is map.
+
+      TEAM COMPONENT RULED OUT 2026-08-18. An earlier controlled test
+      (research/notes/2026-08-16-map-id-vs-team-confound.md) saw 0x09/0x13 track
+      TEAM with the map held constant, leaving "map" and "map+team combined"
+      unseparated and calling for a 2x2 capture. 126 live frames settle it
+      without one: pairing field_0c against the team u16 at wire 0xb0, value
+      0x13 occurs with team 0 (x1), 1 (x15) AND 2 (x3) - the COMPLETE team
+      domain, since team takes only 0/1/2 - and 0x09 occurs with team 0 (x2) and
+      1 (x9). If field_0c encoded team in any bit a fixed field_0c would force a
+      fixed team; instead one value covers every team there is. The old confound
+      is explained by mode and faction being set on the same lobby screen.
+
+      See research/notes/2026-08-18-wire-residue-and-field-corrections.md 4/4b.
   - id: region_language
     size: 4
     doc: "Offset 16:20. Region/language, built from the sceNpManagerGetAccountRegion / GetMyLanguages pair this function calls. Live-constant `75 73 00 01` = \"us\\0\" + language 1."

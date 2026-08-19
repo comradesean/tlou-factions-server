@@ -58,17 +58,23 @@ seq:
     doc: |
       Offset 12:16. `*(u32*)(search_obj+0x0C)` (`lwz r11,12(r29)` @ 0xad6c90,
       `stw r11,156(r1)`) - literally the SAME struct offset as RoomCreate's
-      room_field_0c (room_obj+0x0c), so it carries the same value: the selected
-      MAP identifier (or a map-dominated map+team combined index), used here as
-      the match-search map filter. Six distinct logged values across sessions
-      rule out the team field, and the map-vs-team-combined caveat is now CLOSED
-      (2026-08-18): the same field_0c value occurs with different team values in
-      live RoomCreate captures, so it carries no team component - see
-      0x12f_room_create.ksy room_field_0c and
-      research/notes/2026-08-18-wire-residue-and-field-corrections.md §4.
-      Live find_match value: 0x00000002 in 411/411 captured frames - this field
-      never varies on the find-match path, so 0x02 is either the map id
-      matchmaking always resolves to or an any/random sentinel (open). Resolving the writer of +0x0c settles both messages.
+      room_field_0c (room_obj+0x0c), and it carries the same quantity.
+      DEFINITION on this path: the GAME MODE / PLAYLIST the client is searching
+      for. RESOLVED 2026-08-18 - it had looked invariant at 0x02 across 411
+      frames only because every capture was of a single playlist; a second
+      playlist produced 0x03 (0x02 x554, 0x03 x11), and the RoomCreate that
+      follows a search stamps the same value on the new PUBLIC room
+      (0x02 x94, 0x03 x2). 0x02 = Supply Raid, 0x03 = Survivors, read off the
+      live client UI.
+      REASON it exists: this is the matchmaking filter. A server MUST only
+      return rooms whose field_0c matches the searcher's, or players are matched
+      into the wrong playlist. The stub currently ignores it and returns every
+      public room - correct while only one playlist is in use, WRONG as soon as
+      two are, and worth fixing before any multi-playlist testing.
+      Team component ruled out, and the private-match value range (0x09/0x13) is
+      a separate open question - see protos/0x12f_room_create.ksy
+      room_field_0c and research/notes/2026-08-18-wire-residue-and-field-
+      corrections.md 4/4b.
   - id: room_flags_10
     type: u4
     doc: "Offset 16:20. `*(u32*)(search_obj+0xE8)` conditionally OR'd with 0x40000000 (`lwz r0,232(r29)` @ 0xad6cd0, `oris r0,r0,16384` @ 0xad6cf0) - identical construction to RoomCreate's room_flags_e8. Live `10 2c 50 3f`. (The oris gate compares r10, whose definition is outside the function body - gate condition untraced.)"

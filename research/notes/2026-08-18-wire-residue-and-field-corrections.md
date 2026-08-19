@@ -139,12 +139,26 @@ LEAD: a friend-card presence capture during a live custom game read
 since mode and faction are set on the same lobby screen. Unresolved: the
 historically logged 0x5a (90) and 0x63 (99) are too many for a two-mode reading.
 
-Second observation: `0x135` FindMatch carries `field_0c = 0x00000002` in 411/411
-frames, and every RoomCreate reached via find-match carries `0x02` as well, while
-custom GAME rooms carry `0x09`/`0x13` (`0x12` is the party object, per 4b). Open
-sub-question: whether `0x02` is the matchmade-game context id or an any/random
-sentinel. Naming `0x09`/`0x13` needs a capture that changes ONE lobby option at a
-time - mode held constant while the map changes, then the reverse.
+### 4c. Matchmade path RESOLVED - it is the game mode
+
+`field_0c` looked invariant at `0x02` (411/411 searches) only because every
+capture until then was of a single playlist. A second playlist produced `0x03`:
+
+| | `0x02` | `0x03` |
+|---|---|---|
+| `0x135` FindMatch | 554 | 11 |
+| `0x12f` RoomCreate (PUBLIC) | 94 | 2 |
+
+The searcher ASKS for a mode in `0x135`; the elected host STAMPS it on the room
+it creates. `0x02` = Supply Raid, `0x03` = Survivors, read off the live client
+UI. This is the matchmaking filter, and the stub currently IGNORES it - it
+returns every public room regardless of mode. Harmless while one playlist is in
+use; wrong the moment two are.
+
+The PRIVATE pair (`0x09`/`0x13`) remains open: either the same two modes in a
+private encoding, or a different quantity (in a private match you choose the
+MAP, whereas find-match votes it). The latter fits the historical `0x5a`/`0x63`.
+Deciding test: two private matches differing ONLY in mode, then ONLY in map.
 
 ## 5. `0x142` HostRank - live entry data
 

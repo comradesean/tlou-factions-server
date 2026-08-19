@@ -80,29 +80,32 @@ seq:
       located at offset 9 (was the low half of the u16 `team` at 8:10). High
       confidence.
   - id: recent_level_0
-    type: u1
+    type: u2
     doc: |
-      Offset 10. CORRECTED 2026-08-17 (was mislabeled "loadout_slot_0"): NOT
-      loadout. This byte and recent_level_1..3 are the host map-picker's
-      RECENT-LEVEL ring - the low bytes of `NetGameManager+0x4982` (global
-      0x01382082), a ring of recently-played level/map indices. The blob
-      producer FUN_003b15bc copies them here; the host's weighted-random map
-      picker FUN_003a2310 reads them byte-wise (`lbz r0, 0xa(blob+k)`, k=0..3)
-      and applies a DC penalty when a candidate map matches - i.e. "don't
-      replay a map these players just played." 0xff = unset. They churn every
-      match, and reset to 0xff on a fresh boot, because they are map history,
-      not equipped gear. NB: MP cosmetics are NOT in this blob - they are built
-      from the persisted profile (P+0x670..). See research/notes/
-      2026-08-17-member-blob-vanity-semantics.md.
+      Offset 10:12. CORRECTED 2026-08-18 - this is a u2, not two u1s. The ring
+      was modelled as four separate bytes (recent_level_0..3); live census over
+      the whole day proves it is TWO u16 entries: every value is either `ffff`
+      (unset) or `00xx`, never a lone byte, and the `00` high-byte count (204)
+      exactly equals the sum of all id-byte counts (204). A u8 ring would show
+      id bytes in the high position too; none ever appear there.
+      CORRECTED 2026-08-17 (was mislabeled "loadout_slot_0"): NOT loadout. This
+      and recent_level_1 are the host map-picker's RECENT-LEVEL ring - the low
+      halves of `NetGameManager+0x4982` (global 0x01382082), a ring of recently
+      played level/map ids. The blob producer FUN_003b15bc copies them here; the
+      host's weighted-random map picker FUN_003a2310 reads them (`lbz r0,0xa(blob+k)`)
+      and applies a DC penalty when a candidate map matches - i.e. "don't replay
+      a map these players just played". 0xffff = unset.
+      LIVE MAP IDS observed 2026-08-18: 0x0e, 0x0f, 0x10, 0x13, 0x14, 0x15,
+      0x17 - seven distinct maps. This ring is the project's only ground-truth
+      source of map ids: play a KNOWN map, then read the id that appears at
+      entry 0 in the next card. NB the ids overlap the private-match value range
+      of room_field_0c (0x13 occurs in both), which is one of the two readings
+      under test for that field - see protos/0x12f_room_create.ksy.
+      MP cosmetics are NOT in this blob - they come from the persisted profile
+      (P+0x670..). See research/notes/2026-08-17-member-blob-vanity-semantics.md.
   - id: recent_level_1
-    type: u1
-    doc: "Offset 11. Recent-level ring entry 1. See recent_level_0."
-  - id: recent_level_2
-    type: u1
-    doc: "Offset 12. Recent-level ring entry 2. See recent_level_0."
-  - id: recent_level_3
-    type: u1
-    doc: "Offset 13. Recent-level ring entry 3. See recent_level_0."
+    type: u2
+    doc: "Offset 12:14. Recent-level ring entry 1 (u16, 0xffff = unset). See recent_level_0. Entry 0 is the most recent; a second entry appears once two different maps have been played."
   - id: rank_value
     type: u2
     doc: |
