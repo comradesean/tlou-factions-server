@@ -39,6 +39,12 @@ LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else os.path.join(_LOGS, "location_s
 REPLY = b"0.000000 0.000000\n"
 
 
+# How long to wait for the client's own FIN after replying, before giving up
+# and closing from this side. The client polls every ~5 s and closes promptly,
+# so this only bounds a misbehaving peer.
+LINGER_SECONDS = 10.0
+
+
 def handle(conn, addr, log_lock, log):
     ts = datetime.datetime.now().isoformat()
     entry = f"==== {ts} LOCATION connection from {addr[0]}:{addr[1]} ====\n"
@@ -49,6 +55,25 @@ def handle(conn, addr, log_lock, log):
         if data:
             conn.sendall(REPLY)
             entry += f"-- sent reply ({len(REPLY)} bytes) --\n  {REPLY!r}\n"
+            # LET THE CLIENT CLOSE FIRST (2026-08-19). This stub used to
+            # close() the moment it had replied, which the client sees as an
+            # ECONNRESET on its next read - visible in its own log as
+            # `sys_net: Socket error ECONNRESET` every ~5 s, once per poll,
+            # from the first minute of every session. It is the same
+            # server-initiated-close mistake that broke the leaderboard
+            # channel, where an EOF from us drove the client's error path
+            # ("Error 9 / disconnected from the game servers"); the location
+            # poll happens to tolerate it, but there is no reason to keep
+            # provoking it. The client's own contract is send-then-close, so
+            # wait for its FIN and let the close be its idea.
+            conn.settimeout(LINGER_SECONDS)
+            try:
+                while conn.recv(4096):
+                    pass
+                entry += "-- client closed (clean FIN)\n"
+            except socket.timeout:
+                entry += (f"-- client still open after {LINGER_SECONDS:g}s idle,"
+                          f" closing from this side\n")
     except (socket.timeout, OSError) as e:
         entry += f"  (error/early close: {e})\n"
     finally:

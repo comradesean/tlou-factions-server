@@ -664,6 +664,32 @@ def handle(conn, addr, log_lock, log):
         entry += f"   decrypted plaintext ({len(plaintext)} bytes): {plaintext!r}\n"
         ticket_data = plaintext
 
+        # UNHANDLED SIBLING SERVICE WATCH (2026-08-19). Everything that is not
+        # ticket-server and has no entry in LINE_SERVICE_HANDLERS lands here and
+        # is answered with a ticket_submit_response blob, which is almost
+        # certainly wrong for it - that mismatch is what broke the leaderboard
+        # channel and the Facebook flow before each got a real handler. Eight
+        # service names exist in the 01.11 EBOOT:
+        #     ticket / leaderboard / facebook / heartbeat / report  - handled
+        #     gamelist / single-player / invite                     - not
+        # Shout loudly with the decoded payload so an unhandled service cannot
+        # sit unnoticed in a 300MB log. In particular single-player-server has
+        # NEVER been seen to send anything; if it ever does, that line is the
+        # first evidence of its grammar and should not be missed.
+        if service_name != "ticket-server":
+            entry += (f"   *** UNHANDLED SIBLING SERVICE {service_name!r} - no "
+                      f"handler, falling through to the ticket path and "
+                      f"answering with a ticket_submit_response blob, which is "
+                      f"probably NOT what it expects. Decoded request: "
+                      f"{plaintext!r}. Add a handler in "
+                      f"LINE_SERVICE_HANDLERS. ***\n")
+            if service_name == "single-player-server":
+                entry += ("   *** single-player-server HAS SPOKEN FOR THE FIRST "
+                          "TIME. It had never been observed sending anything, so "
+                          "its line grammar was unknown and protos/ has no spec "
+                          "for it. Capture the request above - it is the only "
+                          "evidence of that grammar. ***\n")
+
         # Message 4: a real encrypted frame, keyed by client_nonce (the client's
         # receive-side counter, confirmed - see decrypt_frame's docstring/the
         # companion doc). Content is still an unconfirmed placeholder (16 zero
