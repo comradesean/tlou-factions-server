@@ -1135,6 +1135,7 @@ def handle(conn, addr, log_lock, log):
         # find-match pool. A RoomCreate WITHOUT a preceding 0x135 is a private/
         # custom game and must never be listed (one-shot: reset on create).
         find_match_searching = False
+        find_match_mode = None
         stop_event = threading.Event()
         # Per-room refresher lifecycle (2026-08-16): start_member_refresher's
         # background thread only stops on a socket error - nothing ever set
@@ -1404,6 +1405,12 @@ def handle(conn, addr, log_lock, log):
                         # (0x135 preceded it). Only public rooms enter the
                         # find-match list; private/custom games never do.
                         "public": find_match_searching,
+                        # The playlist this room serves, taken from the SEARCH
+                        # that preceded it (0x135 field_0c), not from this
+                        # RoomCreate's own room_field_0c - the room field is not
+                        # reliably reset and has been seen stale. None = unknown,
+                        # which the 0x136 filter treats as "offer to anyone".
+                        "mode": find_match_mode if find_match_searching else None,
                     }
                 if find_match_searching:
                     emit(f"   (this RoomCreate follows a find-match search - "
@@ -1614,6 +1621,13 @@ def handle(conn, addr, log_lock, log):
                 find_match_searching = True
                 search_obj_ptr = (struct.unpack(">I", chunk[8:12])[0]
                                   if len(chunk) >= 12 else ROOM_PTR)
+                # PLAYLIST / GAME MODE the client is queueing for, from
+                # search_obj+0x0c (0x135 wire 12:16). Live: 0x02 = Supply Raid,
+                # 0x03 = Survivors. This is the RELIABLE mode field - use it,
+                # NOT the host's room_field_0c, which is not reliably reset and
+                # has been observed stale (protos/0x12f_room_create.ksy).
+                find_match_mode = (struct.unpack(">I", chunk[12:16])[0]
+                                   if len(chunk) >= 16 else None)
                 # Burst position marker: wire offset 0x18 u16 runs 5,10,10,0,0
                 # across the five searches of one burst (live-captured), so 5
                 # means "first search of a fresh burst" = criteria 0.
@@ -1638,11 +1652,22 @@ def handle(conn, addr, log_lock, log):
                     # owns now that a connection can own more than one.
                     live_host = any(h.get("room_ptr") == search_obj_ptr
                                     for h in rooms_owned_by(conn_key))
+                    # MODE FILTER (2026-08-18). Without this the stub offered
+                    # every public room to every searcher regardless of
+                    # playlist - live-proven cross-match at 23:21:50: a
+                    # Survivors searcher (mode 0x03) was handed a Supply Raid
+                    # room (mode 0x02) and joined it. A room whose mode we never
+                    # learned is still offered, so an unknown never makes a
+                    # legitimate room unjoinable.
                     entries = [(info["room_id"], info)
                                for info in active_rooms.values()
                                if info.get("public") and info["conn"] is not conn
                                and len(info.get("members", []))
-                               < info.get("max_players", 8)]
+                               < info.get("max_players", 8)
+                               and info.get("mode") in (None, find_match_mode)]
+                    filtered = [info for info in active_rooms.values()
+                                if info.get("public") and info["conn"] is not conn
+                                and info.get("mode") not in (None, find_match_mode)]
                 if live_host:
                     emit(f"   parsed opcode={opcode:#x} (find-match search, "
                          f"marker={marker}) - this connection is a LIVE HOST "
@@ -1655,6 +1680,11 @@ def handle(conn, addr, log_lock, log):
                          f"{len(entries)} public game(s) "
                          f"[{', '.join(rid.hex() for rid, _ in entries) or 'none'}], "
                          f"search_obj_ptr={search_obj_ptr:#x}")
+                    if filtered:
+                        emit(f"   [mode] withheld {len(filtered)} public room(s) "
+                             f"from this searcher - wrong playlist "
+                             f"(searcher mode={find_match_mode}, rooms="
+                             f"{[i.get('mode') for i in filtered]})")
             elif opcode == ROOM_LEAVING_OPCODE and len(chunk) >= 16:
                 # No reply - confirmed fire-and-forget, see the constant's
                 # docstring. This firing means the client just gave up on
