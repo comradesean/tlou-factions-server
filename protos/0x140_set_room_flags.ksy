@@ -125,6 +125,23 @@ doc: |
       matches/wins/supplies/`OnMatchEnd` crediting body. Directly matches
       today's live hit, which fired with plainly stat-shaped register values
       (85, 100, 75, 67, 20) present at the same breakpoint.
+
+      LOG-LEVEL CROSS-CHECK 2026-08-19 (no debugger needed - this project's
+      own server logs alone confirm it): every selector=0 timestamp in
+      `wire.jsonl` (23 total, across two days of captures) was compared
+      against every leaderboard-update connection timestamp in
+      `ticket_server.log`. 20 of 23 (87%) land within 5-31 MILLISECONDS of a
+      `leaderboard-update` connection - far too tight to be coincidental,
+      and consistent with the SAME client-side event (reaching
+      `NET_SM_RESULTS`, arming the counted-game latch, running `OnMatchEnd`)
+      producing both the 0x140 selector=0 send and the leaderboard credit
+      almost simultaneously. The 3 outliers (22:21:33, both 01:24:42 hits,
+      13:54:33) have NO nearby leaderboard update at all - exactly the
+      signature `research/notes/2026-08-17-match-counts-latch.md` already
+      documents for a private/custom game: it reaches `NET_SM_RESULTS` via
+      the identical machinery but never arms the counted-game latch, so no
+      credit follows. This is independent corroboration from plain log
+      correlation, not disassembly or a live debugger.
     - A THIRD, independent function (research/ghidra/fm_handlers.txt, near
       `_opd_FUN_00358924` event-id checks 0x25/0x26) contains a direct
       if/else choosing selector=1 on one boolean flag branch
