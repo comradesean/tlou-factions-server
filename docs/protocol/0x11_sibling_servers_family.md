@@ -5,7 +5,8 @@ maps `ticket-server` (opcode `0x11`, port 7320 in this build's `net1.bin`
 config). This doc confirms/refutes whether the five other `*-server` string
 literals found alongside `"ticket-server"` in the binary
 (`heartbeat-server`, `leaderboard-server`, `invite-server`,
-`facebook-server`, `single-player-server`) use the same connect/hello
+`facebook-server`, `single-player-server`, and - added by game version 01.11 -
+`report-server` and `gamelist-server`) use the same connect/hello
 handshake.
 
 **status: partial** - messages A/B (hello/hello_response) confirmed
@@ -44,6 +45,25 @@ Callers of 00acc424:
 
 Exactly **10 code call sites**, covering 4 of the 5 sibling names plus
 ticket-server. `invite-server` has zero entries in this list.
+
+## Roster as of 2026-08-19 (EIGHT names, five handled)
+
+Two services were added by game version 01.11 and are absent from 01.00 - a byte
+search of both EBOOTs finds neither string in the older build:
+
+| service | build | handler | notes |
+|---|---|---|---|
+| `ticket-server` | both | yes | the original; everything unhandled falls through to it |
+| `leaderboard-server` | both | yes | boards 404/405/406 shared, 407 is 01.11-only |
+| `facebook-server` | both | yes | NpId <-> Facebook id mapping |
+| `heartbeat-server` | both | yes (2026-08-19) | 314 hellos from 01.00 alone; reply is never parsed |
+| `report-server` | **01.11 only** (`0xeacdc0`) | yes (2026-08-19) | `is-banned <npid>`; see protos/0x11_report_line.ksy |
+| `gamelist-server` | **01.11 only** (`0xeb2690`) | no | `game-add <session-id> <player>...`; write-only, no read verb exists |
+| `single-player-server` | both | no | has never been observed sending anything; grammar unknown |
+| `invite-server` | both | no | confirmed dead code, see below |
+
+`ticket_server.py` logs a loud warning for any service that reaches the
+fall-through path, so an unhandled one cannot sit unnoticed.
 
 ## `invite-server`: confirmed dead code (2026-08-15)
 
