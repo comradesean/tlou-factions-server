@@ -129,7 +129,32 @@ seq:
     doc: "Offset 16:20. Region/language, built from the sceNpManagerGetAccountRegion / GetMyLanguages pair this function calls. Live-constant `75 73 00 01` = \"us\\0\" + language 1."
   - id: room_flags_e8
     type: u4
-    doc: "Offset 20:24. `*(u32*)(room_obj + 0xe8)`, conditionally OR'd with 0x40000000 (`oris r0,r0,16384` @ 0x00ad5c4c). Live values `00 0c 50 3f`, `10 2c 50 3f`, `20 0c 50 3f` - the low 20 bits are constant across captures, the top nibble varies."
+    doc: |
+      Offset 20:24. `*(u32*)(room_obj + 0xe8)`, conditionally OR'd with
+      0x40000000 (`oris r0,r0,16384` @ 0x00ad5c4c, gated on
+      `cmpwi cr7,r28,0; beq skip` @ 0xad5c30/0xad5c48, where `r28` is
+      `FUN_00ad5b78`'s own 6th argument).
+
+      GATE CONDITION LIVE-RESOLVED 2026-08-19 (RPCS3 debugger, breakpoint at
+      the sender `0x00ad5b78`, two independent room types): creating a PARTY
+      (`room_obj=0x01387f58`) showed the gate register at `0` (twice,
+      including a second independent client, mgnomad2); creating a GAME ROOM
+      via find-match self-host (`room_obj=0x01383bd8`, "Searching for
+      players" transition) ALSO showed it at `0`. In both observed cases the
+      gate is FALSE and the OR is skipped.
+
+      READING: the top-nibble variation already observed live (`00 0c 50
+      3f`, `10 2c 50 3f`, `20 0c 50 3f`) is NOT produced by this OR-gate -
+      it never fired in either sample. It must come from the raw
+      `*(u32*)(room_obj+0xe8)` value itself differing by context (build,
+      session state, or room-object memory layout at read time), not from
+      conditional logic in this sender. STILL OPEN: what sets that raw
+      value, and whether the OR ever fires under some untested condition
+      (e.g. a private match specifically, which was attempted live but the
+      breakpoint hit was inconclusive - see room_object_tail's doc in
+      0x130_room_join.ksy for the unrelated finding from the same session).
+      Whether `room_obj+0xe8`'s raw value or the `0x40000000` bit has any
+      client-side reader was not checked this pass."
   - id: zero_18
     type: u2
     doc: "Offset 24:26. Always 0 (`sth r24,168(r1)` @ 0x00ad5c94 with r24=0)."

@@ -78,7 +78,24 @@ seq:
       builds.
   - id: room_flags_10
     type: u4
-    doc: "Offset 16:20. `*(u32*)(search_obj+0xE8)` conditionally OR'd with 0x40000000 (`lwz r0,232(r29)` @ 0xad6cd0, `oris r0,r0,16384` @ 0xad6cf0) - identical construction to RoomCreate's room_flags_e8. Live `10 2c 50 3f`. (The oris gate compares r10, whose definition is outside the function body - gate condition untraced.)"
+    doc: |
+      Offset 16:20. `*(u32*)(search_obj+0xE8)` conditionally OR'd with
+      0x40000000 (`lwz r0,232(r29)` @ 0xad6cd0, `oris r0,r0,16384` @
+      0xad6cf0) - identical construction to RoomCreate's `room_flags_e8`.
+      Live `10 2c 50 3f`. The gate compares `r10` (`cmpwi cr7,r10,0` @
+      0xad6c94) - this register's origin within THIS function was not
+      traced this pass (a different function from `room_flags_e8`'s sender,
+      so its result does not transfer automatically).
+
+      `room_flags_e8`'s own gate WAS live-resolved 2026-08-19 (see that
+      field's doc in 0x12f_room_create.ksy): two independent room types
+      (party creation, game-room creation via find-match self-host) both
+      showed the gate register at 0, meaning the OR never fired in either
+      sample, and the observed top-nibble variation must come from the raw
+      `+0xe8` value itself, not this conditional. Given the identical
+      construction, that reading likely transfers here too, but `r10`'s
+      value has not been independently live-checked for this specific
+      function - treat as a strong inference, not a confirmed result.
   - id: value_pair_14
     size: 4
     doc: "Offset 20:24. The 0x03e8/0x03e8 (1000/1000) u16 pair, same source as RoomCreate's value_20/value_22 (the two float out-params of _opd_FUN_00acb6bc, fctiwz->sth). Likely a default rating pair; disabled/constant in all live captures."
