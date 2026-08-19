@@ -52,11 +52,18 @@ doc: |
   so there is no structured response to model.
 
   STATUS: request line CORRECTED and LIVE-CONFIRMED against a real captured
-  frame (ticket_server.log). heartbeat-server is NOT yet handled in
-  server/ticket_server.py (handle() branches only on leaderboard-server and
-  facebook-server; a heartbeat connection currently falls through to the ticket
-  path, which is what produced the captured decrypted line) - a dedicated
-  handler is an open implementation item, not a protocol unknown.
+  frame (ticket_server.log). IMPLEMENTED 2026-08-19: server/ticket_server.py's
+  LINE_SERVICE_HANDLERS now routes "heartbeat-server" to handle_heartbeat, which
+  decodes the line, refreshes an in-memory presence record keyed by online_id
+  (first_seen / last_seen / beat count - the administrative purpose of the
+  message), replies "+0\n" plus the NUL sentinel in the family's shape, and
+  holds the socket until the client closes. Before that a heartbeat connection
+  fell through to the ticket path and was answered with a ticket_submit_response
+  blob, which is what produced the captured decrypted line.
+
+  Correctness is not sensitive to the reply body here: FUN_00353cd8 does one
+  bounded 256-byte recv and never parses it, so the '+0' is a family-consistency
+  choice, not a decoded requirement.
 
   Evidence: strings_ascii.txt 0xe6a100 ("heartbeat %s"), 0xe6a0e8
   ("heartbeat-server"); Ghidra FUN_00353cd8 (research/ghidra/

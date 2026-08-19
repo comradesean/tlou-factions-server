@@ -384,6 +384,35 @@ def room_keys_owned_by(conn_key):
 member_blobs = {}   # (room_id_bytes, member_id) -> bytes (exactly 32)
 
 # ---------------------------------------------------------------------------
+# PER-CONNECTION INBOUND LIVENESS (2026-08-19)
+# ---------------------------------------------------------------------------
+# Monotonic timestamp of the last byte received from each session-manager
+# connection, keyed by id(conn). Every client keeps this control connection
+# busy: it sends a 0x145 keepalive ping every 30 s (PING_OPCODE, see the
+# opcode table), plus 0x13a party-data pushes and whatever the UI generates.
+# So "no inbound traffic for well over 30 s" is independent evidence that a
+# connection is dead or hung, which is the confirmation the late-0x137
+# dead-peer rule requires before it will remove anyone. Guarded by rooms_lock
+# (the same lock the roster uses, so a removal decision reads one consistent
+# snapshot). Entries are dropped when the connection closes.
+last_inbound_ts = {}   # id(conn) -> time.monotonic()
+
+# Gates for acting on a LATE 0x137 requester=0 (automatic dead-peer removal).
+# See protos/0x137_kickout.ksy: requester=0 frames arrive in two regimes -
+# 0.01-0.17 s after a RoomJoin (a join-flow artifact that must NEVER be acted
+# on; acting on it is the bug that broke "Join Party"), and 29.7-642.6 s after
+# any join (a host's P2P layer reporting an unreachable peer). 5 s sits ~30x
+# above the largest observed join-flow delay (0.17 s) and ~6x below the
+# earliest observed late frame (29.7 s), so neither regime can be mistaken for
+# the other.
+LATE_KICKOUT_MIN_SECONDS = 5.0
+# A member must have been silent for this long before a late requester=0 frame
+# is allowed to remove it. The client's own keepalive interval is 30 s
+# (0x145), so this is 2.5 missed pings - comfortably past jitter, still fast
+# enough to clear a zombie before the roster matters again.
+DEAD_PEER_SILENCE_SECONDS = 75.0
+
+# ---------------------------------------------------------------------------
 # THE BLOB IS ALSO UPLOADED INSIDE RoomCreate AND RoomJoin (2026-08-17)
 # ---------------------------------------------------------------------------
 # 0x13a only ever fires when FUN_003b15bc rebuilds the blob while the room
@@ -1017,6 +1046,84 @@ def broadcast_member_departure(departing_key, room_id=None):
                                populate_self_npid=True)
 
 
+def evaluate_late_dead_peer_removal(sender_key, target_member_id, room_id_tail,
+                                    now=None):
+    """Decide whether a 0x137 carrying requester_member_id == 0 is a genuine
+    LATE dead-peer removal that we should act on.
+
+    Evidence (protos/0x137_kickout.ksy, live capture 2026-08-18): requester=0
+    is an AUTOMATIC removal request with no requesting member, and it arrives
+    in two clearly separated regimes:
+
+      0.01s 0.02s 0.02s 0.17s          - emitted as a side effect of a RoomJoin
+      29.7s ... 642.6s (8 frames)      - a host whose P2P layer has noticed an
+                                         unreachable peer
+
+    Acting on the FIRST kind kicks the joiner - that is the "Unable to join
+    party / You were kicked" bug. Acting on the SECOND kind is what clears a
+    zombie member whose client hung with its TCP socket still open (observed
+    2026-08-18 22:43-22:46: last traffic 22:43:54, host asked for the drop at
+    22:45:43, the roster only self-corrected a minute later when the socket
+    finally closed).
+
+    Because a control opcode misread as an action is the exact bug class that
+    produced the 0x138 self-kick and the 0x13d re-announce regression, this
+    NEVER trusts the frame alone. ALL of these must hold:
+
+      1. the sender is a member of a room whose id matches the frame;
+      2. the target is a different member of that same room;
+      3. the target is not the room OWNER (owner departure is the
+         close_room_and_notify path, not a member removal);
+      4. the frame is LATE - at least LATE_KICKOUT_MIN_SECONDS since the
+         roster last grew, i.e. far outside the join-flow window;
+      5. the target's OWN connection is independently unresponsive - no
+         inbound byte for DEAD_PEER_SILENCE_SECONDS, which is 2.5x its 30 s
+         0x145 keepalive interval. If the target is still pinging, it is
+         alive and we refuse, whatever the host believes.
+
+    Returns ((target_key, member_id, conn, emit), room_id, note) when removal
+    is warranted, or (None, None, note) with the reason it was refused. The
+    caller performs the removal through the EXISTING departure path
+    (broadcast_member_departure) so roster/refresher bookkeeping stays
+    consistent.
+    """
+    now = time.monotonic() if now is None else now
+    with rooms_lock:
+        room_entry = None
+        for info in active_rooms.values():
+            if sender_key in info.get("conns", {}) and info["room_id"] == room_id_tail:
+                room_entry = info
+                break
+        if room_entry is None:
+            return None, None, "sender is not in a room with this room_id"
+        target = None
+        for key, (mid, c, em) in room_entry["conns"].items():
+            if mid == target_member_id:
+                target = (key, mid, c, em)
+                break
+        if target is None:
+            return None, None, (f"target member_id={target_member_id} is not in room "
+                                f"{room_entry['room_id'].hex()}")
+        if target[0] == sender_key:
+            return None, None, "target IS the sender (self-removal never acted on)"
+        if id(room_entry["conn"]) == target[0]:
+            return None, None, ("target is the room OWNER - owner departure is the "
+                                "0x133/close path, not a member removal")
+        since_join = now - room_entry.get("last_join_ts", now)
+        if since_join < LATE_KICKOUT_MIN_SECONDS:
+            return None, None, (f"only {since_join:.2f}s since the roster last grew - "
+                                f"inside the join-flow window "
+                                f"(<{LATE_KICKOUT_MIN_SECONDS:g}s), join-flow artifact")
+        silence = now - last_inbound_ts.get(target[0], now)
+        if silence < DEAD_PEER_SILENCE_SECONDS:
+            return None, None, (f"target still ALIVE - last inbound {silence:.1f}s ago "
+                                f"(<{DEAD_PEER_SILENCE_SECONDS:g}s, its ping interval "
+                                f"is 30s); refusing to remove a live member")
+        return (target, room_entry["room_id"],
+                f"late by {since_join:.1f}s since last join, target silent for "
+                f"{silence:.1f}s (>{DEAD_PEER_SILENCE_SECONDS:g}s)")
+
+
 MEMBER_BLOB_OPCODE = 0x13b
 
 
@@ -1313,6 +1420,11 @@ def handle(conn, addr, log_lock, log):
             if not chunk:
                 emit("  (connection closed by peer after handshake)")
                 break
+            # Liveness record: ANY inbound byte proves this connection is
+            # still being driven by a running client. Read by the late-0x137
+            # dead-peer rule (see DEAD_PEER_SILENCE_SECONDS).
+            with rooms_lock:
+                last_inbound_ts[id(conn)] = time.monotonic()
             emit(f"-- further data ({len(chunk)} bytes) --\n{hexdump(chunk)}")
 
             opcode = struct.unpack(">I", chunk[0:4])[0] if len(chunk) >= 4 else None
@@ -1585,6 +1697,10 @@ def handle(conn, addr, log_lock, log):
                         # (0x13a -> 0x13b relay); joiners get added by 0x130.
                         "conns": {id(conn): (MEMBER_ID, conn, emit)},
                         "members": [(MEMBER_ID, npid)],
+                        # When the roster last GREW. The late-0x137 dead-peer
+                        # rule refuses to act inside the join-flow window
+                        # measured from this instant (LATE_KICKOUT_MIN_SECONDS).
+                        "last_join_ts": time.monotonic(),
                         # Monotonic member-id allocator (host=1, joiners 2,3,4...)
                         # + per-member room_ptr (the 0x131 hazard field - each
                         # client needs ITS OWN room-slot address). See
@@ -1809,6 +1925,10 @@ def handle(conn, addr, log_lock, log):
                         with rooms_lock:
                             host["conns"][id(conn)] = (new_mid, conn, emit)
                             host["members"] = full_members
+                            # Roster grew: restart the join-flow quiet window
+                            # for the late-0x137 dead-peer rule.
+                            host["last_join_ts"] = time.monotonic()
+                            last_inbound_ts[id(conn)] = time.monotonic()
                         host["stop_event"].set()
                         new_host_stop = threading.Event()
                         host["stop_event"] = new_host_stop
@@ -2095,17 +2215,42 @@ def handle(conn, addr, log_lock, log):
                 requester_member_id = struct.unpack(">H", chunk[6:8])[0]
                 room_id_tail = chunk[8:16]
                 if requester_member_id == 0:
-                    # NOT a real kick. Live-decoded 2026-08-17: the friends-list
-                    # "Join Party" flow emits its OWN 0x137 right after RoomJoin
-                    # with requester(+6)=0 and target(+4)=the joiner. Acting on
-                    # it kicked the joiner ("Unable to join party / You were
-                    # kicked"). A user "Kick from Party" carries the kicking
-                    # member's id at +6 (nonzero, e.g. 1 for the host). So gate
-                    # the kick on requester!=0; otherwise log-only (this 0x137
-                    # is a join-flow status message, fire-and-forget).
+                    # NOT a user kick. requester=0 means there is NO requesting
+                    # member - an AUTOMATIC removal request. Two sources
+                    # (protos/0x137_kickout.ksy): the join flow (0.01-0.17 s
+                    # after a RoomJoin - acting on it kicked the joiner,
+                    # "Unable to join party / You were kicked") and a host
+                    # whose P2P layer has noticed a dead peer (29.7-642.6 s
+                    # after any join). We act ONLY on the second kind, and only
+                    # when the target's own connection independently proves it
+                    # is gone - see evaluate_late_dead_peer_removal.
+                    target, dead_room_id, why = evaluate_late_dead_peer_removal(
+                        id(conn), target_member_id, room_id_tail)
+                    if target is None:
+                        emit(f"   parsed opcode={opcode:#x} (0x137 requester=0, "
+                             f"target={target_member_id}, "
+                             f"room_id={room_id_tail.hex()}) - automatic removal "
+                             f"request IGNORED: {why}")
+                        continue
+                    tkey, tmid, tconn, tem = target
                     emit(f"   parsed opcode={opcode:#x} (0x137 requester=0, "
-                         f"target={target_member_id}, room_id={room_id_tail.hex()}) "
-                         f"- NOT a kick (join-flow status message), no action")
+                         f"target={target_member_id}, "
+                         f"room_id={room_id_tail.hex()}) - *** ACTING ON LATE "
+                         f"DEAD-PEER REMOVAL *** ({why}); removing member_id="
+                         f"{tmid} from room {dead_room_id.hex()}")
+                    try:
+                        # Best effort only - the target is believed dead. If it
+                        # is merely hung and later revives, this is the same
+                        # 0x138 the genuine-kick path sends, so it leaves
+                        # cleanly instead of resurrecting into a stale roster.
+                        tconn.sendall(build_kickedout(dead_room_id))
+                        tem(f"   [dead-peer] member_id={tmid} removed - sent "
+                            f"Kickedout (0x138) to this member only "
+                            f"(best effort; target believed dead)")
+                    except OSError as e:
+                        emit(f"   [dead-peer] 0x138 to member_id={tmid} failed "
+                             f"({e}) - expected for a dead socket, continuing")
+                    broadcast_member_departure(tkey, room_id=dead_room_id)
                     continue
                 room_entry, target = None, None
                 with rooms_lock:
@@ -2222,6 +2367,11 @@ def handle(conn, addr, log_lock, log):
             close_room_and_notify(info, "owner connection closed",
                                   exclude_key=id(conn))
         broadcast_member_departure(id(conn))
+        with rooms_lock:
+            # Drop this connection's liveness record - id(conn) is only unique
+            # while the object is alive, so a stale entry could otherwise be
+            # inherited by a future connection at the same address.
+            last_inbound_ts.pop(id(conn), None)
         conn.close()
 
 

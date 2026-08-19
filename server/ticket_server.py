@@ -19,6 +19,7 @@ import struct
 import sys
 import datetime
 import threading
+import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _DATA = os.path.join(_HERE, "data")
@@ -262,23 +263,34 @@ def build_leaderboard_response(cmd):
     return "+0\n", f"unknown verb {verb!r}"
 
 
-def handle_leaderboard(conn, session_token, client_nonce, log_append):
-    """Post-hello loop for a leaderboard-server connection. Commands arrive as
-    ordinary encrypted frames (same layer as ticket message C), keyed by an
-    inbound counter starting at session_token; our replies are keyed by an
-    outbound counter starting at client_nonce (same direction convention as the
-    ticket handshake's message D). Client sends one verb per connection in
-    practice, but we loop so a pipelined connection also works."""
-    # LIVE-DISPROVED 2026-08-17: an earlier version half-closed (SHUT_WR)
-    # immediately after the reply, on the theory that EOF signals
-    # end-of-response. The client actually treats a server-initiated EOF here
-    # as a network failure - TTY.log shows "recv() failed (errno=0)" ->
-    # "Error 9" -> "You have been disconnected from the game servers" the
-    # instant the leaderboard screen is opened. Every other sibling service
-    # (ticket, heartbeat) lets the CLIENT close first, error-free, and the
-    # placeholder-era leaderboard replies did too ("connection closed by peer"
-    # in this log). So: reply, then hold the socket open until the client
-    # closes (or goes idle), exactly like the ticket message-C/D path.
+def handle_line_service(conn, session_token, client_nonce, log_append,
+                        label, builder):
+    """Post-hello loop shared by every 0x11 sibling LINE service (leaderboard,
+    facebook, heartbeat, report).
+
+    Commands arrive as ordinary encrypted frames (same layer as ticket message
+    C), keyed by an inbound counter starting at session_token; our replies are
+    keyed by an outbound counter starting at client_nonce (the same direction
+    convention as the ticket handshake's message D).
+
+    Two rules, both live-derived and both non-negotiable for this family:
+
+      * every reply body is terminated by a NUL - the end-of-response
+        sentinel. Live-derived 2026-08-17 from three behaviours: NUL-only
+        placeholder replies -> the client closes clean; '+'-rows WITHOUT a NUL
+        plus a prompt EOF -> the rows RENDER but the EOF raises Error 9
+        ("disconnected from game servers"); rows without a NUL and no EOF ->
+        the screen spins forever. So the client parses until the NUL (its own
+        send side is strlen/NUL-terminated ASCII too), then closes;
+      * the SERVER NEVER CLOSES FIRST. LIVE-DISPROVED 2026-08-17: half-closing
+        after the reply made the client report "recv() failed (errno=0)" ->
+        "Error 9" -> "You have been disconnected from the game servers". So we
+        reply and then hold the socket open until the client closes (or goes
+        idle for 30 s).
+
+    `builder(cmd) -> (response_str, log_note)` supplies the service-specific
+    grammar; everything else is identical across services.
+    """
     in_ctr = session_token
     out_ctr = client_nonce
     served = 0
@@ -286,40 +298,50 @@ def handle_leaderboard(conn, session_token, client_nonce, log_append):
         try:
             header = recv_exact(conn, 20, timeout=30)
         except socket.timeout:
-            log_append(f"  (leaderboard idle 30s after {served} command(s), closing)\n")
+            log_append(f"  ({label} idle 30s after {served} command(s), closing)\n")
             return
         except (ConnectionError, OSError):
             if served == 0:
-                log_append("  (leaderboard client closed before command)\n")
+                log_append(f"  ({label} client closed before command)\n")
             else:
-                log_append(f"  (leaderboard client closed after {served} command(s))\n")
+                log_append(f"  ({label} client closed after {served} command(s))\n")
             return
         plen = int.from_bytes(header[2:4], "big")
         pad = header[1]
         try:
             ciphertext = recv_exact(conn, plen + pad)
         except (ConnectionError, socket.timeout, OSError) as e:
-            log_append(f"  (leaderboard truncated frame: {e})\n")
+            log_append(f"  ({label} truncated frame: {e})\n")
             return
         frame = header + ciphertext
         plaintext, tag_ok, in_ctr, _, _ = ticket_cipher.decrypt_frame(
             CANDIDATE_KEY, in_ctr, frame)
         cmd = plaintext.decode("ascii", "replace")
-        log_append(f"-- leaderboard cmd (tag_ok={tag_ok}): {cmd!r}\n")
-        response, note = build_leaderboard_response(cmd)
-        # Trailing NUL = end-of-response sentinel. Live-derived 2026-08-17 from
-        # three behaviors: NUL-only placeholder replies -> client closes clean;
-        # '+'-rows without NUL + prompt EOF -> rows RENDER but the EOF raises
-        # Error 9 -> "disconnected from game servers"; rows without NUL and no
-        # EOF -> the screen spins forever. So the client parses until NUL (its
-        # own send side is strlen/NUL-terminated ASCII too), then closes the
-        # connection itself.
+        log_append(f"-- {label} cmd (tag_ok={tag_ok}): {cmd!r}\n")
+        # Strip any trailing NUL before parsing. Every captured request line so
+        # far ends at its '\n' with no NUL inside the frame (e.g. the 22-byte
+        # 'heartbeat comradesean\n'), but the client's send side is
+        # strlen/NUL-terminated ASCII, so a NUL landing inside the frame is a
+        # legal shape - and it would otherwise be glued onto the LAST token
+        # (the online id, or the leaderboard blob) and silently corrupt it.
+        response, note = builder(cmd.rstrip("\x00"))
         frame_out, out_ctr = ticket_cipher.encrypt_frame(
             CANDIDATE_KEY, out_ctr, response.encode("ascii", "replace") + b"\x00")
         conn.sendall(frame_out)
         served += 1
         log_append(f"   -> {note}; replied {len(response)} bytes "
                    f"({len(frame_out)}-byte frame); holding for client close\n")
+
+
+def handle_leaderboard(conn, session_token, client_nonce, log_append):
+    """leaderboard-server post-hello loop. See handle_line_service for the
+    frame/keying/NUL-sentinel/hold-for-client-close discipline, all of which was
+    first derived here (2026-08-17): '+'-rows without a trailing NUL render but
+    then hang, and a server-initiated EOF raises the client's "recv() failed
+    (errno=0)" -> "Error 9" -> "You have been disconnected from the game
+    servers" the instant the leaderboard screen is opened."""
+    handle_line_service(conn, session_token, client_nonce, log_append,
+                        "leaderboard", build_leaderboard_response)
 
 
 def build_facebook_response(cmd):
@@ -359,44 +381,88 @@ def build_facebook_response(cmd):
     return "+0\n", f"unknown facebook verb {verb!r}"
 
 
+# ---------------------------------------------------------------------------
+# heartbeat-server (2026-08-19)
+# ---------------------------------------------------------------------------
+# The most-used sibling service by volume: 258 of the 452 captured hellos.
+# Request grammar is LIVE-CONFIRMED (protos/0x11_heartbeat_line.ksy): one line,
+#   heartbeat <online_id>\n
+# built by FUN_00353cd8 from the one-field format string "heartbeat %s" at VMA
+# 0xe7a100, whose single %s argument is the global at 0x13835e0 (= the
+# matchmaking singleton 0x13835c0 + 0x20, the local SceNpId online-id handle).
+# Captured plaintext: 'heartbeat comradesean\n'.
+#
+# WHAT IT IS FOR: a liveness beacon. The client periodically tells the
+# matchmaking backend that this account is still online so the backend can keep
+# it in its presence tables and time out stale sessions. So the handler's real
+# job is to KEEP THAT RECORD, which is what PRESENCE below is.
+#
+# RESPONSE: the client does ONE bounded 256-byte recv and never parses the
+# result (no response-parse loop anywhere in FUN_00353cd8), so any bytes
+# satisfy it. We answer in the family's shape anyway - a '+'-prefixed line plus
+# the NUL sentinel - because that is what every other sibling reader expects and
+# it costs nothing to stay consistent.
+PRESENCE_LOCK = threading.Lock()
+# online_id -> {"first_seen": epoch, "last_seen": epoch, "beats": int}
+PRESENCE = {}
+
+
+def record_presence(online_id, now=None):
+    """Refresh (or create) one account's presence/liveness record. In-memory
+    only: presence is by definition ephemeral, and nothing else in the server
+    reads it across restarts. Returns the updated record."""
+    now = time.time() if now is None else now
+    with PRESENCE_LOCK:
+        rec = PRESENCE.get(online_id)
+        if rec is None:
+            rec = {"first_seen": now, "last_seen": now, "beats": 0}
+            PRESENCE[online_id] = rec
+        rec["last_seen"] = now
+        rec["beats"] += 1
+        return dict(rec)
+
+
+def build_heartbeat_response(cmd):
+    """Map one decoded heartbeat-server line to a reply. Returns (response, note).
+
+    The only verb is `heartbeat <online_id>`. The client ignores the body, so
+    the reply is a bare family-shaped ack; the useful work is updating the
+    presence record."""
+    tokens = cmd.strip().split(" ")
+    verb = tokens[0] if tokens else ""
+
+    if verb == "heartbeat" and len(tokens) >= 2:
+        online_id = tokens[1]
+        rec = record_presence(online_id)
+        age = rec["last_seen"] - rec["first_seen"]
+        return "+0\n", (f"presence refreshed for {online_id!r} "
+                        f"(beat #{rec['beats']}, online {age:.0f}s)")
+
+    if verb == "heartbeat":
+        # Verb with no id: nothing to key a presence record on. Still ack, so
+        # the client's bounded recv is satisfied and it closes cleanly.
+        return "+0\n", "heartbeat with no online_id - acked, nothing recorded"
+
+    return "+0\n", f"unknown heartbeat verb {verb!r} - acked"
+
+
+def handle_heartbeat(conn, session_token, client_nonce, log_append):
+    """heartbeat-server post-hello loop. Same frame layer, NUL sentinel and
+    hold-for-client-close discipline as every sibling line service (see
+    handle_line_service). This is the lowest-risk service in the family: the
+    client does not parse the reply at all."""
+    handle_line_service(conn, session_token, client_nonce, log_append,
+                        "heartbeat", build_heartbeat_response)
+
+
 def handle_facebook(conn, session_token, client_nonce, log_append):
-    """Post-hello loop for a facebook-server connection. Same encrypted-frame
-    layer and NUL-sentinel / hold-for-client-close discipline as
-    handle_leaderboard: a server-initiated EOF here triggers the client's
-    'recv() failed (errno=0)' -> Error 9 disconnect (seen in TTY.log during a
-    Facebook connect). So reply with a NUL-terminated body and let the client
-    close first."""
-    in_ctr = session_token
-    out_ctr = client_nonce
-    served = 0
-    while True:
-        try:
-            header = recv_exact(conn, 20, timeout=30)
-        except socket.timeout:
-            log_append(f"  (facebook idle 30s after {served} command(s), closing)\n")
-            return
-        except (ConnectionError, OSError):
-            log_append(f"  (facebook client closed after {served} command(s))\n")
-            return
-        plen = int.from_bytes(header[2:4], "big")
-        pad = header[1]
-        try:
-            ciphertext = recv_exact(conn, plen + pad)
-        except (ConnectionError, socket.timeout, OSError) as e:
-            log_append(f"  (facebook truncated frame: {e})\n")
-            return
-        frame = header + ciphertext
-        plaintext, tag_ok, in_ctr, _, _ = ticket_cipher.decrypt_frame(
-            CANDIDATE_KEY, in_ctr, frame)
-        cmd = plaintext.decode("ascii", "replace")
-        log_append(f"-- facebook cmd (tag_ok={tag_ok}): {cmd!r}\n")
-        response, note = build_facebook_response(cmd)
-        frame_out, out_ctr = ticket_cipher.encrypt_frame(
-            CANDIDATE_KEY, out_ctr, response.encode("ascii", "replace") + b"\x00")
-        conn.sendall(frame_out)
-        served += 1
-        log_append(f"   -> {note}; replied {len(response)} bytes "
-                   f"({len(frame_out)}-byte frame); holding for client close\n")
+    """facebook-server post-hello loop. Same encrypted-frame layer and
+    NUL-sentinel / hold-for-client-close discipline as every sibling line
+    service (see handle_line_service): a server-initiated EOF here triggers the
+    client's 'recv() failed (errno=0)' -> Error 9 disconnect, seen in TTY.log
+    during a Facebook connect."""
+    handle_line_service(conn, session_token, client_nonce, log_append,
+                        "facebook", build_facebook_response)
 
 
 def hexdump(data):
@@ -418,6 +484,18 @@ def recv_exact(conn, n, timeout=10):
             raise ConnectionError(f"peer closed after {len(data)}/{n} bytes (wanted {n})")
         data += chunk
     return data
+
+
+# Service-name -> post-hello handler for the 0x11 sibling LINE services. Names
+# are read verbatim out of the 88-byte hello (bytes 24:88, NUL-terminated).
+# Six services have been observed live; single-player-server has never opened a
+# connection, and ticket-server itself uses the message-C/D handshake below
+# rather than a line protocol, so neither appears here.
+LINE_SERVICE_HANDLERS = {
+    "leaderboard-server": handle_leaderboard,
+    "facebook-server": handle_facebook,
+    "heartbeat-server": handle_heartbeat,
+}
 
 
 def handle(conn, addr, log_lock, log):
@@ -442,28 +520,22 @@ def handle(conn, addr, log_lock, log):
         conn.sendall(resp1)
         entry += f"-- sent hello_response (8 bytes, session_token={session_token}) --\n{hexdump(resp1)}\n"
 
-        # leaderboard-server multiplexes on this same listener but speaks the
-        # leaderboard line protocol after the hello (not the ticket message-C/D
-        # exchange). Branch here; everything above (hello + 8-byte reply) is shared.
-        if service_name == "leaderboard-server":
-            # Serialize appends into `entry` via a closure so the leaderboard
+        # Several 0x11 siblings multiplex on THIS listener but speak the
+        # line protocol after the hello, not the ticket message-C/D exchange.
+        # Branch here; everything above (hello + 8-byte reply) is shared. Every
+        # one of them must hold the socket open until the CLIENT closes - a
+        # server-initiated EOF is the client's error path (Error 9 /
+        # "disconnected from the game servers"). See handle_line_service.
+        handler = LINE_SERVICE_HANDLERS.get(service_name)
+        if handler is not None:
+            # Serialize appends into `entry` via a closure so the service
             # loop's log lines land in the same connection block.
             box = {"entry": entry}
-            def log_append(s):
-                box["entry"] += s
-            handle_leaderboard(conn, session_token, client_nonce, log_append)
-            entry = box["entry"]
-            return
 
-        # facebook-server: another 0x11 sibling on this listener. Speaks the same
-        # encrypted-frame line protocol after the hello (facebook-set /
-        # facebook-get-fid / facebook-get-npid). Must hold for client close like
-        # leaderboard, else the client hits Error 9 (see handle_facebook).
-        if service_name == "facebook-server":
-            box = {"entry": entry}
-            def log_append(s):
-                box["entry"] += s
-            handle_facebook(conn, session_token, client_nonce, log_append)
+            def log_append(text):
+                box["entry"] += text
+
+            handler(conn, session_token, client_nonce, log_append)
             entry = box["entry"]
             return
 

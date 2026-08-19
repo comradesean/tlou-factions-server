@@ -54,6 +54,31 @@ doc: |
   exact bug class that produced the Join Party 0x138 self-kick, so it needs the
   target's liveness independently confirmed before any removal.
 
+  IMPLEMENTED 2026-08-19 (server/session_manager.py
+  evaluate_late_dead_peer_removal). The late kind is now acted on, but ONLY with
+  the target's absence independently confirmed - the frame alone is never
+  trusted, because a control opcode misread as an action is the bug class that
+  produced the 0x138 self-kick and the 0x13d re-announce regression. All five
+  conditions must hold:
+    1. the sender is a member of a room whose id matches the frame;
+    2. the target is a DIFFERENT member of that same room;
+    3. the target is not the room OWNER (owner departure is the 0x133 /
+       close_room_and_notify path, not a member removal);
+    4. the frame is LATE - at least LATE_KICKOUT_MIN_SECONDS (5 s) since that
+       room's roster last grew. This sits ~30x above the largest observed
+       join-flow delay (0.17 s) and ~6x below the earliest observed late frame
+       (29.7 s), so neither regime can be mistaken for the other;
+    5. the target's OWN session-manager connection has received nothing for
+       DEAD_PEER_SILENCE_SECONDS (75 s) - 2.5x its 30 s 0x145 keepalive
+       interval. If the target is still pinging it is alive and the request is
+       refused no matter what the host believes.
+  A missing liveness record is treated as "alive", so the rule fails safe. When
+  it does fire it sends 0x138 to the target (best effort - it is believed dead)
+  and then removes it through the existing broadcast_member_departure path, so
+  roster, cached blobs and the owner's Member refresher stay consistent exactly
+  as they do for a user kick. Every decision, act or refuse, is logged with its
+  reason. The EARLY (join-flow) kind is still ignored, unchanged.
+
   Server behaviour on the genuine kick, live-verified end to end: reply
   `0x138 Kickedout` to the TARGET's connection and `0x134 RoomLeave`
   (member_id = target) to each remaining member. The target left, the party
@@ -72,7 +97,7 @@ seq:
     doc: "Offset 4:6. The member id being kicked from the party/room."
   - id: requester_member_id
     type: u2
-    doc: "Offset 6:8. The member id requesting the kick. A value of 0 means there is NO requesting member - an automatic removal request, NOT a genuine user-initiated kick. Two observed sources: the join flow (fires ~0.01-0.17 s after a RoomJoin) and a host whose P2P layer has noticed a dead peer (fires 30-640 s after any join). Only a nonzero value is a player pressing Kick in the UI - see doc-level note."
+    doc: "Offset 6:8. The member id requesting the kick. A value of 0 means there is NO requesting member - an automatic removal request, NOT a genuine user-initiated kick. Two observed sources: the join flow (fires ~0.01-0.17 s after a RoomJoin) and a host whose P2P layer has noticed a dead peer (fires 30-640 s after any join). Only a nonzero value is a player pressing Kick in the UI. The early/join-flow automatic kind is ignored; the late/dead-peer kind is acted on only after the target is independently confirmed silent - see doc-level note."
   - id: room_id
     type: u8
     doc: "Offset 8:16. The room the target/requester both belong to - same room_id-echo pattern used throughout this opcode family."
