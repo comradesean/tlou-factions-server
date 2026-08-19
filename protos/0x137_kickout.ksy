@@ -17,19 +17,42 @@ doc: |
   region decodes into two separate u16 member-id fields, not one opaque
   4-byte unknown.
 
-  A `requester_member_id` of 0 is NOT a real user-initiated kick - it is the
-  join flow's own auto-emitted status message, sent as a side effect of
-  joining rather than as a deliberate "kick this member" action from the
-  UI. Only treat this as a genuine kick request when requester_member_id is
-  a real (nonzero) member id.
+  A `requester_member_id` of 0 is NOT a real user-initiated kick - it is an
+  AUTOMATIC removal request with no requesting member (the join flow emits
+  one as a side effect of joining; a host whose P2P layer has noticed a dead
+  peer emits one too, long after any join - see the timing evidence below).
+  Only treat this as a genuine kick request when requester_member_id is a
+  real (nonzero) member id.
 
-  DISCRIMINATOR LIVE-PROVEN 2026-08-18. Previously this rule was inferred from
-  the join flow alone (every captured 0x137 had requester 0, so the "real kick"
-  half was unexercised). A deliberate "Kick from Party" was then captured
-  alongside them, and the two shapes are unambiguous:
+  DISCRIMINATOR LIVE-PROVEN 2026-08-18, then REFINED the same day. A deliberate
+  "Kick from Party" was captured alongside the automatic frames, confirming that
+  a nonzero requester_member_id means a real user-initiated kick (1 frame,
+  target=2 requester=1, 36 s into a live party).
 
-    4x  target=2 requester=0   <- fired ~0-10 ms after a RoomJoin, no UI action
-    1x  target=2 requester=1   <- the deliberate kick, 36 s into a live party
+  CORRECTION to the "join flow" wording above: requester=0 is NOT specifically a
+  join-flow artifact. Timing every captured 0x137 against the most recent join
+  into the same room shows requester=0 firing in two clearly separated regimes:
+
+    0.01s, 0.02s, 0.02s, 0.17s                      <- during a join flow (4)
+    29.7s, 36.3s, 74.1s, 80.0s, 84.0s,
+    130.2s, 132.7s, 642.6s                          <- nowhere near a join (8)
+
+  Two thirds of them have nothing to do with joining. The accurate definition is
+  therefore "a removal request with NO REQUESTING MEMBER" - a system/automatic
+  removal - as opposed to requester=<member id>, a player pressing Kick in the
+  UI. The join flow is merely one source of the automatic kind.
+
+  WHAT THE LATE ONES MEAN (observed 2026-08-18 22:43-22:46): a member's client
+  died silently; its last traffic was at 22:43:54, and at 22:45:43 the HOST sent
+  0x137 target=3 requester=0 - i.e. the host's own P2P layer noticed an
+  unreachable peer and asked the server to drop it. The stub took no action
+  (correctly, under the current rule); the roster only corrected itself a minute
+  later when the dead client's TCP socket finally closed. A HUNG client that
+  keeps its socket open would leave a zombie member in the roster indefinitely
+  with this rule. Acting on a late requester=0 is a plausible improvement but is
+  NOT safe to adopt casually - misreading a control opcode as an action is the
+  exact bug class that produced the Join Party 0x138 self-kick, so it needs the
+  target's liveness independently confirmed before any removal.
 
   Server behaviour on the genuine kick, live-verified end to end: reply
   `0x138 Kickedout` to the TARGET's connection and `0x134 RoomLeave`
