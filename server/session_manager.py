@@ -1700,6 +1700,16 @@ def handle(conn, addr, log_lock, log):
                 # experiment, not a proven fix. If flakiness persists
                 # unchanged, revert this and treat the race theory as
                 # unconfirmed rather than assuming the delay itself is wrong.
+                # NOT a stray-bytes bug: this write is Member (exactly
+                # 0xa0+0x68*n) + 0x13f OwnerChanged (16) + 0x13d OwnerMember
+                # (16) concatenated into one TCP write for efficiency. Each
+                # carries its own opcode and fixed length, so the client
+                # parses all three correctly off the stream; measuring the
+                # combined write against the Member-only size formula makes
+                # it look like +32 stray bytes when it's just two more
+                # complete messages. The relayed Member path below (existing
+                # members, not this connection) sends Member alone, which is
+                # why it always measures exact.
                 time.sleep(0.25)
                 conn.sendall(member + owner_changed
                              + build_owner_member(room_id, MEMBER_ID))
