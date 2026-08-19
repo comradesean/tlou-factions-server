@@ -146,7 +146,35 @@ types:
         doc: "Offset 36 within entry. This entry's own id, XOR-compared against the header's owner_ref_id/local_ref_id (0x00ad795c-0x00ad79bc: `xor` then `addi -1` then `srdi 63`, i.e. is_x = (member_id == x_ref_id)) to derive the is_local/is_owner arguments to `_opd_FUN_00ad33d8`. Those two flags are what set room_obj+0x19ec (my member id) and room_obj+0x19f0 (the owner's member id). Note they are only applied on FIRST registration of this NpId - see the doc-level first-write-wins note."
       - id: member_slot_ec
         type: u1
-        doc: "Offset 38 within entry. DEFINITION: a per-member byte the client copies into member_slot+0xEC. REASON it exists: it is genuinely read off the wire (`lbz r0,2(r7)` @0xad7858, r7=entry+36 -> reg-struct+0x40 -> `stw r0,236(r31)` @0xad34f8), so it was a real server->client field - but member_slot+0xEC has NO reader anywhere in the SessionManager band (0xad0000-0xada000; whole-band grep for a disp-236 load returns zero), so it is write-only and functionally inert now. Send 0. (Was `unknown_byte`.)"
+        doc: |
+          Offset 38 within entry. DEFINITION: a per-member byte the client
+          copies into member_slot+0xEC. REASON it exists: it is genuinely
+          read off the wire (`lbz r0,2(r7)` @0xad7858, r7=entry+36 ->
+          reg-struct+0x40 -> `stw r0,236(r31)` @0xad34f8), so it was a real
+          server->client field.
+
+          SEARCH INDEPENDENTLY STRENGTHENED 2026-08-19. The member-slot base
+          (`r31`) is computed by a distinctive, recognizable arithmetic
+          idiom: `slot_ptr = room_obj + 0x668 + slot_index*0x180` (raw
+          disasm @0xad3434-0xad3444: `mulli r9,r28,384; add r9,r9,r25; addi
+          r9,r9,1640`), not a single fixed global address the way
+          `attr_tail`'s destination was - so the exhaustive single-address
+          scan technique used for `attr_tail`/`g_70` does not directly
+          apply. Instead, searched the ENTIRE .text section for every other
+          occurrence of that same `mulli rX,rY,384` -> `addi rX,rX,1640`
+          idiom (30 sites found, all clustered in the same SessionManager
+          region 0xad0d5c-0xad38e8) and checked each one for a `+0xEC`/236
+          load within 200 bytes after the slot pointer is computed. Only the
+          known writer (`0xad34f8`) does. This is a genuinely independent
+          re-verification of the "no reader" claim (by searching for the
+          member-slot-walking PATTERN across the whole binary, not by
+          trusting a pre-set instruction-address band), and it still comes
+          up empty - write-only, functionally inert, same conclusion as
+          before but now on firmer ground. RESIDUAL GAP, same shape as
+          attr_tail's: a reader using a totally different addressing
+          mechanism (an indexed load with a runtime-computed offset, or a
+          bulk copy of the surrounding member-slot region read elsewhere)
+          would evade this search too. Send 0. (Was `unknown_byte`.)
       - id: member_data_length
         type: u1
         doc: |

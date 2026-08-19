@@ -157,7 +157,7 @@ every capture, or locked behind DC `.pak` tables.
 | `value_20` / `value_22` / `value_pair_14` | - | Float-derived pair, live-constant 1000/1000. Reads as a default rating pair, disabled in every capture. | live |
 | `search_window_lo` / `_hi` | - | A clamped rating/filter window; 0 in every capture (disabled while searching). | live |
 | `caller_arg_1c`, `flag_27` | - | `0xffff`/`0x0000` and 0/4 respectively; the callers and branch conditions are untraced. | disasm, partial |
-| `member_slot_ec` (`0x131` entry) | server -> client | Genuinely read off the wire into `member_slot+0xEC`; the consumer of that slot is not pinned. | disasm |
+| `member_slot_ec` (`0x131`/`0x132` entry) | server -> client | STRENGTHENED 2026-08-19: genuinely read off the wire into `member_slot+0xEC` by a shared writer (`0xad34f8`). Independently re-verified (not just trusting the original instruction-band grep) by searching the WHOLE binary for every other site using the same distinctive member-slot-address arithmetic (`room_obj+0x668+slot_index*0x180`) - 30 sites found, none read `+0xEC` nearby. Write-only, functionally inert, on firmer ground than before. Same residual gap as `attr_tail`: an indexed/runtime-computed-offset reader or a bulk-copy read would evade this search too. | disasm; whole-binary idiom search |
 | `0x134 trailing` | - | Present because the dispatch loop consumes 24 bytes; not read by the traced portion. | disasm |
 | `0x12f room_settings_tail` / `0x130 room_object_tail` | client -> server | Provenance known - copies of specific room-object spans - interiors not field-mapped. | disasm |
 | `np_id.opt` / `np_id.reserved` | - | Sony's opaque bytes, copied verbatim; readers past the handle untraced. | structural only |
