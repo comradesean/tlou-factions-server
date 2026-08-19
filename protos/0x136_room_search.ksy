@@ -157,6 +157,20 @@ types:
           static singleton - is now confirmed live, not just statically
           inferred.
 
+          CANARY TEST, RUN 2026-08-19 (same session, immediately after): the
+          server briefly sent a distinctive non-zero attr_tail (byte run
+          0x10..0x23) instead of zeros. Live memory read at the same object
+          offset confirmed the pattern landed byte-for-byte
+          (10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 20 21 22 23). The
+          joiner then completed a normal join with the non-zero value live on
+          the wire - no visible difference versus a zero-filled attr_tail:
+          no browser glitch, no TTY anomaly, no stall, no crash. This is the
+          expected outcome given the exhaustive static result above (no
+          reader exists to produce a visible effect either way), and further
+          corroborates it without proving the residual bulk-copy-read
+          possibility one way or the other. Reverted immediately after the
+          test; the server sends zero attr_tail again.
+
           REMAINING GAP: this rules out DIRECT offset reads only. A bulk copy
           of a wider span (e.g. the whole singleton, or object+0x98 onward)
           into a second buffer, read back elsewhere, would evade an

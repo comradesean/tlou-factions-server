@@ -83,14 +83,19 @@ live in the data-compiler payload the game loads at runtime.
   bulk copy of a wider span (the whole singleton, or `+0x98` onward) into a
   second buffer, read back elsewhere, would evade an offset-based scan - not
   found near the writer in this pass, not exhaustively ruled out across all
-  51 sites either. Given how strong the direct-read result is, this residual
-  gap is now LOW PRIORITY: a canary-byte live test (server sends non-zero
-  attr_tail, watch for any client-visible effect) was considered and is not
-  worth running - the static trace gives no candidate consumer for it to
-  reach.
+  51 sites either.
+  CANARY TEST, RUN 2026-08-19: sent a distinctive non-zero attr_tail (byte
+  run `0x10..0x23`) instead of zeros for one live join. Live memory read
+  confirmed the pattern landed byte-for-byte at the singleton's `0xb0:0xc4`,
+  and the joiner completed a normal join with it live on the wire - no
+  browser glitch, no TTY anomaly, no stall, no crash, no difference from a
+  zero-filled attr_tail. Expected given the exhaustive static result, and
+  corroborates it without closing the residual bulk-copy-read possibility.
+  Reverted immediately after; the server sends zero attr_tail again.
   WHY ZEROS ARE STILL SAFE: the server sends 20 zero bytes and the full loop
   still works end to end - browse, join, load, counted and credited match,
-  and the live debugger read confirms those zeros land exactly where traced.
+  and the live debugger read confirms those zeros (and, briefly, the canary)
+  land exactly where traced.
   REMAINING UNBLOCK, if ever revisited: correlate against a live capture in
   which the host varies exactly ONE search/lobby option at a time (mode, map,
   playlist, privacy, NAT, party size) between otherwise identical rooms, so
