@@ -1313,6 +1313,12 @@ def handle(conn, addr, log_lock, log):
                         # (0x13a -> 0x13b relay); joiners get added by 0x130.
                         "conns": {id(conn): (MEMBER_ID, conn, emit)},
                         "members": [(MEMBER_ID, npid)],
+                        # Monotonic member-id allocator (host=1, joiners 2,3,4...)
+                        # + per-member room_ptr (the 0x131 hazard field - each
+                        # client needs ITS OWN room-slot address). See
+                        # research/notes/2026-08-18-jip-roster-collision.md.
+                        "next_member_id": JOINER_MEMBER_ID,
+                        "room_ptrs": {MEMBER_ID: room_ptr},
                         # PUBLIC iff this client reached RoomCreate via find-match
                         # (0x135 preceded it). Only public rooms enter the
                         # find-match list; private/custom games never do.
@@ -1360,67 +1366,87 @@ def handle(conn, addr, log_lock, log):
                     # host via 0x13f (explicit 0 for the joiner in case a
                     # stale 1 survives from an earlier hosted room - only
                     # RoomCreate's own sender clears it client-side).
-                    host_entry = (MEMBER_ID, host["npid"])
-                    joiner_entry = (JOINER_MEMBER_ID, own_npid)
-                    # ---- HARVEST THIS JOINER'S 32-BYTE MEMBER BLOB ----
-                    # RANK/LOADOUT FIX (2026-08-17): wire[0x0c] = length,
-                    # wire[0x18:] = blob (FUN_00ad6718 0x00ad67a0/0x00ad67ac/
-                    # 0x00ad67a8/0x00ad67c0). This is the ONLY place the joiner
-                    # ever tells us its rank/faction/loadout on the find-match
-                    # path - it sends no 0x13a there.
+                    # Allocate a UNIQUE, never-reused member_id for this joiner
+                    # (host=1, then 2, 3, 4, ...). A fixed JOINER_MEMBER_ID=2
+                    # collided on the 3rd participant and tore the whole session
+                    # down - see research/notes/2026-08-18-jip-roster-collision.md.
+                    with rooms_lock:
+                        new_mid = host.get("next_member_id", JOINER_MEMBER_ID)
+                        host["next_member_id"] = new_mid + 1
+                        host.setdefault("room_ptrs",
+                                        {MEMBER_ID: host["room_ptr"]})[new_mid] = join_room_ptr
+                    joiner_entry = (new_mid, own_npid)
+                    # ---- HARVEST THIS JOINER'S 32-BYTE MEMBER BLOB (keyed by the
+                    # newly-allocated member_id) ---- wire[0x0c]=len, wire[0x18:]=blob
+                    # (FUN_00ad6718); the ONLY place the joiner tells us its
+                    # rank/faction on the find-match path (it sends no 0x13a there).
                     join_blob = extract_member_blob(chunk, ROOM_JOIN_BLOB_LEN_OFF,
                                                     ROOM_JOIN_BLOB_OFF)
                     if join_blob is not None:
                         with rooms_lock:
-                            member_blobs[(target_room_id, JOINER_MEMBER_ID)] = join_blob
+                            member_blobs[(target_room_id, new_mid)] = join_blob
                         emit(f"   [blob] harvested {len(join_blob)}-byte member "
-                             f"blob from {own_npid!r}'s RoomJoin (wire "
-                             f"0x{ROOM_JOIN_BLOB_OFF:x}, len byte "
-                             f"0x{ROOM_JOIN_BLOB_LEN_OFF:x}) -> cached for room "
-                             f"{target_room_id.hex()} member_id={JOINER_MEMBER_ID}"
+                             f"blob from {own_npid!r}'s RoomJoin -> cached for room "
+                             f"{target_room_id.hex()} member_id={new_mid}"
                              + ("" if len(join_blob) == 32 else
                                 "  *** NOT 32 BYTES - FUN_00ad2650 will reject it ***"))
                     else:
                         emit(f"   [blob] no usable member blob in {own_npid!r}'s "
-                             f"RoomJoin - the host's rank/loadout widgets for "
-                             f"this player will stay blank")
+                             f"RoomJoin - rank/loadout widgets for this player "
+                             f"will stay blank")
+                    # Full roster = every current member + the newcomer. Each
+                    # recipient gets the SAME roster content with its OWN entry
+                    # first and its own local_ref_id; owner is always the host (1).
                     with rooms_lock:
-                        join_blobs = {mid: member_blobs[(target_room_id, mid)]
-                                      for mid in (MEMBER_ID, JOINER_MEMBER_ID)
-                                      if (target_room_id, mid) in member_blobs}
-                    self_member = build_member([joiner_entry, host_entry],
-                                               target_room_id, host["max_players"],
-                                               owner_ref_id=MEMBER_ID,
-                                               local_ref_id=JOINER_MEMBER_ID,
-                                               room_ptr=join_room_ptr,
-                                               populate_self_npid=True,
-                                               blobs=join_blobs)
-                    conn.sendall(self_member + build_owner_changed(target_room_id, 0)
-                                 + build_owner_member(target_room_id, MEMBER_ID))
-                    emit(f"   parsed opcode={opcode:#x} (RoomJoin) - JOINED "
-                         f"{host['npid']!r}'s room {target_room_id.hex()} as "
-                         f"member_id={JOINER_MEMBER_ID}, sent Member+OwnerChanged(0) "
-                         f"(room_ptr={join_room_ptr:#x})")
-                    host_member = build_member([host_entry, joiner_entry],
-                                               target_room_id, host["max_players"],
-                                               owner_ref_id=MEMBER_ID,
-                                               local_ref_id=MEMBER_ID,
-                                               room_ptr=host["room_ptr"],
-                                               populate_self_npid=True,
-                                               blobs=join_blobs)
-                    try:
-                        host["conn"].sendall(host_member
-                                             + build_owner_member(target_room_id, MEMBER_ID))
-                        host["emit"](f"   [join] {own_npid!r} joined room "
-                                     f"{target_room_id.hex()} - pushed updated "
-                                     f"2-member roster + OwnerMember(1)")
-                    except OSError as e:
-                        # The matched host connection is dead. Purge its stale
-                        # registry entry so it can't poison the NEXT join/invite
-                        # for this shared party room_id (the "failed attempt
-                        # corrupts the next request" cascade).
-                        emit(f"   [join] host push failed ({e}) - purging stale "
-                             f"host entry for room {target_room_id.hex()}")
+                        full_members = list(host["members"]) + [joiner_entry]
+                        existing = list(host["conns"].values())   # (mid, conn, emit)
+                        room_ptrs = dict(host.get("room_ptrs", {MEMBER_ID: host["room_ptr"]}))
+                        blobs = {mid: b for (rid, mid), b in member_blobs.items()
+                                 if rid == target_room_id}
+
+                    def roster_for(mid):
+                        own = [m for m in full_members if m[0] == mid]
+                        return own + [m for m in full_members if m[0] != mid]
+
+                    # REORDERED (2026-08-18): tell every EXISTING member about the
+                    # newcomer FIRST - so the host starts dialing the joiner's P2P
+                    # link BEFORE the joiner is admitted and enters JOIN_GAME_WAIT.
+                    # Stick-vs-bounce is a timing race (byte-identical rosters both
+                    # stick and bounce depending on host state); admitting the
+                    # joiner before the host is told to dial it loses that race.
+                    host_dead = False
+                    for (mid, mconn, memit) in existing:
+                        rp = room_ptrs.get(mid, host["room_ptr"])
+                        m = build_member(roster_for(mid), target_room_id,
+                                         host["max_players"], owner_ref_id=MEMBER_ID,
+                                         local_ref_id=mid, room_ptr=rp,
+                                         populate_self_npid=True, blobs=blobs)
+                        try:
+                            # NO 0x13d OwnerMemberChanged here (2026-08-18): the
+                            # owner does not change on a join, but 0x13d's handler
+                            # runs room->vtable[0x34], the ownership-notification
+                            # callback - the source of the host's "New host : X"
+                            # TTY print that fires on EVERY bounced JIP attempt.
+                            # Re-announcing host ownership into an already-
+                            # established (mid-match) room is the join-party bug
+                            # class: a control opcode the client treats as
+                            # disruptive while the stub assumes it's an ack. The
+                            # joiner still gets 0x13f+0x13d below - for it this is
+                            # the FIRST owner announcement, not a re-announcement.
+                            mconn.sendall(m)
+                            memit(f"   [join] {own_npid!r} joining room "
+                                  f"{target_room_id.hex()} - pushed {len(full_members)}"
+                                  f"-member roster to member {mid} (dial the joiner)")
+                        except OSError as e:
+                            memit(f"   [join] push to member {mid} failed ({e})")
+                            if mconn is host["conn"]:
+                                host_dead = True
+                    if host_dead:
+                        # The host connection is dead - purge its stale registry
+                        # entry so it can't poison the NEXT join for this room, and
+                        # do NOT admit the joiner into a dead room.
+                        emit(f"   [join] host push failed - purging stale host "
+                             f"entry for room {target_room_id.hex()}")
                         with rooms_lock:
                             stale = None
                             for k, v in active_rooms.items():
@@ -1433,44 +1459,57 @@ def handle(conn, addr, log_lock, log):
                             for (rid, mid) in [kk for kk in member_blobs
                                                if kk[0] == target_room_id]:
                                 del member_blobs[(rid, mid)]
-                    # Replay any already-cached member blobs both ways so the
-                    # late joiner sees incumbents' rank/loadout immediately and
-                    # vice versa (0x13b must follow Member - same rule as 0x13f).
-                    with rooms_lock:
-                        cached = {mid: blob for (rid, mid), blob
-                                  in member_blobs.items() if rid == target_room_id}
-                    for mid, blob in cached.items():
-                        b = build_member_blob(mid, target_room_id, blob)
-                        try:
-                            if mid != JOINER_MEMBER_ID:
-                                conn.sendall(b)          # incumbent -> newcomer
-                            if mid != MEMBER_ID:
-                                host["conn"].sendall(b)  # newcomer -> incumbent
-                        except OSError:
-                            pass
-                    with rooms_lock:
-                        host["conns"][id(conn)] = (JOINER_MEMBER_ID, conn, emit)
-                        host["members"] = [host_entry, joiner_entry]
-                    # Restart both refreshers with the joint roster.
-                    host["stop_event"].set()
-                    new_host_stop = threading.Event()
-                    host["stop_event"] = new_host_stop
-                    start_member_refresher(host["conn"], host["emit"],
-                                           [host_entry, joiner_entry],
-                                           target_room_id, host["max_players"],
-                                           MEMBER_ID, MEMBER_ID, new_host_stop,
-                                           room_ptr=host["room_ptr"],
-                                           populate_self_npid=True)
-                    if active_room_stop is not None:
-                        active_room_stop.set()
-                    active_room_stop = threading.Event()
-                    start_member_refresher(conn, emit, [joiner_entry, host_entry],
-                                           target_room_id, host["max_players"],
-                                           MEMBER_ID, JOINER_MEMBER_ID,
-                                           active_room_stop,
-                                           room_ptr=join_room_ptr,
-                                           populate_self_npid=True)
-                    # The 2-member roster pushed to the host just above is what
+                    else:
+                        # NOW admit the newcomer (host already told to dial it).
+                        self_member = build_member(roster_for(new_mid),
+                                                   target_room_id, host["max_players"],
+                                                   owner_ref_id=MEMBER_ID,
+                                                   local_ref_id=new_mid,
+                                                   room_ptr=join_room_ptr,
+                                                   populate_self_npid=True, blobs=blobs)
+                        conn.sendall(self_member + build_owner_changed(target_room_id, 0)
+                                     + build_owner_member(target_room_id, MEMBER_ID))
+                        emit(f"   parsed opcode={opcode:#x} (RoomJoin) - JOINED "
+                             f"{host['npid']!r}'s room {target_room_id.hex()} as "
+                             f"member_id={new_mid}; room now has {len(full_members)} "
+                             f"members (room_ptr={join_room_ptr:#x})")
+                        # replay every member's cached blob to every OTHER member
+                        # (0x13b must follow Member, same rule as 0x13f).
+                        all_conns = existing + [(new_mid, conn, emit)]
+                        for bmid, blob in blobs.items():
+                            b = build_member_blob(bmid, target_room_id, blob)
+                            for (mid, mconn, _me) in all_conns:
+                                if mid == bmid:
+                                    continue
+                                try:
+                                    mconn.sendall(b)
+                                except OSError:
+                                    pass
+                        # register the newcomer; refresh the host keepalive with
+                        # the full roster.
+                        with rooms_lock:
+                            host["conns"][id(conn)] = (new_mid, conn, emit)
+                            host["members"] = full_members
+                        host["stop_event"].set()
+                        new_host_stop = threading.Event()
+                        host["stop_event"] = new_host_stop
+                        start_member_refresher(host["conn"], host["emit"],
+                                               roster_for(MEMBER_ID),
+                                               target_room_id, host["max_players"],
+                                               MEMBER_ID, MEMBER_ID, new_host_stop,
+                                               room_ptr=host["room_ptr"],
+                                               populate_self_npid=True)
+                        # the joiner's own keepalive refresher
+                        if active_room_stop is not None:
+                            active_room_stop.set()
+                        active_room_stop = threading.Event()
+                        start_member_refresher(conn, emit, roster_for(new_mid),
+                                               target_room_id, host["max_players"],
+                                               MEMBER_ID, new_mid,
+                                               active_room_stop,
+                                               room_ptr=join_room_ptr,
+                                               populate_self_npid=True)
+                    # The roster pushed to the host just above is what
                     # makes it dial this peer (FUN_00ad33d8 -> mgr->Connect); the
                     # link the joiner already established resolves to state 2, so
                     # FUN_003b19c4 counts 2 and the host's lobby deadline moves
