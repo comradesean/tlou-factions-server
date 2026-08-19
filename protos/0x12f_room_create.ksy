@@ -66,59 +66,64 @@ seq:
     type: u4
     doc: |
       Offset 12:16. Verbatim copy of `*(u32*)(room_obj + 0x0c)` (`lwz r0,12(r31)`
-      / `stw r0,156(r1)` @ 0x00ad5f30). A real struct member, deliberately
-      copied - NOT send-buffer residue like the pad_* fields.
+      / `stw r0,156(r1)` @ 0x00ad5f30).
 
-      STATUS: PARTIALLY UNDERSTOOD, and previously OVER-CLAIMED TWICE in one day.
-      Read the corrections below before trusting any summary of this field.
+      DEFINITION: the PLAYLIST ID. A playlist is a DC record that bundles the
+      game MODE with its PARTY RULES, so this one field covers what the UI
+      presents as two separate choices. The table ships inside the netN.bin
+      config bundle, which is why the numbering is PER BUILD. The binary asserts
+      `(playlist & 0xFFFFFF00) == 0` (VMA 0xe9fa28 in 01.11) - one byte.
 
-      WHAT IS SOLID:
-        - It carries NO team component. A single value (0x13) occurs with team 0,
-          1 AND 2 - the complete team domain - so no bit of it encodes team.
-          This closes the old map-vs-team confound
-          (research/notes/2026-08-16-map-id-vs-team-confound.md) without the 2x2
-          capture that note called for.
-        - Live value distribution by room class (whole day, 138 RoomCreate
-          frames): PUBLIC 0x02 x94 / 0x03 x2 / 0x13 x1; PRIVATE 0x09 x12 /
-          0x13 x21; PARTY 0x12 x6.
-        - The PARTY value is a constant 0x12 in 6/6 frames.
+      REASON it exists: it is the matchmaking key. A searcher asks for exactly
+      one playlist in 0x135, and the elected host stamps that same id on the
+      room it creates, so the server can advertise a room only to searchers
+      wanting that playlist.
 
-      CORRECTION 1 (2026-08-18, same day as the claim). It was documented that
-      "the searcher ASKS for a mode in 0x135 and the elected host STAMPS it on
-      the room". REFUTED by a live counter-example: at 23:18:35 a client sent
-      0x135 with field_0c=0x02, and 14 s later its own 0x12f RoomCreate carried
-      field_0c=0x13, on a room the server registered PUBLIC/matchmade. The two
-      values differ on the same client seconds apart. The error was assuming
-      that because 0x135's field_0c and this field are both at +0x0c of their
-      objects, they carry the same quantity - they are DIFFERENT OBJECTS
-      (search_obj vs room_obj) and that was an inference, not a fact.
+      01.11 TABLE - all nine live-confirmed 2026-08-19, each verified on BOTH
+      sides (the searcher's 0x135 and the host's 0x12f stamp):
 
-      CORRECTION 2. It was documented that the value ranges are "disjoint by
-      room class, zero crossover". REFUTED by the same frame: 0x13 occurs on
-      both PRIVATE (x21) and PUBLIC (x1).
+        playlist  mode           style
+           1      Supply Raid    Parties Allowed
+           2      Supply Raid    No Parties
+           3      Supply Raid    DLC
+           6      Survivors      Parties Allowed
+           7      Survivors      No Parties
+           8      Survivors      DLC
+          11      Interrogation  Parties Allowed
+          12      Interrogation  No Parties
+          13      Interrogation  DLC
 
-      CURRENT BEST READING (explicitly provisional): a genuine room-object
-      member that the matchmaking path sets, but which NOTHING RELIABLY RESETS,
-      so a room created from a dirty client state inherits a stale value. The
-      one crossover frame came from a client that had just been BOOTED
-      mid-match and reconnected - an abnormal state - and the stale value it
-      carried (0x13) is in the same id space as the recent-level MAP ring
-      (0x0e, 0x0f, 0x10, 0x13, 0x14, 0x15, 0x17), and that client had just
-      played a map. So the stale content may be the last MAP id. For PRIVATE
-      matches nothing in matchmaking ever reads this field, so nothing forces
-      it to be meaningful there.
+      Each mode owns a FIVE-slot block starting at 1, 6, 11 and uses the first
+      three; 4/5, 9/10 and 14/15 are unused capacity, not missing content. Id 0
+      has never been observed and reads as a none/invalid sentinel.
 
-      SERVER GUIDANCE: do not rely on this field. If it is ever used to filter
-      the 0x136 game list, tolerate mismatches rather than excluding rooms on
-      it - a stale value would otherwise make a legitimate room unjoinable.
+      01.00 had only TWO playlists, 2 and 3 - one per mode, because that build
+      shipped no style variants. So id 3 means Survivors on 01.00 but Supply
+      Raid/DLC on 01.11. IDS ARE NOT COMPARABLE ACROSS BUILDS, which is why
+      matchmaking must be segregated by build as well as by playlist
+      (server/session_manager.py CLIENT_BUILDS).
 
-      DECIDING CAPTURES, in priority order:
-        1. Play a KNOWN map, do NOT get booted, then create a room - does
-           field_0c equal that map's id from the recent_level ring?
-        2. Two private matches differing ONLY in mode, then ONLY in map.
-        3. A clean-boot client (ring 0xffff) creating a matchmade room - what
-           does the field read before anything has been played?
-      See research/notes/2026-08-18-wire-residue-and-field-corrections.md 4/4b/4c.
+      NON-MATCHMAKING LOBBIES use their own ids in the same one-byte space:
+        0x58 (88)  party room (observed on the party object, 2/2)
+        0x5a (90)  seen once on the game object at client start-up
+        0x63 (99)  PRIVATE match - the SAME value for Supply Raid (00:55:23)
+                   and Survivors (01:01:29), so it is not mode-specific
+      A server must never advertise these in the find-match list.
+
+      RULED OUT, each by live evidence:
+        NOT the team - one value (0x13) occurs with team 0, 1 AND 2, the
+          complete team domain.
+        NOT the map - a party lobby has no map, yet carries a value; and the
+          map has its own field (member_data.recent_level, where Checkpoint on
+          01.11 is 0x1f).
+        NOT simply "the mode" - one mode spans three ids, one per style.
+
+      HISTORY: this field was documented as a map id, then as a map-or-team
+      combined index, then as a mode, and was retracted twice on 2026-08-18
+      before the 01.11 style walkthrough made the playlist structure visible.
+      The earlier readings were each consistent with the data available at the
+      time - 01.00 has one playlist per mode, so "mode" and "playlist" are
+      indistinguishable on that build alone.
   - id: region_language
     size: 4
     doc: "Offset 16:20. Region/language, built from the sceNpManagerGetAccountRegion / GetMyLanguages pair this function calls. Live-constant `75 73 00 01` = \"us\\0\" + language 1."

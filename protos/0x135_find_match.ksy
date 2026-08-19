@@ -57,34 +57,25 @@ seq:
     type: u4
     doc: |
       Offset 12:16. `*(u32*)(search_obj+0x0C)` (`lwz r11,12(r29)` @ 0xad6c90,
-      `stw r11,156(r1)`). NOTE: RoomCreate's room_field_0c is the same struct
-      OFFSET but of a DIFFERENT OBJECT (room_obj, not search_obj). An earlier
-      revision asserted the two carry the same quantity; that was refuted the
-      same day - a client searched with 0x02 and 14 s later created a matchmade
-      room stamped 0x13. Treat them as separate fields.
-      DEFINITION on this path: the GAME MODE / PLAYLIST the client is searching
-      for. RESOLVED 2026-08-18 - it had looked invariant at 0x02 across 411
-      frames only because every capture was of a single playlist; a second
-      playlist produced 0x03 (0x02 x554, 0x03 x11). 0x02 = Supply Raid,
-      0x03 = Survivors, read off the live client UI. PUBLIC RoomCreates usually
-      carry a matching value (0x02 x94, 0x03 x2), but NOT always - one carried
-      0x13 - so that correlation is a tendency, not the mechanism.
-      REASON it exists: this is the matchmaking filter - the mode the player is
-      queueing for. A server that filters the 0x136 list MUST key on THIS field
-      (the searcher's own request), NOT on the host's room_field_0c, which is
-      not reliably maintained (see protos/0x12f_room_create.ksy).
-      IMPLEMENTED 2026-08-18 (commit 7995141) after a live cross-playlist match:
-      a Survivors searcher (0x03) was handed a Supply Raid room (0x02) and
-      joined it, because the stub answered every search with every public room.
-      server/session_manager.py now records each public room's playlist from the
-      search that preceded its creation and only advertises matching rooms; a
-      room whose mode was never learned is still offered to everyone, so an
-      unknown can never make a legitimate room unjoinable.
-      CONFIDENCE: the 0x02/0x03 split tracks the two playlists across 565 live
-      searches and matches what the client UI showed, so the MODE reading here
-      is well supported. It is only the equivalence with room_field_0c that was
-      wrong. See research/notes/2026-08-18-wire-residue-and-field-corrections.md
-      4/4b/4c.
+      `stw r11,156(r1)`).
+
+      DEFINITION: the PLAYLIST the client is queueing for - mode plus party
+      rules in one id. See protos/0x12f_room_create.ksy room_field_0c for the
+      full table, the per-build numbering caveat, and the non-matchmaking ids.
+
+      A searcher asks for EXACTLY ONE playlist and never widens: across the nine
+      01.11 playlists walked on 2026-08-19, every burst carried a single value.
+      (An earlier note claimed Supply Raid/Parties-Allowed searched both 1 and 2;
+      that was a measurement error - the 2s were the tail of the previous queue,
+      caught by a wall-clock window that straddled the style switch. Segment by
+      the switch, not by the clock.)
+
+      SERVER RULE: filter the 0x136 game list on THIS field - the searcher's own
+      request - and never on the host's room_field_0c, which is not reliably
+      reset. Implemented in server/session_manager.py after a live cross-playlist
+      match on 2026-08-18 (a Survivors searcher was handed a Supply Raid room and
+      joined it). Match on the game BUILD too: ids are not comparable across
+      builds.
   - id: room_flags_10
     type: u4
     doc: "Offset 16:20. `*(u32*)(search_obj+0xE8)` conditionally OR'd with 0x40000000 (`lwz r0,232(r29)` @ 0xad6cd0, `oris r0,r0,16384` @ 0xad6cf0) - identical construction to RoomCreate's room_flags_e8. Live `10 2c 50 3f`. (The oris gate compares r10, whose definition is outside the function body - gate condition untraced.)"
