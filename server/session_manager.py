@@ -1323,14 +1323,31 @@ def handle(conn, addr, log_lock, log):
                     emit(f"   (client build {build_of(room_ptr)}, "
                          f"{'PARTY' if is_party_ptr(room_ptr) else 'GAME'} "
                          f"room object {room_ptr:#010x})")
-                if find_match_searching:
-                    room_id = synth_public_room_id(room_ptr)
-                elif is_party_ptr(room_ptr):
+                # PARTY OBJECT WINS (2026-08-19). This test used to come
+                # SECOND, after find_match_searching, and that was a real bug: a
+                # party created shortly after a find-match search inherited the
+                # still-set search flag, so it was registered PUBLIC/matchmade,
+                # skipped the unique-party-id mint entirely (it was the elif
+                # branch), and got advertised to searchers as if it were a game.
+                # Live at 01:00:50 - "room 50000008013bf068 registered as
+                # PUBLIC/matchmade" for a create on the PARTY object - and the
+                # invite-accept into it bounced immediately afterwards.
+                # The room OBJECT is authoritative: a create on the party object
+                # is a party, whatever the client was doing beforehand.
+                if is_party_ptr(room_ptr):
                     room_id = synth_party_room_id(room_ptr)
                     emit(f"   [party-id] minted unique party room_id "
-                         f"{room_id.hex()} for {npid!r} (was shared static "
-                         f"{room_ptr:#010x}; disambiguates the RoomJoin "
-                         f"host lookup for direct Join Party)")
+                         f"{room_id.hex()} for {npid!r} (party object "
+                         f"{room_ptr:#010x}; disambiguates the RoomJoin host "
+                         f"lookup for direct Join Party)")
+                    if find_match_searching:
+                        emit(f"   [party-id] NOTE: a find-match search preceded "
+                             f"this party create; the search flag is being "
+                             f"ignored because the party object takes priority")
+                        find_match_searching = False
+                    is_matchmaking_host = False
+                elif find_match_searching:
+                    room_id = synth_public_room_id(room_ptr)
                 # RoomCreate's own wire offset 0xc:0x10 (4 bytes) - live-
                 # evidenced 2026-08-15 as a likely map/level identifier, see
                 # build_room_joined's docstring. Echo it straight back.
