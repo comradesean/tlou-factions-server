@@ -3,7 +3,9 @@
 What is fully understood, what is partly understood, and what is unknown, across
 all 50 `.ksy` specs (45 message specs + 5 shared types; 260 declared fields).
 Current as of 2026-08-19, end of an extended live-debugging session covering
-`0x140`/`0x141`, `0x13e`/`0x13f`, `0x136 attr_tail`, and `member_slot_ec`.
+`0x140`/`0x141`, `0x13e`/`0x13f`, `0x136 attr_tail`, `member_slot_ec`,
+`0x12f room_settings_tail`/`0x130 room_object_tail`, `room_flags_e8`,
+`member_data.card_stat_2`/`card_stat_3`, and `stat_line`'s `task-%x`.
 
 The bar for **Tier 1** is the project's reserved standard applied to a whole
 message or field: a NAME, a DEFINITION (what the bytes are), and a game or
@@ -212,8 +214,14 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     playlist and the client's build, exact match, never on the host's room field.
 
 35. **`room_flags_e8` / `room_flags_10`** - `*(u32*)(obj+0xE8)` conditionally
-    OR'd with `0x40000000`. Low 20 bits constant across captures; the `oris` gate
-    condition is outside the traced function body.
+    OR'd with `0x40000000`. GATE RESOLVED for `room_flags_e8` 2026-08-19: live
+    RPCS3 breakpoints across two independent room types (party creation,
+    game-room creation via find-match) both showed the gate register at 0 -
+    the OR never fires in either sample. The already-observed top-nibble
+    variation must come from the raw `+0xe8` value itself, not this
+    conditional. `room_flags_10` (a different function, "identical
+    construction") likely follows the same pattern but wasn't independently
+    live-checked.
 36. **`0x140` `attr_selector`** - RESOLVED 2026-08-19 as a binary client-phase
     announcement, not an attribute selector: `1` = the client's lobby/roster
     model is being rebuilt (`FUN_0035a7dc`), `0` = `NET_SM_RESULTS`/match-end
@@ -232,7 +240,14 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
 39. **`member_data.capability_flag` bit meanings** - which bit is which DLC pack
     lives in the `.pak` descriptors, not the EBOOT.
 40. **`member_data.card_stat_2` / `card_stat_3`** - bytes and source pinned
-    (`P+0x654`, the character-customization word); display meaning medium.
+    (`P+0x654`, a separate word preceding `custom_appearance`, not literally
+    "word 0" of it - corrected 2026-08-19). EXHAUSTIVELY RE-CHECKED
+    2026-08-19 against all 842 live `0x13a` frames (not just the original 2
+    samples): still exactly zero in every one, even after the profile S3
+    round-trip was implemented and confirmed working with real non-zero data
+    elsewhere in the same file - rules out "needs the round-trip" as the
+    blocker. Display meaning remains unresolved on a much larger evidence
+    base.
 41. **`0x13e` `flag` byte** - boolean when written, but live values 0/1/3/4 with
     the stale value often equal to the frame's own `kind`. Only 0 and 1 are
     meaningful. `kind` itself is RESOLVED 2026-08-19 (see item 59's removal
@@ -289,17 +304,22 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     index ranges only partly claimed.
 52. **`profile_21` zero region `P+0x1E74..0x5008`** - purpose unknown.
 53. **DC-blocked set** - all net-stat slots (including the supplies gate),
-    `rank_tier` thresholds, and every id→asset map (cosmetics, character/name
-    pools). Blocked on extracting `net1.bin`/`net10.bin` registries; not
-    reachable by decompiling the EBOOT.
-54. **`0x142` numeric encoding for a ranked account** - needs a ranked capture.
+    `rank_tier` thresholds, `stat_line`'s `task-%x` (mechanism resolved
+    2026-08-19 - a genuine DC task-definitions table lookup, removed from
+    this list as its own item and folded in here; see the "resolved out of
+    this tier" note below - only the specific task identity remains
+    DC-blocked), and every id→asset map (cosmetics, character/name pools).
+    Blocked on extracting `net1.bin`/`net10.bin` registries; not reachable by
+    decompiling the EBOOT.
+54. **`0x142` numeric encoding for a ranked account** - needs a ranked
+    capture. RE-CHECKED 2026-08-19 against all 238 live captured `0x142`
+    frames: every one still ends in the unranked-account constant `0x0002` -
+    the test accounts have not earned a rank change. Still blocked.
 55. **Intermittent "Host quit for cheating"** teardown - rare, unexplained, no
     packet correlated with it yet.
 56. **`stat_line` task line's 2nd `%s`** - the accessor is pinned (`base+0x2e6c`
     string field), but `base` resolves to a runtime-allocated object with no
     file-backed content - needs a live memory read during a campaign autosave.
-57. **`stat_line` task line's `%x`** (`task-%x`) - likely a shared connection/
-    job-id field (same read idiom recurs in unrelated structs), not confirmed.
 
 RESOLVED OUT OF THIS TIER since 2026-08-18 and removed from the numbered list
 above (kept here so old cross-references aren't silently broken): `single-
@@ -310,7 +330,9 @@ still open but promoted to tier 2), `0x12f room_settings_tail` /
 attribute identity (resolved,
 `protos/0x140_set_room_flags.ksy`), `0x13e` kind 3 vs kind 4 (resolved,
 `protos/0x13e_set_host_flag.ksy`), `gamelist_line` grammar (resolved
-2026-08-19).
+2026-08-19), `stat_line` task line's `%x` mechanism (resolved 2026-08-19 -
+a genuine DC task-table lookup, folded into the DC-blocked set as item 53;
+only the specific task identity remains unresolved).
 
 ---
 
