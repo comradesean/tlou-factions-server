@@ -27,18 +27,25 @@ doc: |
   FIELD MEANINGS, task line (all confirmed by tracing FUN_007f1acc):
     %s (1st) = the player's own online_id, from sceNpManagerGetNpId - same
         source as every other sibling service's identity field.
-    %x       = param_1[0x1b]. RESOLVED 2026-08-19 to a MECHANISM, not yet a
-        firm semantic: this exact offset is read with the identical idiom
-        (`uVarNN = param_1[0x1b]`, immediately adjacent to a call into the
-        shared connect routine _opd_FUN_00acc424) in several otherwise-
-        unrelated service handlers - leaderboard's and find-match's own
-        connection-state structs, not just this one. That recurrence across
-        independently-compiled handlers is consistent with 0x1b being a
-        common field of a shared per-connection/per-async-job state struct
-        (a generic ND job/task-dispatch id), not a campaign objective id -
-        which would also explain the literal "task-" prefix without requiring
-        gameplay-specific state. Not fully proven: no single writer of this
-        field was traced to confirm it, only the read-site idiom's recurrence.
+    %x       = param_1[0x1b]. CORRECTED 2026-08-19: an earlier pass of this
+        doc guessed a "shared connection/job-id" reading from the read-site
+        idiom's recurrence alone, without finding an actual writer. A writer
+        was since found and traced (`FUN_0032241c`, research/ghidra/
+        fm_applyrefs.txt): `param_1[0x1b]` is populated, alongside several
+        sibling fields at the same struct (`0x19`, `0x1d`-`0x20`, `0x2e`),
+        by an identical DC-compiled-table lookup mechanism - a base table
+        resolved via hash `0x1ad3445f` (`_opd_FUN_0078b5a0`), then a
+        per-field key lookup into that table (`_opd_FUN_00ab685c`) whose
+        result indexes a second array to yield the final value. This is a
+        genuine DC task/objective-definitions table pattern, not a generic
+        connection/job-id - CONFIRMS the literal "task-" prefix's plain
+        reading rather than the alternative guessed earlier. The exact
+        SEMANTIC identity of task `0x1b` specifically (as opposed to its
+        five siblings, which presumably represent other task/objective
+        slots resolved the same way) is DC-blocked - the table's actual
+        contents live in `.pak`/`netN.bin` data this project cannot read
+        from the EBOOT alone, the same wall as every other DC-gated id in
+        this project.
     %s (2nd) = _opd_FUN_00952520(**(anchor-0x7f3c)) - RESOLVED 2026-08-19 to a
         MECHANISM, not a value: the "function" is a 3-instruction accessor
         (`addi r3,r3,0x2e6c; clrldi r3,r3,32; blr`, i.e. `return base +
