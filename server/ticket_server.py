@@ -486,6 +486,113 @@ def recv_exact(conn, n, timeout=10):
     return data
 
 
+# ---------------------------------------------------------------------------
+# report-server (2026-08-19) - grammar DERIVED FROM THE BINARY
+# ---------------------------------------------------------------------------
+# A player-standing / ban check, and it exists ONLY IN EBOOT 01.11: neither
+# "report-server" nor "is-banned" appears anywhere in 01.00 (byte search of both
+# ELFs). All addresses below are 01.11 VMAs (VMA = file offset + 0x10000).
+#
+# REQUEST - format string "is-banned %s\n" @ 0xeacdd0, adjacent to
+# "report-server" @ 0xeacdc0 and the client's own debug line
+# "ban response: '%s'\n" @ 0xeacde0. The '\n' is IN the format, which is why the
+# captured plaintext is exactly 22 bytes for "comradesean". Sender + parser are
+# inline in the big NetInit function, 0x36e1fc-0x36e390.
+#
+# Live: nine connections over five sessions and two accounts in
+# server/logs/ticket_server.log, each from the querying console's own address
+# naming its own account (192.168.1.100 -> "is-banned comradesean",
+# 192.168.1.121 -> "is-banned mgnomad2"). This is a SELF standing-check, not a
+# lookup of a reported opponent.
+#
+# RESPONSE GRAMMAR, read straight off the parser (each instruction verified
+# against the ELF, not just decompiler output):
+#
+#     +<decimal int><space-or-newline><name-token>
+#
+#   0x36e1a8  stw -1,916(g_net)    g_net=0x13ba5a0; +916 is the ban index,
+#                                  default -1 = NOT banned
+#   0x36e28c  li  r5,256           one bounded recv of 256 bytes...
+#   0x36e290  bl  0xafacf8         ...which is poll+recv returning on the FIRST
+#                                  successful read, then the caller closes. This
+#                                  is the heartbeat shape, NOT the leaderboard's
+#                                  NUL-sentinel accumulator - so the whole reply
+#                                  must arrive in ONE frame.
+#   0x36e298  cmpwi cr7,r3,0
+#   0x36e29c  ble  0x36e384        n <= 0            -> not banned
+#   0x36e2ac  stb  r28,0x388(r9)   buf[n] = 0        (client NUL-terminates at
+#                                  the recv length itself; it does NOT require a
+#                                  NUL from us)
+#   0x36e2c8  lbz  r0,0x388(r1)    buf[0]
+#   0x36e2cc  cmpwi cr7,r0,43      ...must be '+'
+#   0x36e2d0  bne  0x36e388        not '+'           -> not banned
+#   0x36e2dc  addi r3,r1,0x389     strtok_r starts at buf+1
+#   0x36e2ec  bl   0xe72d80        strtok_r(buf+1, " \n") -> token1
+#             bl   0xe75d78        strtol(token1, 10) -> g_net+920
+#             bl   0xe72d80        strtok_r(NULL, " \n")  -> token2
+#             loop strcmp(token2, pReportArray[i].name); on a match store the
+#             integer at g_net+920 and the matching index i at g_net+916
+#
+# THERE IS NO 0/1 BOOLEAN. The account is banned IFF the reply starts with '+'
+# AND its second token strcmp-matches an entry in the DC-resident pReportArray
+# table (resolved by symbol hash 0xFFAC56F2; the literal "pReportArray" sits at
+# 0xeb05f0 next to "game/net/net-menu.cpp" @ 0xeb0588). EVERY other path -
+# connect failure, n<=0, no '+', no token1, no token2, an unmatched name -
+# leaves the index at -1, i.e. FAIL-OPEN, not banned.
+#
+# So the correct "not banned" answer is any reply that does not present a
+# matching ban row, and we send the cleanest such answer: an EMPTY body plus
+# this family's NUL sentinel. buf[0] is then 0x00, the '+' test fails, and the
+# index stays -1. That is also what the family means elsewhere - '+' lines are
+# RESULT ROWS, and facebook-get-npid already answers "no matches" with an empty
+# response - and it reproduces the payload shape that has been live-accepted
+# nine times (the old fall-through answered these connections with a
+# ticket_submit_response frame whose plaintext is 16 NULs, and both accounts
+# went on to matchmake and play). We deliberately do NOT emit a "+0 none" row:
+# that is a ban row whose name merely happens not to match, and it would become
+# a real ban the day "none" collides with a pReportArray entry - and the entry
+# names live in the data-compiler payload, not the EBOOT, so we cannot check.
+#
+# STILL UNKNOWN (both immaterial to answering "not banned"): the literal entry
+# names in pReportArray, and the meaning of the integer at g_net+920 (it is
+# formatted into the ban message; duration/expiry is a guess and is not made).
+def build_report_response(cmd):
+    """Map one decoded report-server line to a reply. Returns (response, note).
+
+    The only verb is `is-banned <online_id>`. This server keeps no ban list, so
+    no account has a standing record and every account is answered "not
+    banned". See the block comment above for the decoded grammar and for why
+    "not banned" is an EMPTY body rather than a '+' row."""
+    tokens = cmd.strip().split(" ")
+    verb = tokens[0] if tokens else ""
+
+    if verb == "is-banned":
+        who = tokens[1] if len(tokens) > 1 else "<no id>"
+        return "", (f"is-banned {who!r} -> NOT banned (empty body + NUL: buf[0] "
+                    f"fails the '+' test @0x36e2cc, ban index stays -1)")
+
+    # Unknown verb: same empty answer. NEVER close first - a server-initiated
+    # EOF is this family's error path.
+    return "", f"unknown report verb {verb!r} - empty answer (not banned)"
+
+
+def handle_report(conn, session_token, client_nonce, log_append):
+    """report-server post-hello loop. Same frame layer and hold-for-client-close
+    discipline as every sibling line service (see handle_line_service).
+
+    The client does ONE bounded 256-byte recv and then closes, so the entire
+    reply must go out in a single frame - which the loop already does - and we
+    must still not close first.
+
+    Having a handler at all is the point: before this, a ban check was answered
+    with a ticket_submit_response frame. That is the same request/response
+    mismatch class that produced the leaderboard "Error 9 / disconnected from
+    the game servers" boot and the Facebook retry spin, and it sits on the path
+    to online entry."""
+    handle_line_service(conn, session_token, client_nonce, log_append,
+                        "report", build_report_response)
+
+
 # Service-name -> post-hello handler for the 0x11 sibling LINE services. Names
 # are read verbatim out of the 88-byte hello (bytes 24:88, NUL-terminated).
 # Six services have been observed live; single-player-server has never opened a
@@ -495,6 +602,7 @@ LINE_SERVICE_HANDLERS = {
     "leaderboard-server": handle_leaderboard,
     "facebook-server": handle_facebook,
     "heartbeat-server": handle_heartbeat,
+    "report-server": handle_report,
 }
 
 
