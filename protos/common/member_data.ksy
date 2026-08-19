@@ -98,14 +98,188 @@ seq:
       host's weighted-random map picker FUN_003a2310 reads them (`lbz r0,0xa(blob+k)`)
       and applies a DC penalty when a candidate map matches - i.e. "don't replay
       a map these players just played". 0xffff = unset.
-      LIVE MAP IDS. 01.00 (2026-08-18): 0x0e, 0x0f, 0x10, 0x13, 0x14, 0x15,
-      0x17 - seven, all unnamed. 01.11 (2026-08-19), NAMED by loading them:
-        0x1f (31) Checkpoint
-        0x31 (49) Lakeside
-        0x3a (58) Suburbs
-        0x21 (33) Bill's Town
-        0x1d (29) Financial Plaza
-        0x15 (21) Bookstore
+      LIVE MAP IDS - THE ID IS PER (MAP, MODE) VARIANT, NOT PER MAP.
+      Established 2026-08-19 and confirmed by out-of-sample PREDICTION: the same
+      map loaded under a different game mode yields a DIFFERENT id, and the mode
+      blocks are spaced exactly 0x11 (17) apart:
+          Survivors     = Supply Raid + 0x11
+          Interrogation = Supply Raid + 0x22
+      Confirmed pairs (each loaded and read off the ring head):
+        Checkpoint   Supply Raid 0x0e   Survivors 0x1f
+        Lakeside     Supply Raid 0x0f   Survivors 0x20   Interrogation 0x31
+      The prediction test: after pinning Checkpoint=0x0e (Supply Raid) and
+      Lakeside 0x0f/0x20, "Survivors Checkpoint" was predicted to be 0x1f BEFORE
+      loading it; the ring then read [001f,0020]. That is why the earlier
+      0x1f/0x31 records - briefly retracted as contradictory - are RIGHT: they
+      were simply the Survivors and Interrogation variants, named in sessions
+      whose find-match playlists were 6/7/8 and 11/12/13 respectively, while the
+      2026-08-19 late session used private Supply Raid matches.
+
+      ALL IDS OBSERVED, with the mode each was captured under:
+        0x0e (14) Checkpoint       Supply Raid
+        0x0f (15) Lakeside         Supply Raid
+        0x10 (16) Bill's Town      Supply Raid  (private match, 2026-08-19)
+        0x11 (17) University       Supply Raid  (private match, 2026-08-19)
+        0x12 (18) High School      Supply Raid  (private match, 2026-08-19)
+        0x13 (19) Downtown         Supply Raid  (private match, 2026-08-19)
+        0x14 (20) The Dam          Supply Raid  (private match, 2026-08-19)
+        0x15 (21) Bookstore        Supply Raid  (private match)
+        0x16 (22) Hometown         Supply Raid  (private match, 2026-08-19)
+        0x17 (23) Bus Depot        Supply Raid  (private match, 2026-08-19)
+        0x18 (24) Suburbs          Supply Raid  (private match, 2026-08-19)
+        0x19 (25) Wharf            Supply Raid  (private match, 2026-08-19)
+        0x1a (26) Water Tower      Supply Raid  (private match, 2026-08-19)
+        0x15 (21) Bookstore        Supply Raid  (private match)
+        0x1d (29) Financial Plaza  Supply Raid  (playlist 3)
+        0x1f (31) Checkpoint       Survivors
+        0x20 (32) Lakeside         Survivors
+        0x21 (33) Bill's Town      Survivors    (playlist 8)
+        0x22 (34) University       Survivors    (private match)
+        0x23 (35) High School      Survivors    (private match)
+        0x24 (36) Downtown         Survivors    (private match)
+        0x25 (37) The Dam          Survivors    (private match)
+        0x26 (38) Bookstore        Survivors    (private match)
+        0x27 (39) Hometown         Survivors    (private match)
+        0x28 (40) Bus Depot        Survivors    (private match)
+        0x29 (41) Suburbs          Survivors    (private match)
+        0x2a (42) Wharf            Survivors    (private match)
+        0x2b (43) Water Tower      Survivors    (private match)
+        0x2c (44) Coal Mine        Survivors    (private match)
+        0x2d (45) Capitol          Survivors    (private match)
+        0x2e (46) Financial Plaza  Survivors    (private match)
+        0x2f (47) Beach            Survivors    (private match)
+        0x30 (48) Checkpoint       Interrogation (private match, 2026-08-19)
+        0x31 (49) Lakeside         Interrogation (private match, 2026-08-19 -
+                                   previously known only via the three-way tie,
+                                   now also directly observed)
+        0x32 (50) Bill's Town      Interrogation (private match, 2026-08-19)
+        0x33 (51) University       Interrogation (private match, 2026-08-19)
+        0x34 (52) High School      Interrogation (private match, 2026-08-19)
+        0x35 (53) Downtown         Interrogation (private match, 2026-08-19)
+        0x36 (54) The Dam          Interrogation (private match, 2026-08-19)
+        0x37 (55) Bookstore        Interrogation (private match, 2026-08-19)
+        0x38 (56) Hometown         Interrogation (private match, 2026-08-19)
+        0x39 (57) Bus Depot        Interrogation (private match, 2026-08-19)
+        0x3a (58) Suburbs          Interrogation (playlist 13; also directly
+                                   reconfirmed in a private match, 2026-08-19)
+        0x3b (59) Wharf            Interrogation (private match, 2026-08-19)
+        0x3c (60) Water Tower      Interrogation (private match, 2026-08-19)
+        0x3d (61) Coal Mine        Interrogation (private match, 2026-08-19)
+        0x3e (62) Capitol          Interrogation (private match, 2026-08-19)
+        0x3f (63) Financial Plaza  Interrogation (private match, 2026-08-19)
+        0x40 (64) Beach            Interrogation (private match, 2026-08-19)
+      Unnamed, seen on 01.00 (all inside the Supply Raid block):
+        0x10, 0x13, 0x14, 0x17
+      IMPLIED but not yet loaded, from the +0x11 rule - treat as predictions to
+      be verified, not as records: Bill's Town Supply Raid 0x10 (0x10 IS in the
+      01.00 observed set, which is corroboration), Suburbs Supply Raid 0x18.
+
+      BLOCK INDEX (id - block base) IS A PLAIN ORDERED ROSTER. The Survivors
+      block fills contiguously from its base: 0x1f Checkpoint (0), 0x20 Lakeside
+      (1), 0x21 Bill's Town (2), 0x22 University (3), 0x23 High School (4),
+      0x24 Downtown (5),
+      0x25 The Dam (6),
+      0x26 Bookstore (7),
+      0x27 Hometown (8),
+      0x28 Bus Depot (9),
+      0x29 Suburbs (10),
+      0x2a Wharf (11),
+      0x2b Water Tower (12),
+      0x2c Coal Mine (13),
+      0x2d Capitol (14),
+      0x2e Financial Plaza (15),
+      0x2f Beach (16). Each was loaded and read
+      independently; the ordering is the game's own map roster order, not
+      alphabetical. An index therefore predicts the same map in every other
+      mode, e.g. University -> Supply Raid 0x11, Interrogation 0x33.
+
+      THE ROSTER ORDER IS SHARED ACROSS MODES - CONFIRMED 2026-08-19. Bookstore
+      is index 7 in BOTH blocks: Supply Raid 0x15 (0x15-0x0e=7), captured hours
+      earlier in a private Supply Raid match, and Survivors 0x26 (0x26-0x1f=7),
+      predicted from that index and then loaded. So the whole scheme is:
+
+          id = block_base(mode) + roster_index(map)
+          block_base: Supply Raid 0x0e, Survivors 0x1f, Interrogation 0x30
+
+      All three bases are cross-validated by a map appearing at the SAME index
+      in two different blocks: Bookstore index 7 (Supply Raid 0x15 / Survivors
+      0x26) and Financial Plaza index 15 (Supply Raid 0x1d / Survivors 0x2e) tie
+      Supply Raid to Survivors; Suburbs index 10 (Survivors 0x29 / Interrogation
+      0x3a) ties Survivors to Interrogation. Lakeside is a fourth tie, appearing
+      in all three blocks (0x0f / 0x20 / 0x31).
+
+      THE SURVIVORS BLOCK IS COMPLETE (2026-08-19): all 17 roster slots
+      0x1f..0x2f were individually loaded and read off the ring - no gaps, no
+      derivation. The roster is 17 maps, indices 0..16:
+          0 Checkpoint    1 Lakeside      2 Bill's Town   3 University
+          4 High School   5 Downtown      6 The Dam       7 Bookstore
+          8 Hometown      9 Bus Depot    10 Suburbs      11 Wharf
+         12 Water Tower  13 Coal Mine    14 Capitol      15 Financial Plaza
+         16 Beach
+      THE BLOCKS ARE EXACTLY PACKED: 17 maps against a 0x11 (17) stride leaves
+      ZERO slack, and Interrogation's base 0x30 abuts Beach's Survivors id 0x2f
+      directly. So the stride is not an arbitrary round number - it IS the map
+      count. (An earlier note here said the roster was 16 with one spare slot
+      per block; that was written before Beach was loaded and is wrong.)
+      Full derived ranges: Supply Raid 0x0e..0x1e, Survivors 0x1f..0x2f,
+      Interrogation 0x30..0x40.
+
+      ROSTER INDEX -> MAP (from the Survivors block, all directly loaded):
+          0 Checkpoint   1 Lakeside     2 Bill's Town  3 University
+          4 High School  5 Downtown     6 The Dam      7 Bookstore
+          8 Hometown     9 Bus Depot   10 Suburbs     11 Wharf
+         12 Water Tower 13 Coal Mine   14 Capitol     15 Financial Plaza
+      (10 from Interrogation 0x3a, 15 from Supply Raid 0x1d.)
+
+      THE SUPPLY RAID BLOCK IS ALSO COMPLETE (2026-08-19): all 17 roster slots
+      0x0e..0x1e were individually loaded and read off the ring - no gaps, no
+      derivation left. Every entry below was independently confirmed by
+      loading that exact map in a private Supply Raid match:
+          0x0e Checkpoint*  0x0f Lakeside*  0x10 Bill's Town*  0x11 University*
+          0x12 High School* 0x13 Downtown*   0x14 The Dam*      0x15 Bookstore*
+          0x16 Hometown*    0x17 Bus Depot*  0x18 Suburbs*     0x19 Wharf*
+          0x1a Water Tower* 0x1b Coal Mine*  0x1c Capitol*     0x1d Financial Plaza*
+          0x1e Beach*
+      (* = directly observed, not derived.) With this, Supply Raid and
+      Survivors are both fully pinned index-by-index. THE INTERROGATION BLOCK
+      IS NOW ALSO COMPLETE (2026-08-19): all 17 roster slots 0x30..0x40 were
+      individually loaded and read off the ring - no gaps, no derivation left,
+      not even for Lakeside/Suburbs which had previously been known only via
+      cross-block tie and are now directly reconfirmed too:
+          0x30 Checkpoint     0x31 Lakeside      0x32 Bill's Town
+          0x33 University      0x34 High School   0x35 Downtown
+          0x36 The Dam         0x37 Bookstore     0x38 Hometown
+          0x39 Bus Depot       0x3a Suburbs       0x3b Wharf
+          0x3c Water Tower     0x3d Coal Mine     0x3e Capitol
+          0x3f Financial Plaza 0x40 Beach
+
+      THE ENTIRE MAP-ID SPACE IS SOLVED (2026-08-19). Every one of the 51 ids
+      across all three mode blocks (0x0e..0x40) has been directly loaded and
+      read off the ring at least once. There are no remaining unknowns, no
+      derived-only entries, and no gaps.
+      ALL SEVEN 01.00 IDS ARE NOW DIRECTLY OBSERVED on 01.11 (2026-08-19), not
+      merely derived - each was loaded in a private Supply Raid match and read
+      off the ring head:
+          0x0e Checkpoint   0x0f Lakeside   0x10 Bill's Town  0x13 Downtown
+          0x14 The Dam      0x15 Bookstore  0x17 Bus Depot
+      (0x17 was the last holdout; roster index 9 was pinned by loading Bus Depot
+      in Survivors as 0x28.) It is
+      also strong evidence that ids are STABLE ACROSS BUILDS, since those 01.00
+      observations line up with the 01.11 roster - though no map has yet been
+      loaded on an 01.00 client to prove it directly.
+
+      A LIKELY BLOCK LAYOUT, consistent with every observation but NOT proven:
+      Supply Raid occupies 0x0e..0x1e, Survivors 0x1f..0x2f, Interrogation
+      0x30..0x40 - i.e. 17 map slots per mode starting at 0x0e, with a map's
+      index inside its block stable across modes (Checkpoint 0, Lakeside 1,
+      Bill's Town 2). Do not rely on the block bases until a third mode is
+      pinned for a map already known in two.
+
+      CONSEQUENCE FOR NAMING: a map name alone is not an id. Always record the
+      MODE alongside it, and prefer a private match where the mode and map are
+      both chosen deliberately - matchmaking votes make the loaded map
+      uncertain, which is what produced the false contradiction above.
+
       This ring is the project's only ground-truth source of map ids: load a
       KNOWN map, then read the id at entry 0 of the next card.
       THE RING RECORDS AT MAP *LOAD*, NOT AT MATCH COMPLETION (established
@@ -125,6 +299,14 @@ seq:
       CAVEAT: the ring is CLEARED when a client is booted back to the menu, not
       only on a full game restart - two naming attempts were lost that way on
       2026-08-18. Do not get booted between loading the map and reading a card.
+      CROSS-BUILD IDS LOOK STABLE (2026-08-19). Three maps named on 01.11 -
+      0x0e Checkpoint, 0x0f Lakeside, 0x15 Bookstore - are all inside the set
+      independently observed on 01.00 (0x0e, 0x0f, 0x10, 0x13, 0x14, 0x15,
+      0x17). That is what id stability across builds would look like, and it
+      retro-names three of the seven 01.00 observations. It is not yet proof:
+      no map has been loaded on an 01.00 client and had its id read. That one
+      test still settles it.
+
       CROSS-BUILD RANGES OVERLAP - CORRECTED 2026-08-19. The earlier reasoning
       here ("01.11's named values fall outside 01.00's observed range") was an
       artifact of the small 01.11 sample: every id then named (0x1f, 0x21, 0x31,

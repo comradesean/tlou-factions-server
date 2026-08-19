@@ -493,6 +493,35 @@ def synth_public_room_id(room_ptr):
     return struct.pack(">II", 0x50000000 | (seq & 0x0fffffff), room_ptr & 0xffffffff)
 
 
+def synth_private_room_id(room_ptr):
+    """Mint a globally-unique 8-byte room id for a room that is neither a party
+    object nor a find-match host - i.e. a party-started or private match on the
+    client's GAME room object (2026-08-19).
+
+    ROOT CAUSE this addresses: this was the one create path with no mint. It
+    fell through to `chunk[4:12]`, whose top word is RoomCreate wire offset 4:8
+    - documented in protos/0x12f_room_create.ksy as NEVER WRITTEN by the sender,
+    i.e. uninitialised client stack. The old comment claimed the value "only
+    needs to be nonzero and session-consistent"; stack residue guarantees
+    neither. Live 2026-08-19: comradesean's client sent pad_4=012a426c (room
+    012a426c013babd8) while mgnomad2's sent pad_4=00000000 on the same build -
+    so the same code path yields a unique id on one machine and the byte-
+    identical-across-clients id 00000000<room_ptr> on the other. That collision
+    is exactly the failure synth_party_room_id and synth_public_room_id were
+    written to fix; this path simply was never covered.
+
+    Distinct high-word tag (0x70000000) from the public (0x5) and party (0x6)
+    mints so the three are told apart in logs; shares the same sequence/lock so
+    uniqueness is global across all pools. Low word keeps the room_ptr so the
+    value stays nonzero (the client asserts m_roomId != 0,
+    net-event-player.cpp:560).
+    """
+    with _public_room_lock:
+        _public_room_seq[0] += 1
+        seq = _public_room_seq[0]
+    return struct.pack(">II", 0x70000000 | (seq & 0x0fffffff), room_ptr & 0xffffffff)
+
+
 def synth_party_room_id(room_ptr):
     """Mint a globally-unique 8-byte room id for a PARTY room (invite / direct
     Join Party), 2026-08-17.
@@ -1448,11 +1477,14 @@ def handle(conn, addr, log_lock, log):
                 max_players = struct.unpack(">H", chunk[0x24:0x26])[0] or 8
                 room_ptr = struct.unpack(">I", chunk[8:12])[0]
                 # 8-byte room identity echoed into Member wire 16:24 and the
-                # RoomJoined id-gate - kept as chunk[4:12] for continuity even
-                # though the audit shows offset 4:8 is never client-written
-                # (the value only needs to be nonzero and session-consistent;
-                # its low half is the room_ptr, guaranteeing nonzero).
-                room_id = chunk[4:12]
+                # RoomJoined id-gate. ALWAYS server-minted (2026-08-19) - see
+                # the three synth_*_room_id functions. This used to default to
+                # `chunk[4:12]`, but offset 4:8 is uninitialised client stack
+                # (protos/0x12f_room_create.ksy pad_4), so the id was neither
+                # guaranteed unique nor stable. Every branch below assigns it;
+                # None here makes an unassigned path fail loudly instead of
+                # silently shipping stack residue.
+                room_id = None
                 # UNIQUE PUBLIC ROOM ID (2026-08-17, coordination root-cause
                 # note §4): chunk[4:12] is `00000000 01383bd8` on every client,
                 # so two find-match hosts collide byte-for-byte and the
@@ -1524,6 +1556,16 @@ def handle(conn, addr, log_lock, log):
                     is_matchmaking_host = False
                 elif find_match_searching:
                     room_id = synth_public_room_id(room_ptr)
+                else:
+                    # Party-started / private match on the GAME room object.
+                    room_id = synth_private_room_id(room_ptr)
+                    emit(f"   [private-id] minted unique private room_id "
+                         f"{room_id.hex()} for {npid!r} (game object "
+                         f"{room_ptr:#010x}, no find-match search; replaces the "
+                         f"old uninitialised-stack chunk[4:12] fallthrough)")
+                if room_id is None or len(room_id) != 8:
+                    raise AssertionError(
+                        f"room_id was not minted for room_ptr {room_ptr:#010x}")
                 # RoomCreate's own wire offset 0xc:0x10 (4 bytes) - live-
                 # evidenced 2026-08-15 as a likely map/level identifier, see
                 # build_room_joined's docstring. Echo it straight back.
