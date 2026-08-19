@@ -103,6 +103,42 @@ live in the data-compiler payload the game loads at runtime.
   that could still name the interior fields, since no reader exists to trace
   backward from.
 
+  IMPORTANT - IF PS4 ACCESS EVER HAPPENS: The Last of Us Remastered (PS4) is
+  the only realistic route left to a genuine retail server for this - the
+  PS3 original's ND servers are long dead, but Remastered's may still be up
+  since it shipped years later. If PS4 hardware/access is ever obtained,
+  capture `0x136 RoomSearch` traffic (or Remastered's equivalent opcode, IF
+  ONE EXISTS - the PS4 build's session-manager protocol may not use the same
+  opcode numbering as this repo's PS3 findings; do not assume opcode 0x136
+  or these exact byte offsets carry over without re-deriving them the way
+  this project derived the PS3 ones). What to capture and why:
+    - The FULL wire capture of the whole session-manager connection, not
+      just the game-list reply - `attr_tail`'s producer/consumer chain spans
+      multiple opcodes on the PS3 side, and the PS4 equivalent may too.
+    - MULTIPLE game-list entries taken while DELIBERATELY varying exactly
+      ONE lobby/search property at a time between captures (game mode, map,
+      playlist, public/private, NAT type, party size, host DLC ownership) -
+      this is the "vary one option at a time" method already on record above
+      as the only way left to attribute specific byte changes to specific
+      causes, since PS3-side static analysis found no in-client reader to
+      trace backward from.
+    - The PS3 EBOOT's structural findings likely transfer as a MAP, not as
+      exact bytes: this repo's `attr_tail` sits at PS3 wire offset `0x24:0x38`
+      of a 36-byte attribute block whose first 16 bytes are `host_npid`
+      (protos/0x136_room_search.ksy). If Remastered kept a similar wire
+      shape, look for an equivalent NpId-sized block and a same-length
+      trailing span in the equivalent list-reply message; if the shape
+      changed, the whole message needs re-deriving from scratch (Kaitai spec
+      + Who/Why/Where, same method as every other proto in this repo).
+    - Tools already in this repo that would carry over: `research/tools/
+      eboot_analysis` (works on any ELF given updated `EBOOT` path/segment
+      map in `eb.py`) for static tracing on the PS4 binary if it's ever
+      decrypted/available, and `research/tools/catch_tcp.py` /
+      `server/logs/wire.jsonl`-style capture logging for the live side.
+    - Record findings the same way as the rest of this repo: a dated note in
+      `research/notes/`, then fold the confirmed fields into a `.ksy` spec
+      with Who/Why/Where evidence, not directly into this file.
+
 - **`0x12f room_settings_tail` / `0x130 room_object_tail`** - 32 bytes each,
   provenance known (copies of specific room-object spans), interiors unmapped.
 
