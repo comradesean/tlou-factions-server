@@ -367,15 +367,37 @@ seq:
     doc: |
       Offset 18:20. First half of BE u32 `P+0x654` copied verbatim
       (`lbz 0x654..0x655` @ 0x003b1714+, byte stores to r1+0x8a/0x8b). `P+0x654`
-      is the first word of the character-customization block; the UI reads this
-      as card cell index 2 (`blob+0xE+idx*2`). CORRECTED 2026-08-18 (was inside
-      `reserved_10`). High confidence on bytes/source, medium on display meaning.
+      is a SEPARATE, PRECEDING field, not literally "word 0 of" the
+      `custom_appearance` struct - `custom_appearance` itself begins 12 bytes
+      later at `P+0x0660` (`protos/profile_21.ksy`'s `member_blob_word` @
+      `P+0x0654` is the correctly-named field for this source; the phrase
+      "word 0 of the customization block" in that file's doc is a loose
+      description, not a structural claim - fixed here for precision). The
+      UI reads this as card cell index 2 (`blob+0xE+idx*2`).
+
+      EXHAUSTIVELY RE-CHECKED 2026-08-19 against live traffic, not just the
+      original 2 samples: every `0x13a` frame in `server/logs/wire.jsonl`
+      (842 total) has this field at exactly zero - including AFTER the
+      profile S3 PUT/GET round-trip was implemented and confirmed working
+      (`server/http_gateway.py`'s `build_put_response`; real, non-empty
+      `profile.21` files exist for multiple accounts with genuine non-zero
+      DATA ELSEWHERE in the same file, e.g. `custom_appearance`'s
+      `equipped_item_ids`). This rules out "the round-trip just needs
+      fixing" as the blocker - the round-trip works, and this specific word
+      is still always zero for every account observed. The real blocker is
+      unidentified: either this word requires some specific client action
+      never yet triggered by these accounts (distinct from whatever writes
+      `custom_appearance`'s other fields, which DO show real values), or it
+      is DC-asset-dependent and would need non-zero live data plus a DC
+      table to interpret even if triggered. High confidence on bytes/source;
+      display meaning remains unresolved, now on a much larger evidence base.
   - id: card_stat_3
     type: u2
     doc: |
       Offset 20:22. Second half of the same BE u32 `P+0x654` (byte stores to
-      r1+0x8c/0x8d @ 0x003b1730+). UI card cell index 3. Same provenance and
-      confidence as card_stat_2.
+      r1+0x8c/0x8d @ 0x003b1730+). UI card cell index 3. Same provenance,
+      the same 842-frame exhaustive re-check, and the same still-zero result
+      as `card_stat_2` - see that field's doc.
   - id: pad_16
     size: 10
     doc: |

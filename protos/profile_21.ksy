@@ -83,7 +83,7 @@ types:
       member_blob_word:
         pos: 0x064C
         type: u4
-        doc: "P+0x0654. Word 0 of the customization block (see custom_appearance below). Copied verbatim into the member card (member_data card_stat_2/card_stat_3). 0 in both samples."
+        doc: "P+0x0654. A separate word PRECEDING the custom_appearance block (which itself starts 12 bytes later, at P+0x0660 - not literally part of that struct despite an earlier version of this doc calling it \"word 0\" of it). Copied verbatim into the member card (member_data card_stat_2/card_stat_3). RE-CHECKED 2026-08-19 against 842 live 0x13a frames (not just the original 2 samples): still exactly zero in every one, even after the S3 profile round-trip was implemented and confirmed working with genuine non-zero data elsewhere in the same file (custom_appearance's equipped_item_ids etc). See member_data.ksy's card_stat_2 doc for the full finding."
       custom_appearance:
         pos: 0x0658
         type: custom_appearance
