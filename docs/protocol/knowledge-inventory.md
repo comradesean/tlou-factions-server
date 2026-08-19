@@ -181,10 +181,15 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
 
 ## TIER 2 - MECHANISM KNOWN, MEANING PARTIAL
 
-34. **`room_field_0c` / `field_0c`** (`0x12f`, `0x135`) - `*(u32*)(obj+0x0c)`,
-    map (or map-like) selection; team component now RULED OUT. Unknown: which map
-    each of `0x09`/`0x12`/`0x13`/`0x5a`/`0x63` is, and whether find-match's
-    invariant `0x02` is a real map id or an any/random sentinel.
+34. **`room_field_0c` / `field_0c`** (`0x12f`, `0x135`) - `*(u32*)(obj+0x0c)`, a
+    ROOM CONTEXT / MODE descriptor. Team component RULED OUT (one value spans all
+    three team values), and map-id RULED OUT: across 131 live frames with zero
+    crossover, `0x12` occurs only on the PARTY room object and `0x02`/`0x09`/
+    `0x13` only on the GAME room object - a party lobby has no map. Lead:
+    `0x09`/`0x13` plausibly encode custom-game MODE (a friend-card presence
+    capture during one read "Checkpoint / SUPPLY RAID"). Unknown: what
+    `0x09`/`0x13` and the historical `0x5a`/`0x63` name, and whether find-match's
+    invariant `0x02` is the matchmade context id or an any/random sentinel.
 35. **`room_flags_e8` / `room_flags_10`** - `*(u32*)(obj+0xE8)` conditionally
     OR'd with `0x40000000`. Low 20 bits constant across captures; the `oris` gate
     condition is outside the traced function body.

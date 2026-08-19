@@ -112,15 +112,39 @@ team u16 at wire 0xb0:
 `0x13` spans the COMPLETE team domain - the team byte takes only 0, 1 and 2, and
 a single `field_0c` value occurs with every one of them. If `field_0c` encoded
 team in any bit, a fixed `field_0c` would force a fixed team; instead one value
-covers every team there is. `field_0c` carries no team component, and the
-remaining reading is map (or map-like) selection only.
+covers every team there is. `field_0c` carries no team component. (What it DOES
+carry is narrowed further in 4b below - it is not a map id either.)
+
+### 4b. It is not a map id either - it splits by ROOM OBJECT
+
+131 live RoomCreate frames, zero crossover:
+
+| field_0c | room object | count |
+|---|---|---|
+| 0x12 | PARTY room (`0x01387f58`) | 6 |
+| 0x02 | GAME room (`0x01383bd8`) | 92 |
+| 0x09 | GAME room | 12 |
+| 0x13 | GAME room | 21 |
+
+A party lobby has no map, so a value constant across every party room and absent
+from every game room cannot be a map identifier. `obj+0x0c` is better read as a
+ROOM CONTEXT / MODE descriptor of whichever room object is being created: the
+party object carries a constant 0x12; game rooms carry 0x02 matchmade and
+0x09/0x13 on custom games.
+
+LEAD: a friend-card presence capture during a live custom game read
+"Checkpoint / SUPPLY RAID". Factions custom games are mode-selectable, so
+0x09/0x13 plausibly encode MODE rather than map - which would also explain the
+2026-08-16 confound where they appeared to track TEAM with map held constant,
+since mode and faction are set on the same lobby screen. Unresolved: the
+historically logged 0x5a (90) and 0x63 (99) are too many for a two-mode reading.
 
 Second observation: `0x135` FindMatch carries `field_0c = 0x00000002` in 411/411
 frames, and every RoomCreate reached via find-match carries `0x02` as well, while
-custom games carry `0x09`/`0x12`/`0x13`. Open sub-question: whether `0x02` is a
-real map id that matchmaking always resolves to, or an any/random sentinel. A
-custom game with a deliberately chosen map, repeated for a second map, names the
-values directly.
+custom GAME rooms carry `0x09`/`0x13` (`0x12` is the party object, per 4b). Open
+sub-question: whether `0x02` is the matchmade-game context id or an any/random
+sentinel. Naming `0x09`/`0x13` needs a capture that changes ONE lobby option at a
+time - mode held constant while the map changes, then the reverse.
 
 ## 5. `0x142` HostRank - live entry data
 

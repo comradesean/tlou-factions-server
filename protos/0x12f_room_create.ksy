@@ -87,9 +87,31 @@ seq:
       would force a fixed team; instead one value covers every team there is, so
       this field carries NO team component. Remaining reading: map (or map-like)
       selection only.
+      NOT A PURE MAP ID - IT SPLITS BY ROOM OBJECT (2026-08-18, 131 live
+      RoomCreate frames, zero crossover):
+        field_0c=0x12 occurs ONLY on the PARTY room object (room_ptr 0x01387f58), x6
+        field_0c=0x02 occurs ONLY on the GAME room object (0x01383bd8), x92
+        field_0c=0x09 occurs ONLY on the GAME room object, x12
+        field_0c=0x13 occurs ONLY on the GAME room object, x21
+      A party lobby has no map, so a value that is constant for every party room
+      and never appears on a game room cannot be a map identifier. Better
+      reading: obj+0x0c is a ROOM CONTEXT / MODE descriptor, read from whichever
+      room object is being created - the party object carries a constant 0x12,
+      while game rooms carry 0x02 on the matchmade path and 0x09/0x13 on custom
+      games.
+      LEAD on the custom-game pair: a friend-card presence capture during a live
+      custom game read "Checkpoint / SUPPLY RAID", and Factions custom games are
+      mode-selectable, so 0x09/0x13 plausibly encode MODE (e.g. Supply Raid vs
+      Survivors) rather than map. That would also explain the old 2026-08-16
+      confound where 0x09/0x13 appeared to track TEAM with map held constant -
+      mode and faction are set on the same lobby screen. Unresolved: the
+      historically logged 0x5a (90) and 0x63 (99), which are too many values for
+      a two-mode reading and may be a third mode or a genuine map component.
+      Naming these needs a capture that changes ONE lobby option at a time.
+
       OPEN SUB-QUESTION: find-match always sends 0x02 here (and 0x135 sends 0x02
-      in 411/411 frames), while custom games send 0x09/0x12/0x13 - so 0x02 may be
-      a real map id matchmaking always resolves to, or an any/random sentinel.
+      in 411/411 frames) - so 0x02 is either the matchmade-game context id or an
+      any/random sentinel.
       A custom game with a deliberately chosen map, repeated for a second map,
       names the values directly. Its real home is room_obj+0x0c; the writer of
       that offset (vtable-dispatched, not found statically) would name it
