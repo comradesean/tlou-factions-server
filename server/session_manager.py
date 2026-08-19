@@ -245,6 +245,14 @@ CLIENT_BUILDS = {
     0x01383bd8: ("01.00", 0x01387f58),
     0x013babd8: ("01.11", 0x013bf068),
 }
+# Matchmaking MODE values seen in room_field_0c / 0x135 field_0c on the
+# find-match path, stable across builds: 0x02 = Supply Raid, 0x03 = Survivors.
+# Private and party creates never carry these - they carry build-specific values
+# (0x09/0x12/0x13 on 01.00, 0x58/0x5a on 01.11). This is the ONLY use we make of
+# room_field_0c, and it is deliberately narrow: see protos/0x12f_room_create.ksy
+# for why that field is otherwise not trusted.
+MATCHMAKING_MODES = {0x02, 0x03}
+
 GAME_ROOM_PTRS = set(CLIENT_BUILDS)
 PARTY_ROOM_PTRS = {party for _ver, party in CLIENT_BUILDS.values()}
 KNOWN_ROOM_PTRS = GAME_ROOM_PTRS | PARTY_ROOM_PTRS
@@ -1327,6 +1335,14 @@ def handle(conn, addr, log_lock, log):
                 # evidenced 2026-08-15 as a likely map/level identifier, see
                 # build_room_joined's docstring. Echo it straight back.
                 map_id = chunk[0xc:0x10]
+                # room_obj+0x0c. Used for exactly ONE decision - "is this a
+                # matchmaking self-host?" - and nothing else; see
+                # protos/0x12f_room_create.ksy for why the field is otherwise
+                # untrusted. A matchmaking host carries the MODE here (0x02/
+                # 0x03); private and party creates carry build-specific values.
+                room_field_0c = struct.unpack(">I", chunk[0xc:0x10])[0]
+                is_matchmaking_host = (find_match_searching
+                                       or room_field_0c in MATCHMAKING_MODES)
                 # RoomCreate's own wire offset 0xb0:0xb2 (2 bytes) - CONFIRMED
                 # 2026-08-16 via ~24 live captures spanning every map and both
                 # teams, zero exceptions: 0x0000=unset/spectator, 0x0001=Blue,
@@ -1490,13 +1506,33 @@ def handle(conn, addr, log_lock, log):
                         # PUBLIC iff this client reached RoomCreate via find-match
                         # (0x135 preceded it). Only public rooms enter the
                         # find-match list; private/custom games never do.
-                        "public": find_match_searching,
+                        # PUBLIC iff this is a matchmaking host. TWO ways to
+                        # be one, because the builds differ (2026-08-19):
+                        #   01.00 searches FIRST and self-hosts if nothing is
+                        #         found, so a 0x135 precedes the RoomCreate.
+                        #   01.11 SELF-HOSTS FIRST and only searches after
+                        #         abandoning that room, so NO 0x135 precedes it
+                        #         (live: room created 00:40:03 with no search,
+                        #         first 0x135 at 00:40:47 after it was left).
+                        # Requiring the search alone registered every 1.11
+                        # matchmaking host as PRIVATE, so it was never
+                        # advertised and 1.11 matchmaking could not work at all.
+                        # The self-host is still identifiable: its field_0c
+                        # carries the MODE it is hosting (0x02/0x03), which
+                        # private creates never do.
+                        "public": is_matchmaking_host,
                         # The playlist this room serves, taken from the SEARCH
                         # that preceded it (0x135 field_0c), not from this
                         # RoomCreate's own room_field_0c - the room field is not
                         # reliably reset and has been seen stale. None = unknown,
                         # which the 0x136 filter treats as "offer to anyone".
-                        "mode": find_match_mode if find_match_searching else None,
+                        # Playlist this room serves. Prefer the SEARCH that
+                        # preceded it (authoritative - see 0x135's schema); fall
+                        # back to the room's own field only when there was no
+                        # search at all, which on 01.11 is the normal case for a
+                        # matchmaking self-host and is then the only signal.
+                        "mode": (find_match_mode if find_match_searching
+                                 else (room_field_0c if is_matchmaking_host else None)),
                         # Game build of the client that owns this room, from its
                         # own room-object pointer. None = unrecognised build,
                         # which the 0x136 filter treats as "offer to anyone".
