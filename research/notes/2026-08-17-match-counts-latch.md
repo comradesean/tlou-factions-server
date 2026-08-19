@@ -13,16 +13,36 @@ task-manager-online unit small-data base `r30 = *(0x01305870-30960) = 0x01272f78
 `0x0126afe8` → object `0x013835c0` (g_70). Every address below was read off
 `powerpc64-linux-gnu-objdump` disassembly, not guessed.
 
+> **CORRECTION 2026-08-18 — the "only setter" claim below is WRONG.**
+> This note originally asserted (§0.1, §1.1) that `0x3f020c` is the sole write to
+> `g_70[0x6C]`, and that the other eight `bl 0x3abf70` sites hit different objects
+> (`0x0132c530`, `0x01231258`). That conclusion came from applying **one** anchor —
+> the task-manager-online base `0x01272f78` — to displacements taken from **other
+> compilation units**, each of which has its own small-data base. Re-resolved
+> per-site, **all nine setter sites write the same object `0x013835c0` (g_70),
+> byte VMA `0x0138362c`.** The full corrected table is in §1.1. The immediate
+> consequence: a session-manager socket failure sets this byte (`0x00353430`,
+> `r4 = 1`), so the latch is *not* exclusively armed by the post-match settlement
+> path, and the "this match counts" reading of the byte should be treated as
+> unproven. See `2026-08-18-session-manager-connect-and-reconnect.md` §4 and the
+> anchor-hygiene note in §1.1 below. Everything downstream of the *gate* itself
+> (the `0x3f2194` polarity, the `>4500` predicate, the custom-vs-matchmade
+> empirics) is unaffected and still stands.
+
 ---
 
 ## 0. TL;DR — the matches are CUSTOM (private) games, which are not stats-eligible
 
-1. **`g_70[0x6C]` has exactly ONE setter in the whole EBOOT: `0x3f020c`**, inside
-   `FUN_003f00c8` (an *unnamed transient state* — record index 2 — of the 11-state
-   in-match sub-machine in `task-manager-online.cpp`). All eight other callers of
-   the byte-setter `FUN_003abf70` write offset `0x6C` on **different** objects
-   (`0x0132c530`, `0x01231258`), never g_70. So the latch is armed by, and only
-   by, this one code path. (Confidence: **high**.)
+1. ~~**`g_70[0x6C]` has exactly ONE setter in the whole EBOOT: `0x3f020c`**~~
+   **SUPERSEDED 2026-08-18 — see the correction banner above.** `0x3f020c`
+   (inside `FUN_003f00c8`, an *unnamed transient state* — record index 2 — of the
+   11-state in-match sub-machine in `task-manager-online.cpp`) is **one of nine**
+   writers of `g_70[0x6C]`; all nine resolve to the same object. It remains the
+   only writer whose predicate is a *post-match settlement* check, which is what
+   made it interesting, but it is not unique and the byte cannot be read as a
+   dedicated "this match counts" latch on that basis alone. (Confidence in the
+   corrected statement: **high** — every site re-resolved with its own anchor,
+   §1.1.)
 
 2. **The arming predicate is a client-internal post-match check**, not a server
    message or room attribute:
@@ -58,29 +78,74 @@ task-manager-online unit small-data base `r30 = *(0x01305870-30960) = 0x01272f78
      never reach its win condition (no opponents to score against / eliminate).
 
 **Net:** this is **not** fixable by seeding `profile.21` or by a single RoomCreate
-field. The latch is set by the client's own settlement of a *counted* game; the
+field. The `0x3f020c` path is armed by the client's own settlement of a match; the
 server's lever is to make the client play a **matchmade** game instead of a
-custom one (plus keeping the P2P link alive to match-end). See §5.
+custom one (plus keeping the P2P link alive to match-end). See §5. (Caveat added
+2026-08-18: `0x3f020c` is not the only writer of the byte — §1.1 — so "the latch
+is armed only by a counted game" no longer follows from the setter analysis alone.
+The custom-vs-matchmade conclusion rests on the live-log evidence in §0.3, which
+is unaffected.)
 
 ---
 
-## 1. The unique setter and the exact trigger chain
+## 1. The setter sites and the exact trigger chain
 
-### 1.1 Setter site (verified)
+### 1.1 Setter sites (re-verified 2026-08-18)
 
 `FUN_003abf70` = `stb r4,108(r3); blr` — a generic "write byte at +0x6C".
 `FUN_003abf68` = `lbz r3,108(r3); blr` — the matching reader. Nine `bl 0x3abf70`
-call sites exist (`scan_bl.py 3abf70`); their `r3`/`r4`:
+call sites exist (`scan_bl.py 3abf70`).
 
-| site | object (r3 via anchor) | r4 | is it g_70? |
-|---|---|---|---|
-| `0x34b538`,`0x353430`,`0x354278`,`0x354f90` | `0x0132c530` (`-32616`) | 1/0 | no |
-| `0x3af7a8`,`0x3b0a14`,`0x3b0ea4` | `0x01231258` (`-32664`) | 1 | no |
-| `0x3555bc` | r31 (passed-in) | 1 | no |
-| **`0x3f020c`** | **`0x013835c0` (`-32656`)** | **1** | **YES — g_70[0x6C]=1** |
+**Corrected 2026-08-18.** Each site's `r30` is resolved from the `lwz r30,-N(r2)`
+*inside its own containing function*, with `r2 = 0x01305870`; the anchor is the
+**contents** of the TOC slot, and it differs per compilation unit. The earlier
+version of this table reused the task-manager-online anchor `0x01272f78` for
+every site, which is what produced the phantom objects `0x0132c530` (that is what
+`0x01272f78 - 32616` yields) and `0x01231258` (`0x01272f78 - 32664`).
 
-`0x3f020c` is in `FUN_003f00c8`; `fnglobals` confirms `0x3f0204 lwz r3,-32656(r30)`
-→ slot `0x0126afe8` → `0x013835c0`. This is the **only** write to g_70[0x6C].
+| site | containing fn | TOC slot | anchor (r30) | disp | global slot | r3 | r4 |
+|---|---|---|---|---|---|---|---|
+| `0x0034b538` | `FUN_0034b288` | `0x012fde9c` | `0x0126fe20` | `-32616` | `0x01267eb8` | **`0x013835c0`** | 1 |
+| `0x00353430` | `FUN_003532c8` | `0x012fde9c` | `0x0126fe20` | `-32616` | `0x01267eb8` | **`0x013835c0`** | 1 |
+| `0x00354278` | `FUN_00353e34` | `0x012fde9c` | `0x0126fe20` | `-32616` | `0x01267eb8` | **`0x013835c0`** | **0** |
+| `0x00354f90` | `FUN_00354ee0` | `0x012fde9c` | `0x0126fe20` | `-32616` | `0x01267eb8` | **`0x013835c0`** | 1 |
+| `0x003555bc` | `FUN_00355550` | `0x012fde9c` | `0x0126fe20` | `-32616` (via `r31`, `0x0035577c`) | `0x01267eb8` | **`0x013835c0`** | 1 |
+| `0x003af7a8` | `FUN_003af46c` | `0x012fdf14` | `0x01271a3c` | `-32664` | `0x01269aa4` | **`0x013835c0`** | 1 |
+| `0x003b0a14` | `FUN_003afb74` | `0x012fdf14` | `0x01271a3c` | `-32664` | `0x01269aa4` | **`0x013835c0`** | 1 |
+| `0x003b0ea4` | `FUN_003afb74` | `0x012fdf14` | `0x01271a3c` | `-32664` | `0x01269aa4` | **`0x013835c0`** | 1 |
+| `0x003f020c` | `FUN_003f00c8` | `0x012fdf80` | `0x01272f78` | `-32656` | `0x0126afe8` | **`0x013835c0`** | 1 |
+
+Nine sites, one object. The written byte is `0x013835c0 + 0x6c` = VMA
+`0x0138362c` in every case. `0x00354278` is the only site that writes **0** — it
+is in NetStartup, i.e. the byte is cleared when the network stack is (re)started
+and set by everything else.
+
+The readers agree: of the ~25 `bl 0x3abf68` sites, every one that could be
+resolved (`0x00347848`, `0x003478c8`, `0x0034b5b8`, `0x0034bf90`, `0x0034c174`,
+`0x0034c798`, `0x0034cab0`, `0x0034f908`, `0x0034f930`, `0x003506e0`,
+`0x00350bf4`, `0x0035c738`, `0x0035cc80`, `0x0035da10`, `0x0035f2ac`,
+`0x003986b8`, `0x003adf60`, `0x003b92c4`, `0x003cab8c`, `0x003d02b4`,
+`0x003ee854`, `0x003f2184`) also resolves to `0x013835c0`, across seven different
+small-data anchors (`0x0126fe20`, `0x01270650`, `0x012714e8`, `0x0127197c`,
+`0x01271b1c`, `0x012722c8`, `0x012723d8`, `0x01272f78`). The crediting gate
+itself is one of them: `0x003f20b0 lwz r31,-32656(r30)` → `0x0126afe8` →
+`0x013835c0`, read at `0x003f2184`.
+
+**What this does and does not change.** The gate polarity is unchanged and still
+verified: `0x003f2190 cmpwi cr7,r3,0` / `0x003f2194 beq cr7,0x3f3500` — a **zero**
+byte skips the crediting body, so the body requires the byte set (or one of the
+two preceding bytes at `0x003f2164`/`0x003f2174`). What changes is the *name*:
+a byte that is also set by a socket poll failure (`0x00353430`), by a 3000-unit
+timeout (`0x00354f90`), by a >100 counter (`0x0034b538`), by `FUN_003aeee8`
+returning -1 (`0x003af7a8`, `0x003b0a14`, `0x003b0ea4`), and by a not-signed-in
+check (`0x003555bc`) — and cleared by NetStartup (`0x00354278`) — does not behave
+like a "this match counts" flag. It behaves like an *online-session-state /
+network-fault* byte. Its readers are consistent with that: `FUN_0034f8bc` and
+`FUN_003505c8` use it to push the "disconnected from game servers" screen,
+`FUN_003ca9d0` uses it to abort matchmaking with -1 (`0x003cab8c` →
+`0x003cb130`), and `FUN_003ee6b4` — the abnormal-leave check — reads it at
+`0x003ee854`. **A precise semantics for `g_70[0x6C]` is now an open question;**
+do not build server behaviour on the "match counts" reading until it is settled.
 
 ### 1.2 What `FUN_003f00c8` is (record 2 of the in-match sub-machine)
 

@@ -1,7 +1,8 @@
 # Protocol knowledge inventory
 
 What is fully understood, what is partly understood, and what is unknown, across
-all 44 `.ksy` specs (262 declared fields). Current as of 2026-08-18.
+all 50 `.ksy` specs (45 message specs + 5 shared types; 260 declared fields).
+Current as of 2026-08-18, end of the JIP / live-capture session.
 
 The bar for **Tier 1** is the project's reserved standard applied to a whole
 message or field: a NAME, a DEFINITION (what the bytes are), and a game or
@@ -104,7 +105,11 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     creating a phantom slot and self-signaling. Deliberately unused.
 11. **`0x133` RoomLeaving / `0x134` RoomLeave** - member departure and the
     server's relay of it to the remaining members, keyed by `member_id`.
-12. **`0x139` RoomClosed** - room teardown notification.
+12. **`0x139` RoomClosed** - server-initiated teardown of a whole room. Its
+    handler runs the same full teardown routine `0x133` uses AND zeroes the
+    room's own id fields, so it means "the room is gone", distinct from `0x138`
+    ("you personally were kicked"). Sent to every survivor when a room's owner
+    departs, and on the server's graceful shutdown.
 13. **`0x137` Kickout / `0x138` Kickedout** - `target_member_id` +
     `requester_member_id`. Reason fully established the hard way: `0x138` means
     "you are kicked", so it must never be sent as an acknowledgement - doing so

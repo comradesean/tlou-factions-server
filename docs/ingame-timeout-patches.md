@@ -1,12 +1,29 @@
 # In-game timeout / kick patches
 
+> **DO NOT APPLY. THESE PATCHES CRASH THE GAME.**
+>
+> Status corrected 2026-08-18. They were derived statically and never
+> validated on a running client; applying them crashed the game. The
+> referenced patch file `client/patches/ingame_timeouts_patch.yml` is
+> deliberately NOT tracked in git for that reason, so this document describes
+> an artifact you will not find in the repo.
+>
+> This file is kept only for the RESEARCH in it - the located timeout branches
+> and their addresses are believed correct and are useful for understanding the
+> shipped timeouts. The PATCHES built from them are not.
+>
+> Join-in-progress was solved on 2026-08-18 without any client timeout patch;
+> see research/notes/2026-08-18-jip-handoff.md. There is no known reason to
+> revive these.
+
 Client-side (RPCS3) patches that disable the in-game and matchmaking-flow
 timeouts which otherwise boot a player out of a session or a matchmaking wait.
 Intended for multi-client join-in-progress development testing, where a session
 must be held open longer than the shipped timeouts allow. Patch file:
 `client/patches/ingame_timeouts_patch.yml`.
 
-- **Status:** testing-only. Each patch neutralizes a single timeout branch and
+- **Status:** BROKEN, do not apply (see the warning above). The
+  original claim was "testing-only", which understated it. Each patch neutralizes a single timeout branch and
   preserves genuine user / host / error / status leaves.
 - **Address convention:** every address is the VMA, which equals the RPCS3
   effective address and the offset shown in `research/disasm/full.asm` (no
