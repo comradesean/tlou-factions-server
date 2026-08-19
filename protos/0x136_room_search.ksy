@@ -102,4 +102,32 @@ types:
           live-confirmed load-bearing, not a guess.
       - id: attr_tail
         size: 20
-        doc: "Offset 0x24:0x38. Remainder of the 36-byte attribute block (map/mode/etc.) - not field-mapped; stub sends zero."
+        doc: |
+          Offset 0x24:0x38. The unmapped remainder of the 36-byte attribute
+          block whose first 16 bytes are host_npid. NOT FIELD-MAPPED, and the
+          name says so deliberately: no interior field of these 20 bytes has a
+          confirmed offset, width or meaning. Any "map/mode/etc." reading is a
+          guess from the block's role, not a decode - do not treat it as one.
+
+          The server sends 20 zero bytes and matchmaking works end-to-end
+          (browse -> join -> counted, credited match), so zeros are SAFE in the
+          sense that nothing observed is broken by them. That is an absence of
+          evidence, not a proof of inertness: it only establishes that every
+          consumer reached so far either ignores the span or tolerates zero as
+          a legal value. A consumer that keys off it would show up as a
+          cosmetic or filtering difference in the browser, not as a hard
+          failure.
+
+          Two things together would unblock it, and neither alone is enough:
+            (a) decompile the copy of this block on BOTH sides - the 0x136
+                deserializer (the 0x136 case of FUN_00ad7604, which byte-copies
+                from wire[0x14] into the entry object) and the CONNECT_TO_HOST
+                handler `_opd_FUN_003b2a9c`, which copies the entry's attribute
+                block again - and find the loads that read inside 0x24:0x38;
+            (b) correlate against a live capture in which the host varies ONE
+                search/lobby option at a time (mode, map, playlist, privacy,
+                NAT, party size) between otherwise identical rooms, so each
+                changed byte is attributable to exactly one option.
+          Static analysis alone gives offsets without meanings; captures alone
+          give byte diffs without proof of what reads them.
+          See docs/OPEN-QUESTIONS.md.

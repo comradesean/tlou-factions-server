@@ -46,7 +46,7 @@ Callers of 00acc424:
 Exactly **10 code call sites**, covering 4 of the 5 sibling names plus
 ticket-server. `invite-server` has zero entries in this list.
 
-## Roster as of 2026-08-19 (EIGHT names, five handled)
+## Roster as of 2026-08-19 (EIGHT names, six handled)
 
 Two services were added by game version 01.11 and are absent from 01.00 - a byte
 search of both EBOOTs finds neither string in the older build:
@@ -58,7 +58,7 @@ search of both EBOOTs finds neither string in the older build:
 | `facebook-server` | both | yes | NpId <-> Facebook id mapping |
 | `heartbeat-server` | both | yes (2026-08-19) | 314 hellos from 01.00 alone; reply is never parsed |
 | `report-server` | **01.11 only** (`0xeacdc0`) | yes (2026-08-19) | `is-banned <npid>`; see protos/0x11_report_line.ksy |
-| `gamelist-server` | **01.11 only** (`0xeb2690`) | no | `game-add <session-id> <player>...`; write-only, no read verb exists |
+| `gamelist-server` | **01.11 only** (`0xeb2690`) | yes (2026-08-19) | `game-add <session-id> <player>...`; write-only, no read verb exists; reply never parsed. See below and `docs/protocol/0x11_gamelist_line.md` |
 | `single-player-server` | both | no | has never been observed sending anything; grammar unknown |
 | `invite-server` | both | no | confirmed dead code, see below |
 
@@ -78,7 +78,7 @@ table slot to build a connection. Every other sibling has both a data-table
 entry AND one or more real code call sites; `invite-server` has only the
 former.
 
-A follow-up pass (`research/notes/2026-08-15-invite-server-dead-code-confirmed.md`)
+A follow-up pass (`research/joinparty/2026-08-15-invite-server-dead-code-confirmed.md`)
 extended this check to the rest of `invite-server`'s literal pool - it sits
 alongside four sibling strings from the same source file (`game/net/net-invite.cpp`,
 per its own `__FILE__` string at `0x00e7d0e0`): two command formats
@@ -104,7 +104,7 @@ while the identical check finds real call sites on both sides of it in the
 same table. Best read: the invite/friend-invite feature's client-side
 networking code was cut from this particular build (whole translation unit
 dropped at link time) while the string/table-slot metadata was left in
-place; see `research/notes/2026-08-15-createparty-trace.md` for a live
+place; see `research/joinparty/2026-08-15-createparty-trace.md` for a live
 trace of the in-game "invite to party" action that also did not find this
 code path, consistent with the game's actual invite mechanism (if any, in
 this build) going through Sony's native `sceNp` friends/invite API instead.
@@ -174,6 +174,32 @@ call bounded at `0x100` (256) bytes, then closes. No response-parsing loop
 call succeeding. Runs as a dedicated PPU thread spawned specifically for
 this exchange (`sys_ppu_thread_exit(0)` at the end), i.e. this looks like a
 periodic background keepalive/heartbeat ping, consistent with the name.
+
+### `gamelist-server` (`FUN_004047f4` @ `0x004047f4`, 01.11 only)
+
+Added by 01.11; absent from 01.00. Single round trip, and the SAME shape as
+heartbeat-server, established the same way but taken one step further: after
+hello/ack it `strcat`s one line - `game-add <session-id>[ <player>]...\n` -
+sends it (`strlen` @ `0x4049f0`, send @ `0x404a04`), does ONE bounded 256-byte
+receive (`li r5,256` @ `0x404a14`, `bl 0xafacf8` @ `0x404a18`) and then closes
+at `0x404a24`. Unlike report-server, which at least tests the returned byte
+count before parsing, this function never inspects the recv result at all -
+`0x404a20` overwrites `r3` with the connection pointer for the close. So the
+reply's content is free; what is load-bearing is sending one at all and not
+closing first.
+
+It is a genuine member of this family for the usual reason: `0x4049d4` calls
+`0xaf9bb4`, the 01.11 twin of `FUN_00acc424` (`li r0,17` @ `0xaf9c4c`,
+`li r5,88` @ `0xaf9c94`, `li r5,8` @ `0xaf9d2c`, `cmpwi cr7,r0,34` @
+`0xaf9d60`), the same function `report-server` calls at `0x36e220`. Its ip/port
+pair comes from `*(0x15900b8) + 0x60` in the shared service-descriptor
+structure.
+
+Purpose is write-only registration of a live game, NOT discovery: `game-add ` is
+the only `game-` verb in the binary. Full evidence, including the
+`r2`-anchor chain used to find the function and the proven/assumed split, is in
+`docs/protocol/0x11_gamelist_line.md`; the wire spec is
+`protos/0x11_gamelist_line.ksy`.
 
 ### `leaderboard-server` - two distinct sub-protocols, four call sites, same service name
 
@@ -247,12 +273,22 @@ periodic background keepalive/heartbeat ping, consistent with the name.
 | Claim | Confidence | Reason |
 |---|---|---|
 | `heartbeat-server`, `leaderboard-server`, `facebook-server`, `single-player-server` all use the identical `FUN_00acc424` hello/hello_response (messages A/B) | high | Same function, confirmed via `FindCallersOf` reference enumeration - not re-derived, structurally identical by construction |
-| `invite-server` is dead code in this build | high | Zero code xrefs across the entire `net-invite.cpp` literal pool (name, both command formats, `ASSERT` condition, and the file's own `ASSERT` filename string) via the same mechanical method that found 10/10 real call sites for the others; control check against neighboring live-file table entries confirms the method isn't blind to this table region. See `research/notes/2026-08-15-invite-server-dead-code-confirmed.md`. |
+| `invite-server` is dead code in this build | high | Zero code xrefs across the entire `net-invite.cpp` literal pool (name, both command formats, `ASSERT` condition, and the file's own `ASSERT` filename string) via the same mechanical method that found 10/10 real call sites for the others; control check against neighboring live-file table entries confirms the method isn't blind to this table region. See `research/joinparty/2026-08-15-invite-server-dead-code-confirmed.md`. |
 | Post-hello payloads for all five are wrapped in the same encrypted frame as ticket-server's messages C/D | high (structural), unconfirmed (independently, per-service, live) | Same shared `FUN_00acd5f8`/`FUN_00acb6fc`/`FUN_00acd568`/`FUN_00acbb90` functions confirmed via decompile; no sibling-specific live capture exists yet |
 | Per-service plaintext payload shapes (this doc's per-service section) | medium | Structurally traced via decompile (loop counts, buffer sizes, helper functions used) but format-string contents and exact field boundaries not fully resolved |
 | Per-service IP/port table offsets | medium | Directly visible in decompile; actual port *values* not decoded from `net1.bin` this pass |
 
-## Deliverables from this pass
+## Deliverables from the 2026-08-19 gamelist pass
+
+- `protos/0x11_gamelist_line.ksy` - request grammar, decoded into named fields
+  (`verb`, `session_id`, repeated `players`), plus the response finding in prose
+  because there is no response struct to model.
+- `docs/protocol/0x11_gamelist_line.md` - this service's companion doc.
+- `server/ticket_server.py` - `handle_gamelist` / `build_gamelist_response`,
+  registered in `LINE_SERVICE_HANDLERS`. `gamelist-server` no longer reaches the
+  fall-through warning path.
+
+## Deliverables from the original survey pass
 
 - `protos/0x11_heartbeat_server_hello.ksy` / `_hello_response.ksy`
 - `protos/0x11_leaderboard_server_hello.ksy` / `_hello_response.ksy`
@@ -262,7 +298,7 @@ periodic background keepalive/heartbeat ping, consistent with the name.
   the per-service payload descriptions above
 - `research/ghidra/acc424_all_callers.txt` - the reference-enumeration
   backing the "10 call sites, invite-server has none" finding
-- `research/notes/2026-08-15-invite-server-dead-code-confirmed.md` -
+- `research/joinparty/2026-08-15-invite-server-dead-code-confirmed.md` -
   follow-up pass confirming `invite-server` dead code to high confidence
   (`research/ghidra/invite_related_refs.txt`, `invite_struct_dump.txt`,
   `invite_control_refs.txt`)

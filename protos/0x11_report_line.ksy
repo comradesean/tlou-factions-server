@@ -95,7 +95,14 @@ doc: |
   passes g_net+920 as an argument and reads the entry's StringId) and switch on
   the index: 1 and 2 take different UI paths, 2 also sets g_net+876 = 1.
 
-  STILL UNKNOWN, and both immaterial to answering "not banned":
+  STILL UNKNOWN, and both immaterial to answering "not banned" - NOTHING NEEDS
+  DOING about either unless this project ever wants to deliberately BAN an
+  account, because our empty reply fails the '+' test at 0x36e2cc and the ban
+  index at g_net+916 keeps its -1 default, so the check is fail-open no matter
+  what the table holds. Tracked as TODO(pReportArray) / TODO(g_net+920) in
+  server/ticket_server.py and in docs/OPEN-QUESTIONS.md, where the
+  instruction-level 2026-08-19 re-verification of the -1 default and the '+'
+  test against the 01.11 ELF is recorded:
     * the literal entry NAMES in pReportArray - they live in the data-compiler
       payload, not the EBOOT, so a static search cannot recover them. Needs a
       DC/.psarc dump or a runtime read. The table's SHAPE is high confidence;

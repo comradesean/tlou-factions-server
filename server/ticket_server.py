@@ -553,9 +553,39 @@ def recv_exact(conn, n, timeout=10):
 # a real ban the day "none" collides with a pReportArray entry - and the entry
 # names live in the data-compiler payload, not the EBOOT, so we cannot check.
 #
-# STILL UNKNOWN (both immaterial to answering "not banned"): the literal entry
-# names in pReportArray, and the meaning of the integer at g_net+920 (it is
-# formatted into the ban message; duration/expiry is a guess and is not made).
+# TODO(pReportArray): the literal entry NAMES in the DC-resident pReportArray
+# table are unknown. They live in the data-compiler payload, not the EBOOT, so no
+# static search can recover them - it needs a DC/.psarc dump or a runtime read of
+# the resolved table. NOTHING NEEDS DOING HERE unless this project ever wants to
+# deliberately ban an account: our reply is an EMPTY body, so buf[0] is 0x00, the
+# '+' test at 0x36e2cc fails, and the ban index at g_net+916 stays at the -1 it
+# was initialised to at 0x36e1a0/0x36e1a8. The check is fail-open regardless of
+# what the table contains, so an unknown table cannot produce a false ban. The
+# names would only ever be needed to CONSTRUCT a reply that bans somebody.
+#
+# TODO(g_net+920): the meaning of the integer parsed out of the ban reply's first
+# token and stored at g_net+920 is unknown. It is formatted into the ban message
+# shown to the player (format-string pointer 0x1530d90, which is bss and so only
+# readable at runtime); duration / expiry / days is a guess and is deliberately
+# not recorded as fact. Same disposition as above: it is only reachable on the
+# banned path, which our empty reply never enters, so NOTHING NEEDS DOING unless
+# we ever want to deliberately ban somebody.
+#
+# VERIFIED 2026-08-19 against the 01.11 ELF, instruction by instruction, so the
+# fail-open reasoning above is not being restated on trust:
+#   0x36e1a0  li  r0,-1          / 0x36e1a8  stw r0,916(r9)   (r9 = g_net)
+#   0x36e28c  li  r5,256         / 0x36e290  bl 0xafacf8      (one bounded recv)
+#   0x36e298  cmpwi cr7,r3,0     / 0x36e29c  ble cr7,0x36e388 (n<=0 -> skip all)
+#   0x36e2c8  lbz r0,904(r1)     / 0x36e2cc  cmpwi cr7,r0,43  ('+')
+#   0x36e2d0  bne cr7,0x36e388   (no '+' -> skip all; index left at -1)
+#   0x36e2dc  addi r3,r1,905     -> strtok_r 0xe72d80, strtol 0xe75d78 -> r27
+#   0x36e33c-0x36e368  loop: mulli r9,r9,12 (12-byte entries), lwz r3,8(r9)
+#                      (name at [+8]), strcmp 0xe778e4; ONLY on a match does it
+#                      stw r27,920(r9) / stw r29,916(r9)
+# 0x36e388 is the shared "done" label reached by every non-ban path, and it does
+# not touch g_net+916. Note the older claim that "0x36e1fc is the connect call"
+# is off by one step: 0x36e1fc loads the "report-server" string pointer (slot
+# 0x129a3c8) and the connect itself is the bl 0xaf9bb4 at 0x36e220.
 def build_report_response(cmd):
     """Map one decoded report-server line to a reply. Returns (response, note).
 
@@ -593,16 +623,163 @@ def handle_report(conn, session_token, client_nonce, log_append):
                         "report", build_report_response)
 
 
+# ---------------------------------------------------------------------------
+# gamelist-server (2026-08-19) - grammar and reply shape DERIVED FROM THE BINARY
+# ---------------------------------------------------------------------------
+# 01.11-ONLY: neither "gamelist-server" nor "game-add " appears anywhere in the
+# 01.00 EBOOT. All addresses below are 01.11 VMAs (VMA = file offset + 0x10000)
+# in the 01.11 ELF (sha256 241e2b1b...); the sender is FUN_004047f4, found by
+# resolving the r2->anchor->displacement chain onto the three string slots
+# 0x129cd7c ("game-add " @ 0xeb2680), 0x129cd8c ("gamelist-server" @ 0xeb2690)
+# and 0x129cd70 ("games/%s" @ 0xeb2670). r2 for this build is 0x1338de0, taken
+# from the entry-point function descriptor at 0x12d5c08.
+#
+# WHAT IT IS FOR: registering a live game with the backend. The client announces
+# "this match-session id exists and these accounts are in it". There is no read
+# verb - "game-add " is the ONLY "game-" verb in the whole binary, no
+# "game-remove" and no "game-list" - so this is write-only registration, NOT a
+# second discovery path. Discovery stays 0x135/0x136 on the session manager.
+#
+# REQUEST, assembled literally by strcat in FUN_004047f4:
+#     buf[0] = *""            @0x4048c0-0x4048e0 (slot 0x129cd78 -> "", so the
+#                             buffer simply starts empty), then memset(buf+1,0,255)
+#     strcat "game-add "      @0x4048ec (slot 0x129cd7c)
+#     strcat <session-id>     @0x4048fc/0x40492c (r25 = arg+16222)
+#     for i in 0..count-1:    count = *(arg+16152), loop @0x404908-0x40494c
+#         strcat " "          (slot 0x129cd80 -> " ")
+#         strcat <player>     (arg + 17688 + i*212)
+#     strcat "\n"             @0x404950 (slot 0x129cd84 -> "\n")
+# i.e.  game-add <session-id> <player>[ <player>...]\n
+# Live capture matches to the byte: 'game-add mgnomad2.1787116698 mgnomad2
+# comradesean\n' = 9 + 19 + 9 + 12 + 1 = 50 bytes, exactly the 50 observed. The
+# session id is the <npid>.<unix-ts> string that 0x143 SetRoomDataBlock also
+# carries.
+#
+# CONNECT + REPLY, the part that had to be settled before writing this handler:
+#     0x4049b0  r6 = "gamelist-server"; r4/r5 = ip/port from *(0x15900b8)+0x60
+#     0x4049d4  bl 0xaf9bb4    the SHARED hello function - li r5,88 (88-byte
+#                              hello) @0xaf9c94, li r5,8 (8-byte reply)
+#                              @0xaf9d2c, cmpwi r0,34 (=0x22 ack magic)
+#                              @0xaf9d60. Same function report-server uses at
+#                              0x36e220, i.e. the 01.11 twin of 01.00's
+#                              FUN_00acc424. So this IS a 0x11 sibling.
+#     0x4049dc  cmpwi cr7,r3,0 / bne -> 0x404a20   connect failed -> just close
+#     0x4049f0  strlen(buf) (0xe72a00)
+#     0x404a04  bl 0xafad88    send(conn, buf, len)
+#     0x404a14  li r5,256
+#     0x404a18  bl 0xafacf8    ONE bounded 256-byte recv, into the SAME buffer
+#     0x404a20  mr r3,r31 / bl 0xaf9260    close - immediately, unconditionally
+#
+# THE REPLY IS NOT PARSED AT ALL. This is the HEARTBEAT shape, and in fact
+# weaker than heartbeat's: the recv's return value in r3 is not even compared
+# against anything - 0x404a1c is the call's nop and 0x404a20 overwrites r3 with
+# the connection pointer for the close. There is no length field, no accumulator
+# loop, no '+' test, no strtok - contrast report-server, which does test r3 and
+# then parses (0x36e298 onwards), and leaderboard-server, which loops until its
+# sentinel. So any bytes satisfy this client, and the whole reply must arrive in
+# ONE frame because the client closes right after the single recv.
+#
+# Consequently the reply body below is a family-CONSISTENCY choice, not a
+# decoded requirement: '+0\n' plus the family's NUL sentinel, exactly what
+# handle_heartbeat sends for the same reason. What matters, and what is
+# load-bearing, is the two family rules handle_line_service already enforces -
+# send something so the client's recv returns rather than sitting in its own
+# timeout, and NEVER close first.
+#
+# ADJACENT BUT SEPARATE CHANNEL, noted so it is not confused with this one:
+# earlier in the same function (0x404820-0x4048b8) the client builds a buffer
+# via 0xa49efc/0xa49f14/0x403ca4, formats the path "games/%s" with the same
+# session id into a stack buffer, and hands it to 0xaf39c0 with a retry loop of
+# up to 9 attempts. 0xaf39c0 stores a method enum of 4 into its request object
+# (li r0,4 @0xaf39f8; the sibling entry point 0xaf3a30 stores 1), so it is an
+# HTTP-style request to a DIFFERENT host object (slot 0x129cd74 -> 0x13ba678),
+# not this TCP line service. That upload is out of scope here and is NOT handled
+# by this server.
+GAMELIST_LOCK = threading.Lock()
+# session_id -> {"first_seen": epoch, "last_seen": epoch, "adds": int,
+#                "roster": [online_id, ...]}
+GAMES = {}
+
+
+def record_game(session_id, roster, now=None):
+    """Record (or refresh) one registered game. In-memory only, like PRESENCE:
+    the client never reads this back - there is no game-list verb in the binary -
+    so nothing depends on it surviving a restart. It exists because registration
+    is the message's actual purpose, and having the roster keyed by session id
+    makes the log readable and gives any future work a real record to correlate
+    against 0x143's data_block. Returns the updated record."""
+    now = time.time() if now is None else now
+    with GAMELIST_LOCK:
+        rec = GAMES.get(session_id)
+        if rec is None:
+            rec = {"first_seen": now, "last_seen": now, "adds": 0, "roster": []}
+            GAMES[session_id] = rec
+        rec["last_seen"] = now
+        rec["adds"] += 1
+        rec["roster"] = list(roster)
+        return dict(rec)
+
+
+def build_gamelist_response(cmd):
+    """Map one decoded gamelist-server line to a reply. Returns (response, note).
+
+    The only verb is `game-add <session-id> <player>...`. The client does not
+    parse the reply (see the block comment above), so the reply is a bare
+    family-shaped ack and the useful work is recording the game."""
+    tokens = cmd.strip().split()
+    verb = tokens[0] if tokens else ""
+
+    if verb == "game-add" and len(tokens) >= 2:
+        session_id = tokens[1]
+        roster = tokens[2:]
+        rec = record_game(session_id, roster)
+        return "+0\n", (f"game-add {session_id!r} roster={roster} "
+                        f"(add #{rec['adds']}, {len(GAMES)} game(s) known)")
+
+    if verb == "game-add":
+        # Verb with no session id: nothing to key a record on. Still ack, so the
+        # client's single bounded recv returns and it closes cleanly.
+        return "+0\n", "game-add with no session id - acked, nothing recorded"
+
+    # No other game- verb exists in the binary. If one ever shows up it is new
+    # information; ack it so the client is not left waiting, and say so loudly.
+    return "+0\n", (f"UNKNOWN gamelist verb {verb!r} - acked. No verb other than "
+                    f"'game-add ' exists in the 01.11 EBOOT, so this line is new "
+                    f"evidence; capture it.")
+
+
+def handle_gamelist(conn, session_token, client_nonce, log_append):
+    """gamelist-server post-hello loop. Same encrypted-frame layer and
+    NUL-sentinel / hold-for-client-close discipline as every sibling line service
+    (see handle_line_service).
+
+    Reply shape is settled from the binary, not guessed: FUN_004047f4 does one
+    bounded 256-byte recv at 0x404a18 and then closes at 0x404a24 without ever
+    inspecting the result, so the whole reply must fit one frame and its contents
+    are free. What is NOT free is sending one at all and not closing first.
+
+    Having a handler at all is the point: before this, a game registration fell
+    through to the ticket path and was answered with a ticket_submit_response
+    blob - the same request/response mismatch class that produced the leaderboard
+    "Error 9 / disconnected from the game servers" boot and the Facebook retry
+    spin."""
+    handle_line_service(conn, session_token, client_nonce, log_append,
+                        "gamelist", build_gamelist_response)
+
+
 # Service-name -> post-hello handler for the 0x11 sibling LINE services. Names
 # are read verbatim out of the 88-byte hello (bytes 24:88, NUL-terminated).
 # Six services have been observed live; single-player-server has never opened a
 # connection, and ticket-server itself uses the message-C/D handshake below
-# rather than a line protocol, so neither appears here.
+# rather than a line protocol, so neither appears here. invite-server is dead
+# code in this build (zero code xrefs across its whole literal pool) and will
+# never connect.
 LINE_SERVICE_HANDLERS = {
     "leaderboard-server": handle_leaderboard,
     "facebook-server": handle_facebook,
     "heartbeat-server": handle_heartbeat,
     "report-server": handle_report,
+    "gamelist-server": handle_gamelist,
 }
 
 
@@ -670,8 +847,10 @@ def handle(conn, addr, log_lock, log):
         # certainly wrong for it - that mismatch is what broke the leaderboard
         # channel and the Facebook flow before each got a real handler. Eight
         # service names exist in the 01.11 EBOOT:
-        #     ticket / leaderboard / facebook / heartbeat / report  - handled
-        #     gamelist / single-player / invite                     - not
+        #     ticket / leaderboard / facebook / heartbeat / report /
+        #     gamelist                                              - handled
+        #     single-player                                         - not
+        #     invite                                                - dead code
         # Shout loudly with the decoded payload so an unhandled service cannot
         # sit unnoticed in a 300MB log. In particular single-player-server has
         # NEVER been seen to send anything; if it ever does, that line is the
