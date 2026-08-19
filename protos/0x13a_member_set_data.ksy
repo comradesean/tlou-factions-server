@@ -17,7 +17,7 @@ doc: |
   telemetry" because a 2026-08-15 live-breakpoint trace of the sender
   function _opd_FUN_00ad6148 caught it firing on a UI-transition tick with a
   Google Analytics beacon string in an adjacent register
-  (research/notes/2026-08-15-createparty-trace.md). That trace was about the
+  (research/joinparty/2026-08-15-createparty-trace.md). That trace was about the
   unrelated CALLER LOOP, not this message's CONTENT: 0x13a carries the
   client's own 32-byte member data blob (SetPartyData / "MemberSetData") -
   the same blob the lobby UI reads for a REMOTE player, containing title,

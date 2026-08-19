@@ -14,6 +14,11 @@ semantic is inferred, constant across every capture, or locked behind DC `.pak`
 tables. **Tier 3** means no definition: unmapped spans, unobserved grammars, and
 values with no known meaning.
 
+Per-message **who / why / where** - direction, game reason, and the specific
+disassembly address or capture behind each - is the companion document
+[proto-map.md](proto-map.md), which also states the P2P-gameplay scope boundary
+and the orphaned shared types. This file stays field-level.
+
 Separately, **not-a-field** entries (send-buffer residue) are listed at the end:
 they are *solved* in that we know exactly what they are and why they exist, but
 they carry no protocol meaning. See
@@ -79,8 +84,12 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
    frames, exactly 3 distinct values across 3 machines, stable per machine.
 4. **`0x145` Ping** - 4-byte opcode-only keepalive; the client's liveness tick on
    the session connection.
-5. **`packet_header`** - `sequence_number` + `opcode` framing shared by the
-   family.
+5. ~~**`packet_header`**~~ - **DEMOTED 2026-08-19, see
+   [proto-map.md](proto-map.md).** It is not the family's framing and is not
+   shared: nothing imports it, its `opcode` field is typed to `net_event_type`
+   (the P2P layer removed in `c45c8af`), and its own doc calls it an
+   "unconfirmed skeleton". Session-manager messages open with a bare `u4`
+   opcode at offset 0 - `0x145 Ping` is a complete 4-byte packet. Now tier 3.
 6. **`np_id`** - the 36-byte SceNpId: `online_id` handle plus terminator and
    dummy. The identity key every roster and service line is keyed on.
 

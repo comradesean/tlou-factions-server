@@ -8,16 +8,32 @@
 > | cited artifact | status |
 > |---|---|
 > | `captures/tcp_catch.log` | historical raw capture, not retained. Live wire evidence now comes from `server/logs/wire.jsonl` via the tap in `server/session_manager.py`, checkable with `research/tools/verify_wire.py`. |
-> | `research/notes/2026-08-15-createparty-trace.md` | never retained |
-> | `research/notes/2026-08-15-invite-server-dead-code-confirmed.md` | never retained |
 > | `research/net1bin/net1.bin` | extracted bundle, not retained. The encrypted originals are cached under `server/data/served_content/` and decrypt with `server/lib/psarc_crypt.py`. |
 > | `research/ghidra/sessmgr_init_raw_disasm.txt` | not retained; regenerate with `research/tools/ghidra_scripts/DumpRawDisasm.java`, or use `research/disasm/full.asm` |
 > | `protos/pending/netevent_catalog.md` | never created; `protos/pending/` holds `net_sm_states_catalog.md` |
+>
+> Corrected 2026-08-19: `2026-08-15-createparty-trace.md` and
+> `2026-08-15-invite-server-dead-code-confirmed.md` were listed here as "never
+> retained". They exist, with full content, under `research/joinparty/` - moved
+> there by commit `4a2f353`. Citations to their old `research/notes/` paths were
+> repointed.
 >
 > Old `tools/...` paths in DATED research notes are left as written - they record
 > the layout at the time. The repo was restructured 2026-08-18; the map is in
 > the repo root README. Live reference docs (`protos/`, `docs/`) were updated to
 > the current paths on 2026-08-19.
+
+**Start here for a per-message map.** [proto-map.md](proto-map.md) lists every
+`.ksy` spec with its direction (who sends it, who acts on it), its game reason,
+and the disassembly address or capture behind it, sorted into fully understood /
+partly understood / unknown. Field-level status is in
+[knowledge-inventory.md](knowledge-inventory.md).
+
+**The 41 gameplay-opcode `.ksy` files cited below no longer exist** - they were
+archived and deleted in commit `c45c8af` ("no dependency, server not needed")
+because that layer is peer-to-peer and the server never sees it. The findings
+they encoded survive in full in sections 4 and 5 of
+`net_event_dispatch_and_simple_opcodes.md`; only the `.ksy` artifacts are gone.
 
 **Numeric opcode IDs are confirmed** for 115 `NetEventType` values (0-114) — recovered directly from an in-memory enum-to-name table via Ghidra, see `protos/common/opcodes.ksy` and `research/notes/ghidra-opcode-recovery.md`. **The opcode-to-payload dispatch mechanism is now found and fully mapped** (a 115-entry allocator jump table at `0x0038ec40`, keyed directly by opcode) — see `docs/protocol/net_event_dispatch_and_simple_opcodes.md` for the discovery and `research/notes/2026-08-14-gameplay-opcode-mapping.md` for the full per-opcode status ledger. 41 opcodes have fully confirmed, `ksc`-validated payload schemas so far (16 from the first pass's inline-constructed opcodes, 25 more from a 2026-08-15 pass that generalized the vtable-resolution technique to opcodes with a dedicated external constructor — see `docs/protocol/net_event_dispatch_and_simple_opcodes.md` section 5 and `research/notes/2026-08-15-gameplay-opcode-schema-expansion.md`); every other opcode has at least a known object size and (for ~57 of the remaining ones) a known constructor address ready for the next pass. **Live testing on the `NetMatchmaking*`/session-manager family below now reaches full 2-player gameplay** (2026-08-16/17): against a self-hosted stub (`server/session_manager.py`), a real client goes through auth, solo-host into an actual match, party invite + accept + join, cross-connection find-match pairing, and two real players loading into and playing a match together. See the "LIVE-CONFIRMED WORKING" banner in `docs/protocol/session_manager_and_matchmaking.md` and the `research/notes/2026-08-16-solo-host-fixed-live-confirmed.md` / `2026-08-16-two-player-party-and-match-working.md` / `2026-08-17-member-data-blob-rank-and-0x142-hostrank.md` notes. Open items: remote-player rank/gear render empty (served profiles are empty — rank/gear progression needs the `profiles/…`+`userdata/….txt.crypt` pipeline, under investigation), the party P2P link drops at game end, and an intermittent "Host quit for cheating" teardown. Earlier trail: the `research/notes/2026-08-14-*`/`2026-08-15-*` session notes. The `net_event_type` gameplay-event family immediately below (opcodes 0-114) remains primarily static-analysis-confirmed, consistent with the project's decided scope (auth/matchmaking/signaling backbone, not gameplay-simulation reimplementation).
 
@@ -123,9 +139,10 @@ Ghidra emulation to debug the Python reimplementation.**
 
 ### Sibling `*-server` family (same opcode-0x11 hello, different service_name)
 
-Four more services confirmed to share ticket-server's exact hello/hello_response
-handshake (same function, `FUN_00acc424`); a fifth (`invite-server`) is
-confirmed dead code in this build. See
+Six more services confirmed to share ticket-server's exact hello/hello_response
+handshake (same function - `FUN_00acc424` in 01.00, its twin `0xaf9bb4` in
+01.11); a seventh (`invite-server`) is confirmed dead code in this build.
+`report-server` and `gamelist-server` exist only in 01.11. See
 `docs/protocol/0x11_sibling_servers_family.md` for the full survey,
 per-service post-hello payload shapes, and evidence.
 
@@ -135,6 +152,8 @@ per-service post-hello payload shapes, and evidence.
 | `leaderboard-server` | confirmed (shared function, 4 call sites) | client→server / server→client | `protos/0x11_leaderboard_server_hello.ksy` / `_hello_response.ksy` |
 | `facebook-server` | confirmed (shared function, 2 call sites) | client→server / server→client | `protos/0x11_facebook_server_hello.ksy` / `_hello_response.ksy` |
 | `single-player-server` | confirmed (shared function, 2 call sites) | client→server / server→client | `protos/0x11_single_player_server_hello.ksy` / `_hello_response.ksy` |
+| `report-server` (01.11 only) | confirmed (shared function, inline in NetInit `0x36e1fc`-`0x36e390`) | client→server / server→client | line protocol: `protos/0x11_report_line.ksy` (hello pair is the family's, unchanged) |
+| `gamelist-server` (01.11 only) | confirmed (shared function `0xaf9bb4`, call site `0x4049d4` in `FUN_004047f4`) | client→server / server→client (reply never parsed) | line protocol: `protos/0x11_gamelist_line.ksy`, doc `docs/protocol/0x11_gamelist_line.md` |
 | `invite-server` | confirmed dead code - zero code xrefs across its entire `net-invite.cpp` literal pool (name, both command formats, `ASSERT` condition and filename) | — (dead code) | — |
 
 ## `NetMatchmaking*` family: Session Manager connection (separate opcode namespace again)
