@@ -42,6 +42,25 @@ doc: |
   FUN_003aeee8 (GET), FUN_003afb74 (range-blob), FUN_003af46c (range-clan),
   FUN_003b0f6c (update); server/ticket_server.py (leaderboard-server handling);
   research/notes/2026-08-17-leaderboard-server-protocol.md.
+  BOARD IDS (live-observed 2026-08-18/19). Boards are served purely on request -
+  the server keys its store by (board_id, player) and has no board whitelist, so
+  a client only ever sees a board it asks for.
+
+    404  per-mode board   (0x194)  requested by 01.00 and 01.11
+    405  overall / clan supplies (0x195), submitted on every match end
+    406  per-mode board   (0x196)  requested by 01.00 and 01.11
+    407  01.11 ONLY - the mode 01.11 added (Interrogation). 01.00 has never
+         requested it in any captured session, so it is naturally invisible to
+         that build; no server-side gating is needed to keep it separate.
+
+  CROSS-BUILD NOTE: 404/405/406 are SHARED between builds - both read and write
+  them, and scores land in the same rows. That is accepted for this project. Be
+  aware the playlist ids were renumbered between builds (see
+  protos/0x12f_room_create.ksy), so it should NOT be assumed that board 404
+  denotes the same mode on both; if per-build separation is ever wanted, key the
+  store by (build, board_id, player) - the build is known per npid from the
+  session-manager registry.
+
 doc-ref: ../docs/protocol/0x11_sibling_servers_family.md
 seq:
   - id: request
