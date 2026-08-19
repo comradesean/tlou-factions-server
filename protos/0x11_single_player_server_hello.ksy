@@ -19,6 +19,13 @@ doc: |
   immediately before it). Despite the name, this service is reached from
   campaign/single-player-adjacent systems (save sync, trophies), not
   matchmaking. See docs/protocol/0x11_sibling_servers_family.md.
+
+  POST-HELLO PAYLOAD RESOLVED 2026-08-19 (see 0x11_stat_line.ksy): both call
+  sites send one ASCII "stat" line keyed on the player's own NpId - "stat %s
+  task-%x %s %s\n" from the save-sync path, "stat %s trophy-%x\n" from the
+  trophy path. This is one-way telemetry to a backend, not a friends-visible
+  presence/progress broadcast - neither call site touches a friend list or
+  any presence API.
 doc-ref: ../docs/protocol/0x11_sibling_servers_family.md
 seq:
   - id: opcode

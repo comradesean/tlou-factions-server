@@ -131,6 +131,7 @@ Carve-out: `0x136 attr_tail` (20 bytes) is tier C - see below.
 | `facebook_line` | client -> server, server -> client | The Graph-backed friend/name flow. | disasm `0x00353a68`/`0x00ac1828`; live |
 | `report_line` (request half) | client -> server | `is-banned <online_id>\n` - a player-standing / ban check. | live-captured 2026-08-18 |
 | `gamelist_line` | client -> server; reply received but **not parsed** | `game-add <session-id>[ <player>]...\n` - registers the started match with the backend game list. Resolved 2026-08-19: the sender is `0x004047f4`, identified by three independent string slots landing in one body (`0x129cd7c` `"game-add "`, `0x129cd8c` `"gamelist-server"`, `0x129cd70` `"games/%s"`). The recv is heartbeat-style and weaker: `li r5,256` @`0x404a14`, a single `bl 0xafacf8` @`0x404a18`, then close - two instructions between recv and close, neither reading `r3`, so the return is overwritten unread. The server must send *something* and must not close first; content is free. | disasm `0x004047f4`-`0x00404a54`; live 50-byte request matching the strcat byte-for-byte (9+19+9+12+1) |
+| `stat_line` (single-player-server) | client -> server; reply unparsed, same weak-recv pattern as `gamelist_line` | `stat %s task-%x %s %s\n` (campaign-save path) / `stat %s trophy-%x\n` (trophy-unlock path) - one-way completion telemetry keyed on the player's own NpId. Resolved 2026-08-19, closing a live hypothesis that this service broadcasts campaign chapter progress to friends: it does not - neither call site touches a friend list or a presence API, both run entirely inside save-sync/trophy-unlock handlers. | format strings recovered via TOC anchor+displacement (`research/tools/eboot_analysis`) at two independent call sites, `FUN_007f1acc`/`FUN_00080268`; trophy line's `%x` traced to its `sceNpTrophyUnlockTrophy` argument, fully confirmed |
 
 ### Profile
 
@@ -163,7 +164,7 @@ every capture, or locked behind DC `.pak` tables.
 | `0x134 trailing` | - | Present because the dispatch loop consumes 24 bytes; not read by the traced portion. | disasm |
 | `0x12f room_settings_tail` / `0x130 room_object_tail` | client -> server | Provenance known - copies of specific room-object spans - interiors not field-mapped. | disasm |
 | `np_id.opt` / `np_id.reserved` | - | Sony's opaque bytes, copied verbatim; readers past the handle untraced. | structural only |
-| `single_player_server_hello` / `_response` | client -> server | Structurally confirmed by the same shared-function argument as its siblings, but **0 of 452 captured hellos** were this service. The spec is sound; that the service ever carries traffic is not established. | disasm `0x00080268`/`0x007f1acc`; no live traffic |
+| `single_player_server_hello` / `_response` / `stat_line` | client -> server | Structurally confirmed by the same shared-function argument as its siblings, and the post-hello payload grammar is now fully resolved (`stat_line.ksy`) - but **0 of 452 captured hellos** were this service. The specs are sound; that the service ever carries traffic is not established. | disasm `0x00080268`/`0x007f1acc`; no live traffic |
 | `profile_21.game_data` interior | - | The 0x5000-byte payload; subsystem index ranges only partly claimed. | partial |
 
 `field_0c` graduated out of this tier on 2026-08-19: it is the **playlist id**,
