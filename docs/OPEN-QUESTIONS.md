@@ -222,10 +222,14 @@ minor and both needing a capture rather than more static analysis:
   and to which host is not established. UNBLOCK: a capture of the client's
   outbound HTTP during a match end, or resolving `0x13ba678` at runtime.
 
-- **`single-player-server`** - has a hello spec; has NEVER been observed sending
-  anything, so its line grammar is unknown. `ticket_server.py` now emits a loud
-  first-contact warning if it ever speaks, since that request would be the only
-  evidence of its grammar.
+- **`single-player-server`** - has a hello spec, and its line grammar is now
+  RESOLVED via static analysis (2026-08-19, `protos/0x11_stat_line.ksy`):
+  `stat %s task-%x %s %s\n` from the campaign-save path, `stat %s trophy-%x\n`
+  from the trophy-unlock path, both format strings recovered directly from
+  the EBOOT. It has still NEVER been observed sending anything live (0 of 452
+  captured sibling hellos), so the grammar is confirmed by decompile, not by
+  a real frame. `ticket_server.py` still emits a loud first-contact warning
+  if it ever speaks, since that would be the first live confirmation.
 
 - **`invite-server`** - previously investigated and recorded as dead code.
 
@@ -246,12 +250,17 @@ minor and both needing a capture rather than more static analysis:
 
 ## Unresolved facts
 
-- **Are map ids stable across builds?** 01.11: `0x1f` Checkpoint, `0x31`
-  Lakeside. 01.00's seven observed ids (`0x0e`-`0x17`) are all unnamed. The
-  ranges do not overlap, but 01.00's test accounts own no MP DLC and so could
-  only ever play base maps - a narrower range is expected either way, and proves
-  nothing. UNBLOCK: play ONE known map on a 01.00 client without being booted in
-  between, and read slot 0 of the next member card.
+- **Are map ids stable across builds?** NARROWED 2026-08-19: the entire
+  51-id map-id space (all three mode blocks, `0x0e..0x40`) is now solved on
+  01.11, and all seven ids previously observed on 01.00 (`0x0e Checkpoint,
+  0x0f Lakeside, 0x10 Bill's Town, 0x13 Downtown, 0x14 The Dam, 0x15
+  Bookstore, 0x17 Bus Depot`) line up exactly with the 01.11 roster
+  positions - strong evidence for cross-build stability. What's still
+  genuinely unresolved: no map has been loaded ON a 01.00 client and its id
+  read directly THIS session to prove the match rather than infer it from
+  historical captures. See `protos/common/member_data.ksy` for the full
+  solved-space writeup. UNBLOCK: play one known map on a 01.00 client without
+  being booted in between, and read slot 0 of the next member card.
 
 - **What distinguishes the private-match `field_0c` values?** `0x63` (99) for
   Supply Raid and Survivors, `0x5a` (90) for Interrogation. Not a clean

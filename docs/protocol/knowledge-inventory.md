@@ -2,7 +2,8 @@
 
 What is fully understood, what is partly understood, and what is unknown, across
 all 50 `.ksy` specs (45 message specs + 5 shared types; 260 declared fields).
-Current as of 2026-08-18, end of the JIP / live-capture session.
+Current as of 2026-08-19, end of an extended live-debugging session covering
+`0x140`/`0x141`, `0x13e`/`0x13f`, `0x136 attr_tail`, and `member_slot_ec`.
 
 The bar for **Tier 1** is the project's reserved standard applied to a whole
 message or field: a NAME, a DEFINITION (what the bytes are), and a game or
@@ -213,9 +214,16 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
 35. **`room_flags_e8` / `room_flags_10`** - `*(u32*)(obj+0xE8)` conditionally
     OR'd with `0x40000000`. Low 20 bits constant across captures; the `oris` gate
     condition is outside the traced function body.
-36. **`0x140` `attr_selector`** - selects *an* attribute (live 0x0000/0x0001) and
-    round-trips into `room_obj+0x1f0`. Which attribute is unknown, and nothing
-    client-side ever branches on it, so the retail server was its only consumer.
+36. **`0x140` `attr_selector`** - RESOLVED 2026-08-19 as a binary client-phase
+    announcement, not an attribute selector: `1` = the client's lobby/roster
+    model is being rebuilt (`FUN_0035a7dc`), `0` = `NET_SM_RESULTS`/match-end
+    stat crediting (`FUN_003f208c`) - both named by pre-existing project
+    research and cross-confirmed live (RPCS3 debugger, plus a log-level
+    correlation showing 87% of `selector=0` events land within milliseconds of
+    a real leaderboard-update). Still Tier 2: the round-trip is proven inert
+    client-side, and what a real backend does with either notification remains
+    permanently unrecoverable from the client alone. See
+    `protos/0x140_set_room_flags.ksy`.
 37. **`0x142` HostRank `entries`** - per-player values from the player object's
     `vtable[0]` getter. Live: constant `0x0002` on unranked accounts. Proven NOT
     to be `member_data.rank_value`. Encoding needs a ranked capture.
@@ -227,7 +235,10 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     (`P+0x654`, the character-customization word); display meaning medium.
 41. **`0x13e` `flag` byte** - boolean when written, but live values 0/1/3/4 with
     the stale value often equal to the frame's own `kind`. Only 0 and 1 are
-    meaningful; which UI path drives kind 3 vs 4 is untraced (vtable dispatch).
+    meaningful. `kind` itself is RESOLVED 2026-08-19 (see item 59's removal
+    below): `kind=3` is a generic host-flag claim/release on either the party
+    or game-room object; `kind=4` is a set-then-clear pair tied to the game
+    room's active-match lifecycle. See `protos/0x13e_set_host_flag.ksy`.
 42. **`value_20` / `value_22` / `value_pair_14`** - a float-derived pair,
     live-constant 1000/1000. Reads as a default rating pair; disabled in every
     capture.
@@ -237,15 +248,31 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     is not traced.
 45. **`flag_27`** - 0 normally, 4 on one conditional branch; the branch condition
     is untraced.
-46. **`member_slot_ec`** (`0x131` entry) - genuinely read off the wire into
-    `member_slot+0xEC`; the consumer of that slot is not pinned.
+46. **`member_slot_ec`** (`0x131`/`0x132` entry) - genuinely read off the wire
+    into `member_slot+0xEC`; write-only, no consumer. STRENGTHENED 2026-08-19:
+    independently re-verified across the WHOLE binary (not just the original
+    instruction-address band) by searching for every other use of the
+    member-slot addressing idiom - still no reader found anywhere.
 47. **`0x134` `trailing`** - present because the dispatch loop consumes 24 bytes;
     not read by the traced portion.
 48. **`np_id.opt` / `np_id.reserved`** - Sony's opaque SceNpId bytes, copied
     verbatim; readers past the handle untraced.
-49. **`0x12f room_settings_tail` / `0x130 room_object_tail` / `0x136 attr_tail`** -
-    provenance known (copies of specific room-object spans), interiors not
-    field-mapped.
+49. **`0x12f room_settings_tail`** / **`0x130 room_object_tail`** - provenance
+    known (copies of specific room-object spans), interiors not field-mapped.
+    Not yet re-investigated with the exhaustive live-debugger method used
+    below for `attr_tail` - a 2026-08-19 attempt found an inconsistency in the
+    existing sender-address citation for `0x130`'s builder that needs
+    re-verifying before trusting any destination-object math built on it.
+49a. **`0x136 attr_tail`** - MECHANISM FULLY RESOLVED 2026-08-19, interior
+    meaning still unknown. Both copy sites traced at instruction granularity
+    and live-confirmed in RPCS3's debugger: lands in `g_70`/NetInfo
+    (`0x013835c0` on 01.00, a well-known object this project has mapped since
+    2026-08-17), offsets `0xb0:0xc4`. An exhaustive scan of the object's only
+    addressing path (51 call sites, one compilation unit) found no reader
+    anywhere in the retail binary, and a live canary-byte test confirmed zero
+    client-visible effect. Closing the interior meaning needs a live retail
+    capture (see docs/OPEN-QUESTIONS.md's PS4 capture plan) - this is now the
+    strongest-evidenced item in this tier, promoted out of tier 3 below.
 
 ---
 
@@ -254,27 +281,32 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
 50. **`report-server` response grammar** - the request is captured, the reply is
     not. Deliberately not guessed. Also an implementation risk: our stub answers
     a ban check with a ticket blob.
-51. **`single-player-server` line protocol** - a hello spec exists, but no line
-    grammar at all; the service has never been observed carrying traffic.
-52. **`0x136 attr_tail` contents** (20 bytes) - the map/mode attribute block
-    interior.
-53. **`0x12f room_settings_tail`** (32 bytes) and **`0x130 room_object_tail`**
-    (32 bytes) - unmapped room-object spans.
-54. **`0x140`'s attribute identity** - what lobby setting the selector actually
-    names. No client branch reads it; only a retail-server capture or the
-    vtable-dispatched caller would say.
-55. **`profile_21.game_data` interior** - the 0x5000-byte payload; subsystem
+51. **`0x12f room_settings_tail`** (32 bytes) and **`0x130 room_object_tail`**
+    (32 bytes) - unmapped room-object spans. See item 49 above.
+52. **`profile_21.game_data` interior** - the 0x5000-byte payload; subsystem
     index ranges only partly claimed.
-56. **`profile_21` zero region `P+0x1E74..0x5008`** - purpose unknown.
-57. **DC-blocked set** - all net-stat slots (including the supplies gate),
+53. **`profile_21` zero region `P+0x1E74..0x5008`** - purpose unknown.
+54. **DC-blocked set** - all net-stat slots (including the supplies gate),
     `rank_tier` thresholds, and every id→asset map (cosmetics, character/name
     pools). Blocked on extracting `net1.bin`/`net10.bin` registries; not
     reachable by decompiling the EBOOT.
-58. **`0x142` numeric encoding for a ranked account** - needs a ranked capture.
-59. **Which UI/game path drives `0x13e` kind 3 vs kind 4** - vtable dispatch,
-    not statically resolvable.
-60. **Intermittent "Host quit for cheating"** teardown - rare, unexplained, no
+55. **`0x142` numeric encoding for a ranked account** - needs a ranked capture.
+56. **Intermittent "Host quit for cheating"** teardown - rare, unexplained, no
     packet correlated with it yet.
+57. **`stat_line` task line's 2nd `%s`** - the accessor is pinned (`base+0x2e6c`
+    string field), but `base` resolves to a runtime-allocated object with no
+    file-backed content - needs a live memory read during a campaign autosave.
+58. **`stat_line` task line's `%x`** (`task-%x`) - likely a shared connection/
+    job-id field (same read idiom recurs in unrelated structs), not confirmed.
+
+RESOLVED OUT OF THIS TIER since 2026-08-18 and removed from the numbered list
+above (kept here so old cross-references aren't silently broken): `single-
+player-server` line protocol (now `protos/0x11_stat_line.ksy`, 2026-08-19),
+`0x136 attr_tail` contents' mechanism (see item 49a above; interior meaning
+still open but promoted to tier 2), `0x140`'s attribute identity (resolved,
+`protos/0x140_set_room_flags.ksy`), `0x13e` kind 3 vs kind 4 (resolved,
+`protos/0x13e_set_host_flag.ksy`), `gamelist_line` grammar (resolved
+2026-08-19).
 
 ---
 

@@ -59,7 +59,7 @@ search of both EBOOTs finds neither string in the older build:
 | `heartbeat-server` | both | yes (2026-08-19) | 314 hellos from 01.00 alone; reply is never parsed |
 | `report-server` | **01.11 only** (`0xeacdc0`) | yes (2026-08-19) | `is-banned <npid>`; see protos/0x11_report_line.ksy |
 | `gamelist-server` | **01.11 only** (`0xeb2690`) | yes (2026-08-19) | `game-add <session-id> <player>...`; write-only, no read verb exists; reply never parsed. See below and `docs/protocol/0x11_gamelist_line.md` |
-| `single-player-server` | both | no | has never been observed sending anything; grammar unknown |
+| `single-player-server` | both | no | grammar RESOLVED 2026-08-19 via static analysis (`protos/0x11_stat_line.ksy`); still never observed sending anything live (0 of 452 captured hellos) |
 | `invite-server` | both | no | confirmed dead code, see below |
 
 `ticket_server.py` logs a loud warning for any service that reaches the

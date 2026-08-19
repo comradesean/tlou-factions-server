@@ -229,9 +229,9 @@ names used for 0x142/0x143/0x13e/0x13c elsewhere on this page:
 | 0x139 | `RoomClosed` / forced teardown | server→client | Not "kickout" | `protos/0x139_room_closed.ksy` |
 | 0x13c | `Promote` | client→server | `{new_owner@4, room_id@8}` | (existing `.ksy`) |
 | 0x13d | `OwnerMemberChanged` | server→client | writes `room+0x19f0` | (existing `.ksy`) |
-| 0x13e | `SetHostFlag` | client→server | kind byte `3` or `4`@offset 5 — a sender-path discriminator, not a constant (corrected 2026-08-18) | `protos/0x13e_set_host_flag.ksy` |
+| 0x13e | `SetHostFlag` | client→server | kind byte `3` or `4`@offset 5 — a sender-path discriminator, not a constant. RESOLVED 2026-08-19: `kind=3` is a generic host-flag claim/release on either the party or game-room object; `kind=4` is a set-then-clear pair tied to the game room's active-match lifecycle | `protos/0x13e_set_host_flag.ksy` |
 | 0x13f | `HostFlagUpdated` | server→client | writes `room+0x19f4` | `protos/0x13f_host_flag_updated.ksy` |
-| 0x140 / 0x141 | `SetRoomAttr` / `RoomAttrUpdated` | client→server / server→client | writes `room+0x1f0`; meaning still unknown | (existing `.ksy`) |
+| 0x140 / 0x141 | `SetRoomAttr` / `RoomAttrUpdated` | client→server / server→client | writes `room+0x1f0`. RESOLVED 2026-08-19: `attr_selector` is a binary client-phase announcement, not an attribute selector (`1` = lobby/roster rebuild, `0` = `NET_SM_RESULTS` match-end crediting) - server-side consequence still unknown | `protos/0x140_set_room_flags.ksy` |
 | 0x142 | `HostRank` | client→server | `16 + 2*count` bytes; one u16 per local player from the `FUN_0039b720` collector — hand-confirmed live 2026-08-18, only per-u16 numeric encoding still open | `protos/0x142_host_rank.ksy` |
 | 0x143 | `SetRoomDataBlock` | client→server | 128-byte field written to `room+0x18` via strcpy — a NUL-terminated string, not an opaque block (re-verified 2026-08-18) | `protos/0x143_set_room_data_block.ksy` |
 | 0x144 | `RoomDataBlockUpdated` | server→client | broadcasts the same 128-byte strcpy'd string block | `protos/0x144_room_data_block_updated.ksy` |
