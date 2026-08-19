@@ -1707,23 +1707,26 @@ def handle(conn, addr, log_lock, log):
                         # research/notes/2026-08-18-jip-roster-collision.md.
                         "next_member_id": JOINER_MEMBER_ID,
                         "room_ptrs": {MEMBER_ID: room_ptr},
-                        # PUBLIC iff this client reached RoomCreate via find-match
-                        # (0x135 preceded it). Only public rooms enter the
-                        # find-match list; private/custom games never do.
-                        # PUBLIC iff this is a matchmaking host. TWO ways to
-                        # be one, because the builds differ (2026-08-19):
-                        #   01.00 searches FIRST and self-hosts if nothing is
-                        #         found, so a 0x135 precedes the RoomCreate.
-                        #   01.11 SELF-HOSTS FIRST and only searches after
-                        #         abandoning that room, so NO 0x135 precedes it
-                        #         (live: room created 00:40:03 with no search,
-                        #         first 0x135 at 00:40:47 after it was left).
-                        # Requiring the search alone registered every 1.11
-                        # matchmaking host as PRIVATE, so it was never
-                        # advertised and 1.11 matchmaking could not work at all.
-                        # The self-host is still identifiable: its field_0c
-                        # carries the MODE it is hosting (0x02/0x03), which
-                        # private creates never do.
+                        # PUBLIC iff the room DECLARES itself a matchmaking
+                        # lobby - its playlist id says so.
+                        #
+                        # This was previously inferred from message ORDERING:
+                        # "did a 0x135 search arrive on this connection first".
+                        # That was a proxy, not the signal. It only ever worked
+                        # because 01.00 happens to search before it self-hosts.
+                        # A client that self-hosts FIRST and searches afterwards
+                        # (01.11 does; live 2026-08-19, room created 00:40:03
+                        # with no preceding search, first 0x135 at 00:40:47
+                        # after that room was abandoned) had every matchmaking
+                        # host registered PRIVATE and never advertised.
+                        #
+                        # The room carries the answer regardless of ordering: a
+                        # matchmaking host stamps the PLAYLIST it is hosting in
+                        # field_0c, which private and party creates never do.
+                        # The preceding search is kept only as corroboration -
+                        # it still covers a client that searched and then
+                        # stamped a stale value (observed once, 2026-08-18
+                        # 23:18:49).
                         "public": is_matchmaking_host,
                         # The playlist this room serves, taken from the SEARCH
                         # that preceded it (0x135 field_0c), not from this
