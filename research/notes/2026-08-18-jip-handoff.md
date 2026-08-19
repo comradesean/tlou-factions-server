@@ -60,6 +60,13 @@ the same reason (party churn / "kicked from the party" spam).
   each RPCS3 relaunch, so grab it before restarting a crashed VM.
 - The session manager must be RESTARTED after any `session_manager.py` edit; a
   restart resets the tap's conn-id counter (low conn ids = fresh restart).
+  **TREAT A RESTART AS DESTRUCTIVE.** The client never reconnects to port 7314
+  (proven: research/notes/2026-08-18-session-manager-connect-and-reconnect.md),
+  so every connected client is stranded until it re-enters the Multiplayer menu
+  by hand - and it will look healthy while disconnected, since the socket death
+  is silent client-side. Batch edits and restart BETWEEN test sessions. A
+  SIGTERM/SIGINT now drains rooms first (0x134+0x139) so clients at least tear
+  down cleanly; a crash or hard kill still strands them.
 
 ## Unrelated cleanup
 
