@@ -99,17 +99,42 @@ seq:
       and applies a DC penalty when a candidate map matches - i.e. "don't replay
       a map these players just played". 0xffff = unset.
       LIVE MAP IDS. 01.00 (2026-08-18): 0x0e, 0x0f, 0x10, 0x13, 0x14, 0x15,
-      0x17 - seven, all unnamed. 01.11 (2026-08-19), NAMED by playing them:
+      0x17 - seven, all unnamed. 01.11 (2026-08-19), NAMED by loading them:
         0x1f (31) Checkpoint
         0x31 (49) Lakeside
-      This ring is the project's only ground-truth source of map ids: play a
+        0x3a (58) Suburbs
+        0x21 (33) Bill's Town
+        0x1d (29) Financial Plaza
+        0x15 (21) Bookstore
+      This ring is the project's only ground-truth source of map ids: load a
       KNOWN map, then read the id at entry 0 of the next card.
+      THE RING RECORDS AT MAP *LOAD*, NOT AT MATCH COMPLETION (established
+      2026-08-19 from wire.jsonl). Three transitions are each far too short for
+      a played match, two of them starting from a CLEARED ring: conn2
+      [ffff,ffff]@01:01:27 -> [001f,ffff]@01:01:56 (29s, Checkpoint); conn1
+      [ffff,ffff]@01:18:08 -> [0031,ffff]@01:18:52 (44s, Lakeside); and
+      [003a,ffff] -> [0021,003a] 43s after the 0x143 match-start
+      `comradesean.1787121636`@02:40:37 (Bill's Town), a match that then ran to
+      completion, its 0x133 RoomLeaving landing at 02:52:26 - the id was in the
+      ring ~11 minutes BEFORE the match ended. Reconfirmed the same night on a
+      fourth map: 0x143 match-start @02:55:09, ring [0021,ffff] -> [001d,0021]
+      @02:55:50 (Financial Plaza), 41s later - the same load-time offset. "Recently PLAYED" is therefore a
+      misnomer for the write trigger - the entry lands when the level loads.
+      PRACTICAL CONSEQUENCE: a map can be named by loading into it and quitting
+      immediately; there is no need to play the match out.
       CAVEAT: the ring is CLEARED when a client is booted back to the menu, not
       only on a full game restart - two naming attempts were lost that way on
-      2026-08-18. Do not get booted between playing the map and reading a card.
-      Whether ids are stable ACROSS builds is unresolved: 01.11's named values
-      fall outside 01.00's observed range, but those accounts had no DLC so they
-      could only play base maps. One match on a known map on 01.00 settles it.
+      2026-08-18. Do not get booted between loading the map and reading a card.
+      CROSS-BUILD RANGES OVERLAP - CORRECTED 2026-08-19. The earlier reasoning
+      here ("01.11's named values fall outside 01.00's observed range") was an
+      artifact of the small 01.11 sample: every id then named (0x1f, 0x21, 0x31,
+      0x3a) happened to sit above the 01.00 set. Later the same night, with both
+      clients confirmed on net10.bin (.121 switched 00:16:47, .100 at 00:35:11),
+      01.11 produced 0x0e and 0x15 - both squarely inside 01.00's observed range
+      0x0e..0x17. So the two id spaces are NOT disjoint. Whether a given map
+      keeps its id across builds is still unresolved and needs the same map named
+      on both; 0x15 = Bookstore on 01.11 is the natural first candidate, since
+      0x15 was also observed on 01.00.
       (An earlier note here wondered whether these ids overlapped
       room_field_0c's private-match values. That question is closed:
       room_field_0c is the PLAYLIST id, an unrelated quantity - see
