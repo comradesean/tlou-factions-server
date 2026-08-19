@@ -66,11 +66,30 @@ live in the data-compiler payload the game loads at runtime.
   debugger (01.00, breakpoint `0x003b2a9c`, read-back `0x003b2bd4`). The
   `0x136` deserializer copies attr_tail verbatim into the entry object (wire
   `0x24:0x38` -> entry_obj `0x18:0x2c`). `_opd_FUN_003b2a9c` (CONNECT_TO_HOST)
-  then copies the whole 36-byte attribute block, attr_tail included, into a
-  FIXED STATIC SINGLETON at `0x013835c0` (01.00), offsets `0xb0:0xc4` -
-  confirmed live: r30 resolved to the predicted anchor `0x1271b1c`, r11
-  resolved to `0x013835c0` exactly, and a memory read at that object's
-  `0xb0:0xc4` showed the server's 20 zero bytes landed there untouched.
+  then copies the whole 36-byte attribute block, attr_tail included, into
+  `g_70`/NetInfo at `0x013835c0` (01.00), offsets `0xb0:0xc4` - confirmed
+  live: r30 resolved to the predicted anchor `0x1271b1c`, r11 resolved to
+  `0x013835c0` exactly, and a memory read at that object's `0xb0:0xc4`
+  showed the server's 20 zero bytes landed there untouched.
+
+  IDENTITY RESOLVED 2026-08-19: this is not an anonymous struct - `g_70` is a
+  singleton independently mapped across extensive prior project research
+  (2026-08-17/18, written before this investigation): `2026-08-17-match-
+  counts-latch.md`, `-member-data-blob-rank-and-0x142-hostrank.md`,
+  `-min-players-client-patch.md`, `-mode-min-players.md`, `-session-
+  handoff.md`, `-supplies-and-survivor-state.md`, `-userdata-txt-crypt-
+  format.md`, `2026-08-18-session-manager-connect-and-reconnect.md`, and
+  `2026-08-18-wire-residue-and-field-corrections.md` all independently
+  resolve the identical address via the identical anchor/slot chain. Known
+  sibling fields on the SAME object: `+0x6C` is the "counted game" crediting
+  latch (nine setter sites, two of them inside the leaderboard get/update
+  workers `FUN_003af46c`/`FUN_003afb74` - the same compilation unit as
+  attr_tail's own writer); `+0x80` holds a CRC32-hashed userdata config
+  value with its own "no active retail reader found" note - an exact
+  structural parallel to attr_tail. A search of every prior `g_70`-related
+  note for a bulk-copy/memcpy operation on the object (which would evade the
+  offset-based scan below) found none - this narrows confidence without
+  fully closing the residual gap.
 
   Then an EXHAUSTIVE static search closed the "is it read anywhere" question
   as far as static analysis can: the object is reached through exactly ONE

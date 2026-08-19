@@ -171,6 +171,39 @@ types:
           possibility one way or the other. Reverted immediately after the
           test; the server sends zero attr_tail again.
 
+          OBJECT IDENTITY RESOLVED 2026-08-19: the destination is NOT an
+          anonymous "peer-connection struct" - it is `g_70` / NetInfo, a
+          singleton this project has independently mapped in extensive prior
+          research written across 2026-08-17/18, well before this
+          investigation (research/notes/2026-08-17-match-counts-latch.md,
+          -member-data-blob-rank-and-0x142-hostrank.md,
+          -min-players-client-patch.md, -mode-min-players.md,
+          -session-handoff.md, -supplies-and-survivor-state.md,
+          -userdata-txt-crypt-format.md; 2026-08-18-session-manager-connect-
+          and-reconnect.md; 2026-08-18-wire-residue-and-field-corrections.md)
+          - all resolving to the identical address 0x013835c0 via the
+          identical anchor/slot chain (net-matchmaking CU anchor
+          `r30=0x1271b1c`, slot `0x01269b58`), independently confirmed in
+          `2026-08-17-min-players-client-patch.md`'s own resolved-globals
+          table. Known sibling fields on this SAME object: `+0x6C` is the
+          "counted game" crediting latch (nine independent setter sites,
+          including two INSIDE the leaderboard get/update workers
+          `FUN_003af46c`/`FUN_003afb74` - the same compilation unit as
+          attr_tail's writer); `+0x80` holds a CRC32-hashed userdata config
+          value with its own "no active retail reader found" note, an
+          exact structural parallel to attr_tail's own unread status. This
+          reframes attr_tail's landing zone (`+0xb0:0xc4`) as sitting inside
+          the SAME heavily-instrumented central network-state object as the
+          match-crediting latch, not an obscure, disconnected struct - which
+          is why the exhaustive 51-site scan above is trustworthy: this
+          object's every other known field was ALSO found by scanning its
+          one addressing path, the same method used to search for an
+          attr_tail reader.
+          A search of every prior note mentioning `g_70` for any bulk-copy /
+          memcpy-style operation on the object (which would evade the
+          offset-based scan above) found none - the residual gap stated
+          below is unclosed by this cross-check, not worsened by it.
+
           REMAINING GAP: this rules out DIRECT offset reads only. A bulk copy
           of a wider span (e.g. the whole singleton, or object+0x98 onward)
           into a second buffer, read back elsewhere, would evade an
