@@ -27,25 +27,66 @@ doc: |
   FIELD MEANINGS, task line (all confirmed by tracing FUN_007f1acc):
     %s (1st) = the player's own online_id, from sceNpManagerGetNpId - same
         source as every other sibling service's identity field.
-    %x       = param_1[0x1b]. CORRECTED 2026-08-19: an earlier pass of this
-        doc guessed a "shared connection/job-id" reading from the read-site
-        idiom's recurrence alone, without finding an actual writer. A writer
-        was since found and traced (`FUN_0032241c`, research/ghidra/
-        fm_applyrefs.txt): `param_1[0x1b]` is populated, alongside several
-        sibling fields at the same struct (`0x19`, `0x1d`-`0x20`, `0x2e`),
-        by an identical DC-compiled-table lookup mechanism - a base table
-        resolved via hash `0x1ad3445f` (`_opd_FUN_0078b5a0`), then a
-        per-field key lookup into that table (`_opd_FUN_00ab685c`) whose
-        result indexes a second array to yield the final value. This is a
-        genuine DC task/objective-definitions table pattern, not a generic
-        connection/job-id - CONFIRMS the literal "task-" prefix's plain
-        reading rather than the alternative guessed earlier. The exact
-        SEMANTIC identity of task `0x1b` specifically (as opposed to its
-        five siblings, which presumably represent other task/objective
-        slots resolved the same way) is DC-blocked - the table's actual
-        contents live in `.pak`/`netN.bin` data this project cannot read
-        from the EBOOT alone, the same wall as every other DC-gated id in
-        this project.
+    %x       = param_1[0x1b]. CORRECTED 2026-08-19 (twice now): an earlier
+        pass of this doc guessed a "shared connection/job-id" reading from
+        the read-site idiom's recurrence alone, without finding an actual
+        writer. A writer was then found (`FUN_0032241c`,
+        research/ghidra/fm_applyrefs.txt) and its DC-table lookup mechanism
+        traced to `net1.bin`/`net10.bin` this session (see
+        `docs/protocol/dc_table.md` for the container format those files
+        use). That trace REVISES the "task/objective-definitions table"
+        reading down to something narrower and more surprising:
+
+        `FUN_0032241c` builds a UI reward/notification-popup descriptor, not
+        a task-definitions record. It resolves THREE separate DC base
+        tables via `_opd_FUN_0078b5a0(materialCollection, hash)` - hash
+        `0xD006E7B5` (populates struct indices `0x19`,`0x1a`,`0x1d`-`0x20`,
+        `0x2e`,`0x2f`; NOT `param_1[0x1b]`'s siblings - the earlier doc's
+        sibling list was wrong, those belong to a different base hash than
+        the one `0x1b` uses), `0x1AD3445F` (the hash this proto cares about
+        - populates `0x1b`,`0x1c`,`0x21`,`0x23`-`0x2b`,`0x2d`,`0x30`), and
+        `0x4240EF2E` (untraced this session). Each resolved table is then
+        looked up per-field via `_opd_FUN_00ab685c(table, keyPointer)` -
+        and `_opd_FUN_00ab685c` is a STRING lookup (calls string-compare
+        helpers, does a binary search keyed on `strlen`+`memcmp`-shaped
+        calls), not a hash lookup as the prior pass assumed. The `keyPointer`
+        arguments are literal compile-time C-string pointers baked into the
+        EBOOT; resolving the actual TOC slot used for `param_1[0x1b]`'s key
+        (`puVar8 + -0x7ee8` in the Ghidra decompile, confirmed against the
+        raw disassembly at `0x322794`/`0x322780`) and reading the string at
+        that address gives: **`"general/hud/prize-icon/Default"`**.
+
+        So `0x1ad3445f`'s DC00 table (found literally 39 times in net1.bin,
+        76 times in net10.bin, per the earlier handoff note's grep) is a
+        **HUD material/icon-path lookup table** - string-keyed by asset
+        paths like `general/hud/prize-icon/Default`,
+        `general/hud/alpha-icon24/default`, `general/hud/spinner/default`,
+        etc. (the other 13 key strings resolved for this struct's sibling
+        fields are all in the same `general/hud/...` family) - NOT a
+        task/objective-id table. `param_1[0x1b]`, and therefore `task-%x`,
+        is whatever integer value that table associates with the literal
+        key `"general/hud/prize-icon/Default"` (`_opd_FUN_00ab685c` returns
+        an array index; the value itself is `*(index*4 +
+        *(table+0x18))`). Since the key string is a compile-time constant
+        for this call site, every `task-%x` line this specific code path
+        produces very likely reports the SAME resolved id (this function's
+        `param_3` context can still vary the icon *table instance*, e.g. a
+        per-DLC or per-collection material set, so it's not necessarily a
+        single global constant across all builds/regions - untested).
+
+        This is a genuine, container-format-confirmed correction, not a new
+        guess: the hash's literal on-disk hits were located in
+        `net1.bin`/`net10.bin` via `docs/protocol/dc_table.md`'s parser, and
+        the string read at the resolved TOC slot is a real EBOOT C string,
+        not inferred. What remains open: the actual integer VALUE associated
+        with `"general/hud/prize-icon/Default"` in a live-resolved table
+        (a runtime read, not a static one, since the lookup goes through the
+        engine's runtime hash-registry rather than a raw file offset this
+        project can point at with full confidence - see
+        `protos/common/member_data.ksy`'s `rank_tier` doc for why that
+        registry's file-offset correspondence is not fully nailed down
+        either). High confidence on the mechanism and the key string; open
+        on the resolved numeric value.
     %s (2nd) = _opd_FUN_00952520(**(anchor-0x7f3c)) - RESOLVED 2026-08-19 to a
         MECHANISM, not a value: the "function" is a 3-instruction accessor
         (`addi r3,r3,0x2e6c; clrldi r3,r3,32; blr`, i.e. `return base +

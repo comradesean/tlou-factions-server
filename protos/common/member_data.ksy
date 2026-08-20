@@ -358,10 +358,117 @@ seq:
       Offset 16:18. Producer: `bl 0x003c8e30` @ 0x003b16b4 (args
       r3 = `*(anchor-0x7fec)` = 0x01387240, `li r4,1` @ 0x003b16a8), then
       `sth r3,0x88(r1)` @ 0x003b16bc. FUN_003c8e30 returns the override at
-      `global+0x78`-1, else the first satisfied bracket in a DC threshold table
-      (hash 0xC85E199D) - rank/tier-bracket shaped. CORRECTED 2026-08-18 (was
-      the first 2 bytes of `reserved_10`). Medium confidence: bracket-lookup
-      mechanism verified; the displayed meaning needs the DC table contents.
+      `global+0x78`-1, else a scan result over a DC hash `0xC85E199D`'s table.
+      CORRECTED 2026-08-18 (was the first 2 bytes of `reserved_10`).
+
+      NAME CORRECTION 2026-08-19: hash `0xC85E199D` was previously described
+      as "rank/tier-bracket shaped" - that identification is now known to be
+      WRONG. Both `0xC85E199D` and its sibling `type_hash` (`0xced9d25f`,
+      the adjacent word at net1.bin file offset `0xed4`+8) were reverse-
+      matched byte-exact against the shipping disc's own DC source-symbol
+      lists: `crc32_mpeg2("*net-money-info*") == 0xC85E199D` and
+      `crc32_mpeg2("net-money-info") == 0xced9d25f`
+      (`server/lib/userdata_crypt.py`'s `crc32_mpeg2` - already this
+      project's confirmed hash for `userdata.txt` keys). The candidate pool
+      was 43,674 unique tokens pulled from every `.dci` export/import list
+      inside `bin.psarc` on the retail PS3 disc (`build/main/bin.psarc`,
+      entries under `dc1/*.dci` - plaintext Scheme-style dependency files;
+      `*name*` is this codebase's global-variable naming convention, so
+      `*net-money-info*` is a global and `net-money-info` is its bare
+      type/struct name - both hashed, both hit, on the very same directory
+      record). Two independent exact matches into the same concept, out of
+      a 32-bit hash space, is not a plausible coincidence.
+
+      This means the DC table backing this field is named `net-money-info`
+      in the source, not any rank/tier concept - it is very likely a
+      currency/scrap-economy table (unlock costs, weekly earnings, etc.),
+      NOT a rank-bracket table. This directly explains why the 193-entry
+      payload below never read cleanly as flat rank thresholds. Left
+      OPEN, deliberately not resolved here: whether the wire field at
+      offset 16:18 (still named `rank_tier` for its independent behavioral
+      justification - see `docs/protocol/0x131_member.md`, "the field the
+      lobby reads for a REMOTE player's rank/title") is actually a
+      money-related value misread as rank/tier, or whether `FUN_003c8e30`
+      genuinely produces a rank/tier display value by way of a
+      money-table lookup (e.g. "which reward tier has this player's
+      earned currency crossed") - both are plausible and neither is
+      confirmed. A live RPCS3 memory read while a ranked/high-currency
+      account is displayed, correlated against known scrap/currency
+      totals, would resolve this. Do not rename this field off the
+      strength of this finding alone.
+
+      PLAUSIBLE FIT (domain knowledge, not byte-level evidence): Factions'
+      known economy is two-tier - in-match "Parts" (the running per-round
+      total, displayed live and shown as the round-end "Score") convert
+      into "Supplies" for the separate survivor-camp meta-game. A table
+      named `net-money-info` with a 193-entry array is a good structural
+      fit for that conversion (rates/costs/breakpoints), better than a flat
+      rank-bracket table. Still inference, not confirmed by any capture.
+
+      LOG CROSS-CHECK 2026-08-19 (inconclusive, not confirming): every
+      captured `0x13a` frame in `server/logs/wire.jsonl` (852 total, three
+      test accounts - `comradesean`, `mgnomad2`, `gmnomad`) has this field at
+      a constant `0x0000`, cross-referenced by npid+timestamp against real
+      `leaderboard-update 405 ...` submissions in
+      `server/logs/ticket_server.log` (board 405 = overall/clan-supplies,
+      sent on every match end - `protos/0x11_leaderboard_line.ksy`) for the
+      same accounts over the same period: `comradesean` plateaued at score
+      `81`, `mgnomad2` climbed `35` -> `53+` across several matches. So this
+      field shows ZERO variation even while the accounts' actual supplies
+      score was visibly climbing - consistent with the bracket-scan
+      "constant absent an override" reading above, but it does NOT
+      distinguish the money-table hypothesis from the old rank-tier guess:
+      both predict a constant 0 for accounts this low/unranked. What would
+      actually resolve this: a capture with a MUCH higher-supplies account
+      (enough to plausibly cross a bracket boundary), or the live memory
+      read of the resolved table already called for above.
+
+      FUN_003c8e30 FULLY DECOMPILED 2026-08-19 (see `docs/protocol/dc_table.md`
+      for the DC00 container this hash lives in). Corrected reading of the
+      scan loop (`0x3c8ea0`-`0x3c8ed4`): it is NOT "first satisfied bracket"
+      - it linearly walks `bracket[i]` for `i` in `[0, count)`, treating each
+      entry as a signed-int pair `{fieldA, fieldB}` read via a *4-byte*
+      stride (`r0 = i*4`, then reads `+0`/`+4` from that address - i.e.
+      consecutive iterations' reads overlap by one word). It keeps
+      `result = i` on every iteration EXCEPT one: if `fieldA <= 0 && fieldB >
+      0`, it exits immediately, leaving `result` at whatever the previous
+      iteration set. In practice that means it returns "index of the last
+      bracket before a `{<=0, >0}` sentinel record", which for a
+      well-formed table is just `count - 1` - i.e. this branch, absent the
+      `global+0x78` override, looks like it always resolves to a constant
+      (something like "highest defined tier"), not a live comparison against
+      any player stat - `param_2`/`r4` (passed in as the literal `1` at the
+      call site) is never read anywhere in this function body. This may mean
+      the *real* per-player tier selection happens before this call (this
+      function only resolves the display bracket for an already-decided
+      tier index), but that wasn't traced this session.
+
+      The DC hash itself is resolved through a separate, engine-wide
+      sorted-hash lookup (`_opd_FUN_009fa9f4` -> `_opd_FUN_009fa88c`, a
+      binary search over a runtime-built `{key_hash:4, value:4}` array,
+      8-byte stride, NOT the same code as `dc_table.ksy`'s file parser) -
+      this is the "named-value registry" the earlier handoff note
+      mis-suspected of being the DC00 file parser itself; it consumes this
+      container's contents rather than parsing its bytes. The registry's
+      resolved value, treated as a pointer, is read as `{count: u4,
+      array: u4}` by FUN_003c8e30 - and that exact record is directly
+      findable in net1.bin's raw bytes: the top-level directory entry for
+      this hash (file offset `0xed4`) is a 3-word
+      `{value_ptr, key_hash, type_hash}` record whose `value_ptr` targets
+      file offset `0x27da8`, which holds `{count=193 (0xc1), array_ptr ->
+      file-off 0x2950c}`. Dumping `0x2950c` onward, however, does NOT read
+      as a clean flat array of 193 threshold numbers under either the 4-byte
+      stride the decompile literally uses or an 8-byte-struct reading - it
+      looks like more DC-directory-shaped data (a mix of hash-looking words
+      and further fixup pointers, in a period-3 pattern), i.e. either this
+      is itself a nested sub-directory (not a leaf numeric array) or the
+      hash resolved by the runtime registry for the live binary is not
+      literally "file offset 0x27da8 in net1.bin" (a static-file coincidence
+      rather than the true runtime pointer) - genuinely unresolved which.
+      Confidence: HIGH on the bracket-scan mechanism and the directory-entry
+      location; LOW/UNRESOLVED on what the 193 entries actually encode. A
+      live RPCS3 memory read of the resolved table while a ranked account is
+      displayed would close this; static analysis alone did not.
   - id: card_stat_2
     type: u2
     doc: |
