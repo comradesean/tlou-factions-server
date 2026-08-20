@@ -26,12 +26,35 @@ _DATA = os.path.join(_HERE, "data")
 _LOGS = os.path.join(_HERE, "logs")
 sys.path.insert(0, os.path.join(_HERE, "lib"))
 import ticket_cipher
+from rotating_log import RotatingLog, capped_appender
 
 CANDIDATE_KEY = bytes.fromhex("78 56 34 12 32 54 76 98 88 ef cd ab ef cd ab 89".replace(" ", ""))
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 7320
 os.makedirs(_LOGS, exist_ok=True)
 LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else os.path.join(_LOGS, "ticket_server.log")
+
+# Ceiling on the per-connection log block held in memory until the connection
+# closes. A real handshake (hello + two frames) logs a few kilobytes, and the
+# line services log one short command line per request, so this never truncates
+# legitimate traffic. Without it, the post-handshake watch loop hexdumps
+# everything a peer sends forever: a hello naming a service that is neither
+# ticket-server nor in LINE_SERVICE_HANDLERS falls through to that loop, and
+# `decrypt_frame`'s tag_ok is recorded but never enforced, so no valid
+# encryption is needed to stream unbounded bytes into the block until the
+# process is OOM-killed (which takes the whole backend down through run_all's
+# die-together supervision). Past the cap only a dropped-byte count is kept.
+MAX_LOG_CHARS = int(os.environ.get("TLOU_TICKET_MAX_LOG_CHARS", str(256 * 1024)))
+
+# Cap on concurrent handler threads, gating accept() rather than just the
+# thread start: an unaccepted connection holds no file descriptor of ours and
+# waits in the kernel's listen backlog instead, so a flood of idle connections
+# cannot exhaust this process's fd limit. Same pattern and reasoning as
+# http_gateway.py's MAX_CONCURRENT_HANDLERS. Each player holds several
+# concurrent sibling-service connections here (ticket, leaderboard, facebook,
+# heartbeat, report, gamelist), so this is set well above the per-player count.
+MAX_CONCURRENT_HANDLERS = int(os.environ.get("TLOU_TICKET_MAX_HANDLERS", "128"))
+_handler_slots = threading.Semaphore(MAX_CONCURRENT_HANDLERS)
 
 # Persistent leaderboard score store (see research/notes/
 # 2026-08-17-leaderboard-server-protocol.md). leaderboard-server multiplexes on
@@ -861,15 +884,17 @@ LINE_SERVICE_HANDLERS = {
 
 def handle(conn, addr, log_lock, log):
     ts = datetime.datetime.now().isoformat()
-    entry = f"==== {ts} connection from {addr[0]}:{addr[1]} ====\n"
+    append, finish = capped_appender(
+        f"==== {ts} connection from {addr[0]}:{addr[1]} ====\n",
+        MAX_LOG_CHARS, "log characters")
     try:
         # Message 1: 88-byte hello (protos/0x11_ticket_server_hello.ksy)
         hello = recv_exact(conn, 88)
-        entry += f"-- recv hello (88 bytes) --\n{hexdump(hello)}\n"
+        append(f"-- recv hello (88 bytes) --\n{hexdump(hello)}\n")
         opcode = hello[0]
         client_nonce = int.from_bytes(hello[4:8], "big")
         service_name = hello[24:88].split(b"\x00", 1)[0].decode("ascii", "replace")
-        entry += f"   opcode=0x{opcode:02x} client_nonce=0x{client_nonce:08x} service_name={service_name!r}\n"
+        append(f"   opcode=0x{opcode:02x} client_nonce=0x{client_nonce:08x} service_name={service_name!r}\n")
 
         # Message 2: our 8-byte response (0x22_ticket_server_hello_response.ksy)
         # ack_magic MUST be 0x22 or the client aborts immediately - confirmed.
@@ -879,7 +904,7 @@ def handle(conn, addr, log_lock, log):
         session_token = 0
         resp1 = bytes([0x22, 0x00, 0x00, 0x00]) + session_token.to_bytes(4, "big")
         conn.sendall(resp1)
-        entry += f"-- sent hello_response (8 bytes, session_token={session_token}) --\n{hexdump(resp1)}\n"
+        append(f"-- sent hello_response (8 bytes, session_token={session_token}) --\n{hexdump(resp1)}\n")
 
         # Several 0x11 siblings multiplex on THIS listener but speak the
         # line protocol after the hello, not the ticket message-C/D exchange.
@@ -889,15 +914,9 @@ def handle(conn, addr, log_lock, log):
         # "disconnected from the game servers"). See handle_line_service.
         handler = LINE_SERVICE_HANDLERS.get(service_name)
         if handler is not None:
-            # Serialize appends into `entry` via a closure so the service
-            # loop's log lines land in the same connection block.
-            box = {"entry": entry}
-
-            def log_append(text):
-                box["entry"] += text
-
-            handler(conn, session_token, client_nonce, log_append)
-            entry = box["entry"]
+            # The service loop's log lines land in the same (size-capped)
+            # connection block via the same appender.
+            handler(conn, session_token, client_nonce, append)
             return
 
         # Message 3: an encrypted frame (see docs/protocol/0x11_ticket_server_hello.md's
@@ -909,12 +928,12 @@ def handle(conn, addr, log_lock, log):
         pad = header[1]
         ciphertext = recv_exact(conn, plen + pad)
         raw3 = header + ciphertext
-        entry += f"-- recv message 3, encrypted frame ({len(raw3)} bytes) --\n{hexdump(raw3)}\n"
+        append(f"-- recv message 3, encrypted frame ({len(raw3)} bytes) --\n{hexdump(raw3)}\n")
 
         plaintext, tag_ok, _, computed_tag, embedded_tag = ticket_cipher.decrypt_frame(
             CANDIDATE_KEY, session_token, raw3)
-        entry += f"   tag_ok={tag_ok} computed_tag={computed_tag.hex()} embedded_tag={embedded_tag.hex()}\n"
-        entry += f"   decrypted plaintext ({len(plaintext)} bytes): {plaintext!r}\n"
+        append(f"   tag_ok={tag_ok} computed_tag={computed_tag.hex()} embedded_tag={embedded_tag.hex()}\n")
+        append(f"   decrypted plaintext ({len(plaintext)} bytes): {plaintext!r}\n")
         ticket_data = plaintext
 
         # UNHANDLED SIBLING SERVICE WATCH (2026-08-19). Everything that is not
@@ -932,18 +951,18 @@ def handle(conn, addr, log_lock, log):
         # NEVER been seen to send anything; if it ever does, that line is the
         # first evidence of its grammar and should not be missed.
         if service_name != "ticket-server":
-            entry += (f"   *** UNHANDLED SIBLING SERVICE {service_name!r} - no "
+            append((f"   *** UNHANDLED SIBLING SERVICE {service_name!r} - no "
                       f"handler, falling through to the ticket path and "
                       f"answering with a ticket_submit_response blob, which is "
                       f"probably NOT what it expects. Decoded request: "
                       f"{plaintext!r}. Add a handler in "
-                      f"LINE_SERVICE_HANDLERS. ***\n")
+                      f"LINE_SERVICE_HANDLERS. ***\n"))
             if service_name == "single-player-server":
-                entry += ("   *** single-player-server HAS SPOKEN FOR THE FIRST "
+                append(("   *** single-player-server HAS SPOKEN FOR THE FIRST "
                           "TIME. It had never been observed sending anything, so "
                           "its line grammar was unknown and protos/ has no spec "
                           "for it. Capture the request above - it is the only "
-                          "evidence of that grammar. ***\n")
+                          "evidence of that grammar. ***\n"))
 
         # Message 4: a real encrypted frame, keyed by client_nonce (the client's
         # receive-side counter, confirmed - see decrypt_frame's docstring/the
@@ -951,7 +970,7 @@ def handle(conn, addr, log_lock, log):
         # bytes) - only the crypto wrapper is verified, not what should be inside.
         frame_d, _ = ticket_cipher.encrypt_frame(CANDIDATE_KEY, client_nonce, b"\x00" * 16)
         conn.sendall(frame_d)
-        entry += f"-- sent ticket_submit_response, encrypted frame ({len(frame_d)} bytes) --\n{hexdump(frame_d)}\n"
+        append(f"-- sent ticket_submit_response, encrypted frame ({len(frame_d)} bytes) --\n{hexdump(frame_d)}\n")
 
         # Handshake complete per current understanding - watch for anything further
         # (a 5th message would mean our understanding is incomplete).
@@ -960,16 +979,20 @@ def handle(conn, addr, log_lock, log):
             try:
                 chunk = conn.recv(65536)
             except socket.timeout:
-                entry += "  (10s idle after handshake, closing)\n"
+                append("  (10s idle after handshake, closing)\n")
                 break
             if not chunk:
-                entry += "  (connection closed by peer after handshake)\n"
+                append("  (connection closed by peer after handshake)\n")
                 break
-            entry += f"-- UNEXPECTED extra data after handshake ({len(chunk)} bytes) --\n{hexdump(chunk)}\n"
+            append(f"-- UNEXPECTED extra data after handshake ({len(chunk)} bytes) --\n{hexdump(chunk)}\n")
     except (ConnectionError, socket.timeout, OSError) as e:
-        entry += f"  (error/early close: {e})\n"
+        append(f"  (error/early close: {e})\n")
     finally:
+        # Release the accept slot first: a failure while closing or logging
+        # must not permanently retire a slot.
+        _handler_slots.release()
         conn.close()
+        entry = finish()
         with log_lock:
             print(entry, flush=True)
             log.write(entry + "\n")
@@ -981,11 +1004,15 @@ def main():
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("0.0.0.0", PORT))
     srv.listen(5)
-    print(f"Stateful ticket-server stub listening on 0.0.0.0:{PORT}, logging to {LOG_PATH}", flush=True)
+    print(f"Stateful ticket-server stub listening on 0.0.0.0:{PORT}, logging to "
+          f"{LOG_PATH}, max {MAX_CONCURRENT_HANDLERS} concurrent handlers", flush=True)
 
     log_lock = threading.Lock()
-    with open(LOG_PATH, "a", buffering=1) as log:
+    with RotatingLog(LOG_PATH) as log:
         while True:
+            # Gate ACCEPT on the semaphore, not just the handler thread - see
+            # MAX_CONCURRENT_HANDLERS.
+            _handler_slots.acquire()
             conn, addr = srv.accept()
             t = threading.Thread(target=handle, args=(conn, addr, log_lock, log), daemon=True)
             t.start()

@@ -28,8 +28,23 @@ import time
 import json
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 7314
-_LOGS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(_HERE, "lib"))
+from rotating_log import RotatingLog
+_LOGS = os.path.join(_HERE, "logs")
 os.makedirs(_LOGS, exist_ok=True)
+
+# Cap on concurrent handler threads, gating accept() rather than just the
+# thread start: an unaccepted connection holds no file descriptor of ours and
+# waits in the kernel's listen backlog instead, so a flood of idle connections
+# cannot exhaust this process's fd limit (and, through run_all's die-together
+# supervision, take the whole backend down). Same pattern and reasoning as
+# http_gateway.py's MAX_CONCURRENT_HANDLERS. These are long-lived control
+# connections - one per player for the whole session, with a 600 s idle
+# timeout - so the cap is set generously above any realistic player count
+# rather than at http_gateway's request-scoped 64.
+MAX_CONCURRENT_HANDLERS = int(os.environ.get("TLOU_SESSION_MAX_HANDLERS", "128"))
+_handler_slots = threading.Semaphore(MAX_CONCURRENT_HANDLERS)
 LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else os.path.join(_LOGS, "session_manager.log")
 
 # --- Raw wire tap (2026-08-18) --------------------------------------------
@@ -43,7 +58,7 @@ LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else os.path.join(_LOGS, "session_ma
 # raw recv/sendall events faithfully. Consumed by research/tools/verify_wire.py.
 WIRE_PATH = os.path.join(_LOGS, "wire.jsonl")
 _wire_lock = threading.Lock()
-_wire_fp = open(WIRE_PATH, "a", buffering=1)
+_wire_fp = RotatingLog(WIRE_PATH)
 _conn_seq = 0
 _conn_seq_lock = threading.Lock()
 
@@ -1135,6 +1150,9 @@ def reseed_departed_party(conn, emit, npid, room_ptr, max_players):
             "stop_event": threading.Event(),
             "conns": {id(conn): (MEMBER_ID, conn, emit)},
             "members": [(MEMBER_ID, npid)],
+            # Authoritative party/room leader. See the other room-registration
+            # site for why this is tracked.
+            "owner_member_id": MEMBER_ID,
             "last_join_ts": time.monotonic(),
             "next_member_id": JOINER_MEMBER_ID,
             "room_ptrs": {MEMBER_ID: room_ptr},
@@ -1518,6 +1536,38 @@ def recv_exact(conn, n, timeout=10):
             raise ConnectionError(f"peer closed after {len(data)}/{n} bytes (wanted {n})")
         data += chunk
     return data
+
+
+def sender_is_room_owner(room_entry, conn):
+    """True if `conn` is the connection of the room's current owner/leader.
+
+    Membership alone is NOT authorization: Kickout (0x137) and Promote (0x13c)
+    used to act for any member of the room, so any player could kick or
+    promote any other player - including themselves - by sending the opcode
+    directly. The owner is tracked server-side as `owner_member_id` (the room
+    creator, member 1, moved by a successful Promote), which is the same value
+    0x13d OwnerMember publishes to every client as room_obj+0x19f0. Caller
+    holds rooms_lock, or holds a reference taken under it.
+    """
+    slot = room_entry.get("conns", {}).get(id(conn))
+    if slot is None:
+        return False
+    return slot[0] == room_entry.get("owner_member_id", MEMBER_ID)
+
+
+def serve(conn, addr, log_lock, log):
+    """Thread body: run handle() and always give the accept slot back.
+
+    The release cannot live in handle()'s own `finally`: that block touches
+    per-connection state (stop_event, the room registry) that is not yet bound
+    if the connection dies during the initial handshake, so an exception there
+    would skip the release and permanently retire a slot - the connection cap
+    would then ratchet down to zero and stop accepting anyone.
+    """
+    try:
+        handle(conn, addr, log_lock, log)
+    finally:
+        _handler_slots.release()
 
 
 def handle(conn, addr, log_lock, log):
@@ -1924,6 +1974,15 @@ def handle(conn, addr, log_lock, log):
                         # (0x13a -> 0x13b relay); joiners get added by 0x130.
                         "conns": {id(conn): (MEMBER_ID, conn, emit)},
                         "members": [(MEMBER_ID, npid)],
+                        # AUTHORITATIVE LEADER (2026-08-20). The room creator
+                        # is member 1 and starts as owner; a Promote (0x13e)
+                        # moves it, which is the same source of truth the
+                        # 0x13d OwnerMember message publishes to every client
+                        # (room_obj+0x19f0). Kickout and Promote are checked
+                        # against this - without it any member could kick or
+                        # promote anyone, since being in the room was the only
+                        # test.
+                        "owner_member_id": MEMBER_ID,
                         # When the roster last GREW. The late-0x137 dead-peer
                         # rule refuses to act inside the join-flow window
                         # measured from this instant (LATE_KICKOUT_MIN_SECONDS).
@@ -2509,6 +2568,15 @@ def handle(conn, addr, log_lock, log):
                     emit(f"   parsed opcode={opcode:#x} (Kickout target="
                          f"{target_member_id}, room_id={room_id_tail.hex()}) - "
                          f"sender not in a matching room, no action")
+                elif not sender_is_room_owner(room_entry, conn):
+                    # Only the party leader may kick. See sender_is_room_owner.
+                    emit(f"   parsed opcode={opcode:#x} (Kickout target="
+                         f"{target_member_id}, room_id={room_id_tail.hex()}) - "
+                         f"REJECTED: sender member_id="
+                         f"{room_entry['conns'][id(conn)][0]} is not the room "
+                         f"owner (member_id="
+                         f"{room_entry.get('owner_member_id', MEMBER_ID)}), "
+                         f"no action")
                 elif target is None:
                     emit(f"   parsed opcode={opcode:#x} (Kickout) - target "
                          f"member_id={target_member_id} not in room "
@@ -2566,7 +2634,22 @@ def handle(conn, addr, log_lock, log):
                     emit(f"   parsed opcode={opcode:#x} (Promote target="
                          f"{new_owner_id}, room_id={room_id_tail.hex()}) - "
                          f"sender not in a matching room, no action")
+                elif not sender_is_room_owner(room_entry, conn):
+                    # Only the current leader may hand leadership on. See
+                    # sender_is_room_owner.
+                    emit(f"   parsed opcode={opcode:#x} (Promote target="
+                         f"{new_owner_id}, room_id={room_id_tail.hex()}) - "
+                         f"REJECTED: sender member_id="
+                         f"{room_entry['conns'][id(conn)][0]} is not the room "
+                         f"owner (member_id="
+                         f"{room_entry.get('owner_member_id', MEMBER_ID)}), "
+                         f"no action")
                 else:
+                    # Move the authoritative leader before announcing it, so a
+                    # later Kickout/Promote is judged against the new owner -
+                    # the same value 0x13d publishes as room_obj+0x19f0.
+                    with rooms_lock:
+                        room_entry["owner_member_id"] = new_owner_id
                     owner_msg = build_owner_member(room_entry["room_id"], new_owner_id)
                     # room_obj+0x19f4 ("host flag") is separate from the
                     # +0x19f0 owner id OwnerMember just set. On a PARTY room
@@ -2709,14 +2792,18 @@ def main():
     srv.listen(5)
     _install_shutdown_handlers()
     print(f"{_ts()} Session Manager stub listening on 0.0.0.0:{PORT}, "
-          f"logging to {LOG_PATH}", flush=True)
+          f"logging to {LOG_PATH}, max {MAX_CONCURRENT_HANDLERS} concurrent "
+          f"handlers", flush=True)
 
     log_lock = threading.Lock()
-    with open(LOG_PATH, "a", buffering=1) as log:
+    with RotatingLog(LOG_PATH) as log:
         while True:
+            # Gate ACCEPT on the semaphore, not just the handler thread - see
+            # MAX_CONCURRENT_HANDLERS.
+            _handler_slots.acquire()
             conn, addr = srv.accept()
             conn = _TapSock(conn, _next_cid())   # raw wire tap (both directions)
-            t = threading.Thread(target=handle, args=(conn, addr, log_lock, log), daemon=True)
+            t = threading.Thread(target=serve, args=(conn, addr, log_lock, log), daemon=True)
             t.start()
 
 

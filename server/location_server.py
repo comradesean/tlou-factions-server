@@ -32,9 +32,22 @@ import threading
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 7312
 import os
-_LOGS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(_HERE, "lib"))
+from rotating_log import RotatingLog
+_LOGS = os.path.join(_HERE, "logs")
 os.makedirs(_LOGS, exist_ok=True)
 LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else os.path.join(_LOGS, "location_server.log")
+
+# Cap on concurrent handler threads, gating accept() rather than just the
+# thread start: an unaccepted connection holds no file descriptor of ours and
+# waits in the kernel's listen backlog instead, so a flood of idle connections
+# cannot exhaust this process's fd limit (and, through run_all's die-together
+# supervision, take the whole backend down). Same pattern and reasoning as
+# http_gateway.py's MAX_CONCURRENT_HANDLERS. Each client holds one short-lived
+# connection here every ~5 s, so 64 is far above any legitimate load.
+MAX_CONCURRENT_HANDLERS = int(os.environ.get("TLOU_LOCATION_MAX_HANDLERS", "64"))
+_handler_slots = threading.Semaphore(MAX_CONCURRENT_HANDLERS)
 
 REPLY = b"0.000000 0.000000\n"
 
@@ -77,6 +90,9 @@ def handle(conn, addr, log_lock, log):
     except (socket.timeout, OSError) as e:
         entry += f"  (error/early close: {e})\n"
     finally:
+        # Release the accept slot first: a failure while closing or logging
+        # must not permanently retire a slot.
+        _handler_slots.release()
         conn.close()
         with log_lock:
             print(entry, flush=True)
@@ -89,11 +105,13 @@ def main():
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("0.0.0.0", PORT))
     srv.listen(5)
-    print(f"Location stub listening on 0.0.0.0:{PORT}, logging to {LOG_PATH}", flush=True)
+    print(f"Location stub listening on 0.0.0.0:{PORT}, logging to {LOG_PATH}, "
+          f"max {MAX_CONCURRENT_HANDLERS} concurrent handlers", flush=True)
 
     log_lock = threading.Lock()
-    with open(LOG_PATH, "a", buffering=1) as log:
+    with RotatingLog(LOG_PATH) as log:
         while True:
+            _handler_slots.acquire()
             conn, addr = srv.accept()
             t = threading.Thread(target=handle, args=(conn, addr, log_lock, log), daemon=True)
             t.start()

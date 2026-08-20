@@ -14,8 +14,9 @@ the static S3 content buckets (t1.final.prod.s3.amazonaws.com and friends)
 turned out to still be up. A successful live fetch is cached to SERVED_DIR
 so later requests for the same path hit the local-file branch instead. If the
 live fetch fails (network error, 403/404/etc - some buckets/paths really are
-gone), falls back to FALLBACK_STATUS (default 200 OK, empty body) so the
-client's request cycle completes rather than hanging. NOTE: a 404 fallback
+gone), or the requested host is not on UPSTREAM_ALLOWED_HOSTS, falls back to
+FALLBACK_STATUS (default 200 OK, empty body) so the client's request cycle
+completes rather than hanging. NOTE: a 404 fallback
 was tried and made the game fail *before* even reaching a menu (see
 research/notes/net1bin-server-list.md / session 3) - an empty 200 is what
 the game actually tolerates gracefully for content-delivery checks it
@@ -34,6 +35,8 @@ import urllib.request
 import urllib.error
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(_HERE, "lib"))
+from rotating_log import RotatingLog
 _DATA = os.path.join(_HERE, "data")
 _LOGS = os.path.join(_HERE, "logs")
 os.makedirs(_LOGS, exist_ok=True)
@@ -45,6 +48,42 @@ SERVED_DIR = sys.argv[4] if len(sys.argv) > 4 else os.path.join(_DATA, "served_c
 
 UPSTREAM_PROXY_ENABLED = os.environ.get("TLOU_HTTP_PROXY_UPSTREAM", "1") != "0"
 UPSTREAM_TIMEOUT = 20
+
+# Hosts try_upstream_fetch() is allowed to contact. The upstream fetch exists
+# only to mirror the handful of static content-delivery hosts this project's
+# client redirects at this server (the S3 buckets in net1.bin's URL table and
+# their naughtydog.com aliases); nothing else is ever a legitimate target.
+#
+# CRITICAL FIX 2026-08-20: the fetch target used to be the request's own Host:
+# header verbatim, unvalidated and unauthenticated, so any request for a
+# not-yet-cached path made this server fetch an ATTACKER-CHOSEN URL and cache
+# the result into SERVED_DIR to be served back later. That is a plain SSRF
+# (cloud metadata endpoints, loopback, anything else this host can reach) plus
+# a cache-poisoning primitive for any not-yet-cached game asset path. It was
+# also a self-amplifying DoS: pointing Host: at this server's own address made
+# it fetch itself, miss again, and recurse - observed in production on
+# 2026-08-20 as a burst of 1024 self-requests in ~5 s, the likely cause of the
+# fd-exhaustion crash that MAX_CONCURRENT_HANDLERS also addresses. An
+# allowlist closes both, because this server's own address can never be on it.
+UPSTREAM_ALLOWED_HOSTS = frozenset({
+    "s3.amazonaws.com",
+    "s.s3.amazonaws.com",
+    "t1.patch.s3.amazonaws.com",
+    "t1.final.dev.s3.amazonaws.com",
+    "t1.final.prod.s3.amazonaws.com",
+    "t1ps4.final.prod.s3.amazonaws.com",
+    "t1.campaign.config.s3.amazonaws.com",
+    "s.naughtydog.com",
+    "www.naughtydog.com",
+    "t1.final.prod.naughtydog.com",
+})
+
+# Ceiling on a single upstream response held in memory / written to SERVED_DIR.
+# The largest real asset this project mirrors is ~8 MB (level-1.psarc.crypt),
+# so 32 MiB is generous; without a cap, an allowed host that misbehaves or is
+# hijacked could stream unbounded bytes into memory and onto disk.
+MAX_UPSTREAM_BYTES = int(os.environ.get("TLOU_HTTP_MAX_UPSTREAM_BYTES",
+                                        str(32 * 1024 * 1024)))
 
 # Cap on concurrent request-handler threads. Each thread holds its socket's
 # file descriptor open for its whole lifetime, and a cache-miss request can
@@ -96,13 +135,43 @@ def get_header(text, name):
     return None
 
 
+class _AllowlistRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Refuse a redirect that would leave UPSTREAM_ALLOWED_HOSTS.
+
+    Allowlisting only the initial hostname would still permit an allowed host
+    (or anything able to answer for it) to 302 the fetch at an internal
+    address, reintroducing the SSRF one hop later. Every hop is re-checked."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        import urllib.parse
+        target = urllib.parse.urlsplit(newurl)
+        if target.scheme not in ("http", "https"):
+            return None
+        if (target.hostname or "").rstrip(".").lower() not in UPSTREAM_ALLOWED_HOSTS:
+            return None
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_upstream_opener = urllib.request.build_opener(_AllowlistRedirectHandler())
+
+
 def try_upstream_fetch(host, raw_path):
     """Best-effort live fetch of the real original file. Returns bytes or None.
+
+    `host` comes off the wire (the request's Host: header) and is only ever
+    contacted if it is on UPSTREAM_ALLOWED_HOSTS - see that list for why.
+    Anything else returns None with no network call at all. The URL is rebuilt
+    from the matched allowlist entry rather than the raw header, so a header
+    port or userinfo trick cannot redirect the fetch elsewhere.
 
     Recently-failed (host, raw_path) pairs are skipped for
     UPSTREAM_FAIL_CACHE_TTL seconds rather than re-attempted - see the
     _upstream_fail_cache comment above."""
     import time
+    hostname = (host or "").split(":", 1)[0].strip().rstrip(".").lower()
+    if hostname not in UPSTREAM_ALLOWED_HOSTS:
+        return None
+    host = hostname
     key = (host, raw_path)
     now = time.monotonic()
     with _upstream_fail_cache_lock:
@@ -113,8 +182,15 @@ def try_upstream_fetch(host, raw_path):
     url = f"http://{host}/{raw_path}"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "DNTG-HTTPC/1.1"})
-        with urllib.request.urlopen(req, timeout=UPSTREAM_TIMEOUT) as resp:
-            data = resp.read()
+        with _upstream_opener.open(req, timeout=UPSTREAM_TIMEOUT) as resp:
+            # Read one byte past the ceiling so an over-large body is detected
+            # and discarded instead of being buffered whole - see
+            # MAX_UPSTREAM_BYTES.
+            data = resp.read(MAX_UPSTREAM_BYTES + 1)
+        if len(data) > MAX_UPSTREAM_BYTES:
+            with _upstream_fail_cache_lock:
+                _upstream_fail_cache[key] = now
+            return None
         with _upstream_fail_cache_lock:
             _upstream_fail_cache.pop(key, None)
         return data
@@ -305,7 +381,9 @@ def build_response(request_line, text, body=None):
         upstream_note = " (rejected: path escapes SERVED_DIR)"
     elif path and not os.path.isfile(file_path) and UPSTREAM_PROXY_ENABLED:
         host = get_header(text, "Host")
-        if host:
+        if host and host.split(":", 1)[0].strip().rstrip(".").lower() not in UPSTREAM_ALLOWED_HOSTS:
+            upstream_note = f" (upstream fetch refused: {host!r} not an allowed upstream host)"
+        elif host:
             fetched = try_upstream_fetch(host, raw_path.lstrip("/"))
             if fetched is not None:
                 os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
@@ -398,8 +476,10 @@ def handle(conn, addr, log, log_lock):
         except OSError:
             pass
     finally:
-        conn.close()
+        # Release the accept slot first: a failure while closing must not
+        # permanently retire a slot.
         _handler_slots.release()
+        conn.close()
 
 
 def main():
@@ -411,7 +491,7 @@ def main():
           f"max {MAX_CONCURRENT_HANDLERS} concurrent handlers", flush=True)
 
     log_lock = threading.Lock()
-    with open(LOG_PATH, "a", buffering=1) as log:
+    with RotatingLog(LOG_PATH) as log:
         while True:
             # Gate ACCEPT on the semaphore, not just the handler thread: a
             # connection we haven't accepted() yet holds no fd of ours and
