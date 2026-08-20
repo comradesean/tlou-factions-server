@@ -26,6 +26,7 @@ Not a real HTTP server - no range requests, no query-string handling
 (matches on path only), no persistent connections.
 """
 import base64
+import re
 import socket
 import sys
 import datetime
@@ -200,6 +201,29 @@ def try_upstream_fetch(host, raw_path):
         return None
 
 
+# Keys build_put_response() is allowed to write. safe_join() only stops a PUT
+# from escaping SERVED_DIR - it does nothing to stop a PUT from landing
+# somewhere INSIDE SERVED_DIR the client has no legitimate reason to write to
+# (e.g. overwriting a served game asset, or planting a new one at an
+# arbitrary path to be served back to other players later). The two shapes
+# below are the only PUTs this project's own client ever legitimately sends:
+# a profile save (`profiles/<npid>/profile.21`) and a match-session upload
+# (`games/<npid>.<unix-timestamp>`) - see put_key_from_path's doc and
+# server/data/served_content/{profiles,games}/ for the real shapes on disk.
+# Sony's online-ID rule (3-16 chars, letters/digits/hyphen/underscore) sets
+# the id pattern; `__selftest__` (this project's own smoke-test id) still
+# fits it.
+_NPID = r"[A-Za-z0-9_-]{1,16}"
+PUT_KEY_ALLOWLIST = (
+    re.compile(rf"^profiles/{_NPID}/profile\.21$"),
+    re.compile(rf"^games/{_NPID}\.\d{{1,16}}$"),
+)
+
+
+def put_key_allowed(key):
+    return any(pattern.match(key) for pattern in PUT_KEY_ALLOWLIST)
+
+
 def put_key_from_path(raw_path):
     """Map a path-style S3 PUT path to the same SERVED_DIR key a virtual-hosted
     GET uses. The game GETs `t1.final.prod.s3.amazonaws.com/profiles/<npid>/
@@ -227,10 +251,13 @@ def build_put_response(request_line, text, body):
     parts = request_line.split()
     raw_path = parts[1].split("?", 1)[0] if len(parts) >= 2 else ""
     key = put_key_from_path(raw_path)
-    file_path = safe_join(SERVED_DIR, key) if key else None
+    allowed = bool(key) and put_key_allowed(key)
+    file_path = safe_join(SERVED_DIR, key) if allowed else None
     stored = 0
     note = " (PUT empty)"
-    if key and body is not None and file_path is not None:
+    if key and body is not None and not allowed:
+        note = " (PUT rejected: key not on the allowlist)"
+    elif key and body is not None and file_path is not None:
         os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
         with open(file_path, "wb") as f:
             f.write(body)
