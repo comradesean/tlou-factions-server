@@ -8,6 +8,22 @@ function that §3e named, pinned the exact persisted byte layout in
 `profile.21`, and traced the DC00 data those functions consume as far as
 static analysis will go.
 
+**SUPERSEDED IN PART, 2026-08-20 (second pass):** §3's and §10c's
+"nested-DC-structure wall" around `net-emblem-colors`, and §7/§8's failed
+attempts to tie the §4 name catalog to a `net-emblem-*` DC symbol, were all
+one root cause: the DC00 directory record is `{key_hash, type_hash,
+value_ptr}`, and this project was reading it as `{value_ptr, key_hash,
+type_hash}` — so every global's table was being attributed to the following
+record. With that fixed, `*net-emblem-colors*` yields 64 RGBA f32 swatches
+(`research/notes/2026-08-20-emblem-color-catalog.tsv`), the §4 catalog IS
+`*net-emblem-layers-{base,frame,parts}*` (all three literally share one
+array, which is the static cause of §9's live-tested "one catalog, no
+per-layer offset"), and index 0 of that array is the string `none` itself, so
+`catalog[shape_index]` is direct rather than `shape_index - 1` into a
+192-entry list. The gesture hash §11 could not crack is also moot: the ids are
+rows of `*net-taunts*`, all eleven named. See
+`research/notes/2026-08-20-dc-directory-and-catalogs.md`.
+
 **UPDATE 2026-08-20 (§9-§10): fully solved.** §9: layer0's shape catalog -
 192 consecutive live, human-confirmed (shape_index, display-name) pairs,
 zero mismatches, the ENTIRE catalog checked (not a sample). §10: the

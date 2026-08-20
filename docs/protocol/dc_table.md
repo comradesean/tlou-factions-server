@@ -15,11 +15,10 @@ the relocation (pointer-fixup) scheme that turns the flat file into a graph
 of typed values at load time. That layer is fully solved.
 
 What is *not* solved here: the semantic meaning of any individual DC hash's
-value once you've located it (e.g. "what does the `net-money-info` table's
-193-entry array actually contain"). That is tracked per-hash in the
+value once you've located it. That is tracked per-hash in the
 consuming proto/doc - see `protos/common/member_data.ksy` (`rank_tier`,
-whose backing DC symbol is now known to be `*net-money-info*`, not a
-rank/tier concept), `protos/0x11_stat_line.ksy`
+whose backing DC symbol is `*net-money-info*`, a 99-entry threshold ladder
+decoded 2026-08-20), `protos/0x11_stat_line.ksy`
 (the `0x1ad3445f` table), and `server/ticket_server.py`'s `pReportArray`
 comment. All three of those have been advanced significantly by this
 session's work (see their own docs), but none reaches a fully-decoded
@@ -112,36 +111,57 @@ practice. Not fully explained (could be an alignment pad the compiler adds
 for this specific build), but doesn't threaten the rest of the model - flagged
 here rather than silently rounded away.
 
-## The payload's internal shape (directory pattern, partially understood)
+## The payload's internal shape - SOLVED 2026-08-20
 
-Within `payload`, values are organized as a **hash-keyed directory**: the
-common repeating unit found at every location this session inspected is a
-3-word record
+**CORRECTION.** The repeating unit was recorded here as
+`{value_ptr, key_hash, type_hash}`. It is **`{key_hash, type_hash,
+value_ptr}`** - the earlier reading was shifted one word, which attributed
+each global's table to the *following* record. Everything that follows in
+this section was rewritten on 2026-08-20; see
+`research/notes/2026-08-20-dc-directory-and-catalogs.md` and the tool
+`research/tools/dc_dir.py`.
+
+The directory is self-describing from the bundle header:
 
 ```
-{ value_ptr: u4 (bit=1, fixup pointer), key_hash: u4 (bit=0), type_hash: u4 (bit=0) }
++0x14  u32  entry_count   (dc1/net.bin: 392)
++0x18  u32  dir_offset    (dc1/net.bin: 0x1c)
+records: entry_count x 12 bytes, {key_hash: u4, type_hash: u4, value_ptr: u4}
 ```
 
-e.g. the exact bytes around `member_data.rank_tier`'s hash (net1.bin, slot
-948, file offset `0xed4`):
+The three records around `member_data.rank_tier`'s hash, byte-exact:
 
 ```
-slot 948 (0x27dac.. wait: value_ptr) -> file-off 0x27da8
-slot 949: key_hash   = 0xc85e199d   (= rank_tier's cited hash)
-slot 950: type_hash  = 0xced9d25f
+0x000ec8  c7f8567c ed6b8e26 0001dd24     *net-emblem-layers-frame*
+0x000ed4  c85e199d ced9d25f 000052f4     *net-money-info*
+0x000ee0  c970681f 290349e3 00005300
 ```
 
-`value_ptr`'s target is frequently itself a `{ count: u4, array_ptr: u4
-(fixup) }` pair (a length-prefixed array), e.g. the `0xC85E199D` entry's
-target at file offset `0x27da8` is `{ count: 193, array_ptr -> file-off
-0x2950c }`. Beyond that point - the actual stride/shape of the array
-elements - is still **not** resolved (see the field's own doc); the two
-consuming-function traces done 2026-08-19 (`FUN_003c8e30` for
-`0xC85E199D`, `stat_line`'s `FUN_0032241c`) each turned out to read their
-target arrays through the runtime hash-registry (see above) rather than by
-walking this raw byte layout directly, so neither closes the loop on "what
-does byte-for-byte iteration of `array_ptr`'s target mean" with full
-confidence.
+`value_ptr` targets a struct whose members are frequently
+`{count: u4, array_ptr: u4, tag: u4}` length-prefixed arrays, packed back to
+back (one global can hold several). `tag` does NOT encode the element stride
+- `*net-taunts*` and `*net-stats*` share `tag = 0x2a8027cf` at strides 12 and
+8 - so a stride has to be established per table by decoding it.
+
+**Every one of `net.bin`'s 392 `key_hash` values cracks** against the disc's
+`dc1/*.dci` compiler-symbol corpus (`research/tools/dc_hash_crack.py`) - a
+100% hit rate, which is itself the proof the corrected record layout is right
+(a one-word-shifted walk resolves essentially nothing). Tables decoded so far:
+
+| global | key_hash | value | contents |
+|---|---|---|---|
+| `*net-money-info*` | `0xc85e199d` | `0x52f4` -> `{99, 0x2665c}` | u32 cumulative threshold ladder (`0, 2000, 4000, 7000, 12000, ...`) |
+| `*net-emblem-layers-{base,frame,parts}*` | `0xe2311588`/`0xc7f8567c`/`0x03ffae77` | all -> `0x1dd24` -> `{193, 0x2be58}` | emblem shape catalog, stride 12 `{name_hash, name_ptr, sub_ptr}` |
+| `*net-emblem-colors*` | `0xbcbbdfbd` | `0x50fc` -> `{64, 0x15e94}` | 64 RGBA f32 swatches, stride 16 |
+| `*net-taunts*` | `0xb2b6e512` | `0x4f88` -> `{11, 0x1a740}` | gesture catalog, stride 12 `{id_hash, text_string_id, ?}` |
+| `*net-stats*` | `0x921da350` | `0x488c` -> `{40, 0x9c18}` | net-stat event registry, stride 8 `{stat_id_hash, text_string_id}` |
+| `*unlock-list*` | `0xe2e8998e` | `0x583c` -> `{284, 0x2460c}` | unlock records, stride 28 |
+
+The hashes that appear *inside* these tables (a shape's `name_hash`, a
+gesture's id) are a DIFFERENT and still-unidentified 32-bit hash - it is NOT
+`crc32_mpeg2`. It does not need to be cracked to use the tables: each record
+pairs its hash with either the plaintext name or a `text1.psarc` StringId.
+See the 2026-08-20 note, section 6, for exactly what has been ruled in and out.
 
 `key_hash`/`type_hash` NAMING SCHEME CRACKED 2026-08-19: both hashes are
 `crc32_mpeg2` (`server/lib/userdata_crypt.py`) over source symbol names

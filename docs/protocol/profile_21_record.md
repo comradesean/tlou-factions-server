@@ -97,6 +97,20 @@ matches_mode_a + matches_mode_b`, `pop_highwater_a == pop_highwater_menu`,
   (`record[8 + (statIdx+581)*4]`) but each slot's meaning — including the
   lifetime-supplies stat that gates gear — is registry-assigned in the data
   compiler `.pak`, not recoverable from the EBOOT.
+  UPDATE 2026-08-20: that registry is no longer opaque. The DC global
+  `*net-stats*` (`crc32_mpeg2` `0x921da350`) is a 40-entry table at
+  `dc1/net.bin 0x9c18`, stride 8, `{stat_id_hash, text_string_id}`, and 28 of
+  its 40 rows resolve to display names via `research/tools/text_table.py`
+  ("Downed Enemy", "Revive", "Heal Ally", "Melee Assist", "Execution",
+  "Revenge", "Supplies", "Parts", "Won Game"/"Lost Game", ...). Dump it with
+  `research/tools/dc_dir.py --array 0x9c18 40 8 --as hash+strid`. Row 0's
+  `stat_id_hash` is `0x5c494554`, exactly the id `protos/profile_21.ksy`
+  cites for P+0x1E3C — which also explains why that id was never found in any
+  text table: it is a stat id, and the text key is the *next* word.
+  NOT established: that `statIdx` in the formula above indexes this array.
+  Nothing yet links the two, so the per-slot mapping is still open — but the
+  registry it would be read against now exists in decoded form. See
+  `research/notes/2026-08-20-dc-directory-and-catalogs.md` §7.
 - **Per-survivor roster sub-structure** (P+0xA3C–0x1A3C): SOLVED
   2026-08-20 — this is NOT a separate per-survivor appearance/state block
   as earlier passes framed it. It is `survivor_seeds`, a single fixed

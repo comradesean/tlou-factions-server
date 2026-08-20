@@ -43,31 +43,57 @@ live in the data-compiler payload the game loads at runtime.
   NOTHING NEEDS DOING - it is reachable only on the banned path, which our empty
   reply never enters. Same disposition and same unblock as above.
 
-- **DC net-stat slots, `rank_tier`'s `net-money-info` array contents, and
-  most of the id->asset map** (cosmetics, character and name pools).
-  Long-standing; see `docs/protocol/knowledge-inventory.md` Tier 3.
-  `rank_tier`'s backing DC symbol was name-corrected 2026-08-19 - see
-  `docs/protocol/dc_table.md`. PARTIALLY UNBLOCKED 2026-08-19: cosmetic
-  StringIds are now resolvable live via `research/tools/text_table.py`
-  (confirmed: hat/mask/helmet) and `research/tools/dc_hash_crack.py`
-  (confirmed: character skin variant). SOLVED 2026-08-20 for the emblem
-  shape catalog on all four layers (one identical formula, no per-layer
-  offset): `shape_index-1` indexes directly into a 192-entry flat name
-  catalog on the disc, proven against all 192 entries via live
-  edit-and-diff testing (`research/tools/profile21_codec.py`) - no memory
-  read needed after all. Rotation/scale/opacity and the colour picker's
-  grid-position formula are solved too. Full table:
+- **DC net-stat slots and most of the id->asset map** (cosmetics,
+  character and name pools). Long-standing; see
+  `docs/protocol/knowledge-inventory.md` Tier 3. `rank_tier` is REMOVED
+  from this item as of 2026-08-20 - it's fully resolved, see below.
+  PARTIALLY UNBLOCKED 2026-08-19: cosmetic StringIds are now resolvable
+  live via `research/tools/text_table.py` (confirmed: hat/mask/helmet) and
+  `research/tools/dc_hash_crack.py` (confirmed: character skin variant).
+  SOLVED 2026-08-20 for the emblem shape catalog on all four layers (one
+  identical formula, no per-layer offset): `shape_index-1` indexes
+  directly into a 192-entry flat name catalog on the disc, proven against
+  all 192 entries via live edit-and-diff testing
+  (`research/tools/profile21_codec.py`). Rotation/scale/opacity and the
+  colour picker's grid-*position* formula are solved too. Full table:
   `research/notes/2026-08-20-emblem-shape-catalog.tsv`; derivation:
   `research/notes/2026-08-19-emblem-name-resolver-and-dc-catalog.md` §9-§11.
   Also solved: `emblem_location` (was `flag_1e40`, wrongly documented as a
-  boolean - it's a 4-value enum, None/Torso/Helmet/Backpack). NEW OPEN
-  ITEM found along the way: `equipped_gesture_id` (was
-  `gated_customization_id`) - location/mechanism solved, but the hash
-  behind six confirmed (gesture, value) pairs is not `crc32_mpeg2` over
-  anything in this project's disc corpus, nor a `text_table.py` StringId -
-  a genuinely different, uncracked scheme. Still open overall: what each
-  colour swatch renders as, the gesture hash algorithm, and a handful of
-  unexplained bytes.
+  boolean - it's a 4-value enum, None/Torso/Helmet/Backpack).
+
+  UPDATE 2026-08-20 (second, purely static pass): root-caused why several
+  of the above kept hitting a "nested DC structure" wall - the DC00
+  directory record was being read as `{value_ptr, key_hash, type_hash}`;
+  it is actually `{key_hash, type_hash, value_ptr}`, one word off. Fixing
+  that makes `net.bin`'s entire 392-entry directory dumpable by name
+  (`research/tools/dc_dir.py`, 392/392 crack). This closed three more
+  items:
+  - **`member_data.rank_tier` - RESOLVED.** The "193-entry table that
+    never read as thresholds" was the *preceding* record
+    (`*net-emblem-layers-frame*`); `*net-money-info*`'s real table is a
+    clean monotonic ladder, and running the consuming function's loop on
+    it proves the DC branch is dead code - `rank_tier` is nonzero only
+    via an untraced override at `*(global+0x78)`, matching 855/855 live
+    captures. See `protos/common/member_data.ksy`'s field doc.
+  - **Emblem colour swatches - SOLVED.** `*net-emblem-colors*` is 64 real
+    RGBA f32 values, an 8x8 hue/shade grid - independently corroborates
+    the grid-*position* formula found via live testing.
+    `research/notes/2026-08-20-emblem-color-catalog.tsv`.
+  - **`equipped_gesture_id`'s "hash algorithm" - dissolved, not solved.**
+    It was never a hash to crack: the ids are rows of a real DC table,
+    `*net-taunts*` (11 entries), resolved via `text_table.py` against
+    `text1.psarc`. All 11 gestures named; six match the prior live-edit
+    values exactly, the other five are the names already seen locked
+    in-game.
+
+  Still open: the intra-table hash used for a shape's name-hash / a
+  gesture's id-hash (confirmed NOT `crc32_mpeg2` by exact single-byte-delta
+  tests, though the CRC-32 polynomial is visible in the deltas - a
+  curiosity, not a blocker, since every table pairs its hash with a
+  plaintext name or StringId anyway), `member_data.capability_flag` bit
+  meanings (re-checked against the full directory, no DLC-pack symbol
+  found), `global+0x78`'s writer (feeds `rank_tier`), and a handful of
+  unexplained bytes in the emblem words.
 
 ## Unmapped wire spans
 

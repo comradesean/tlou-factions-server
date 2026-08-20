@@ -2,10 +2,15 @@
 
 What is fully understood, what is partly understood, and what is unknown, across
 all 50 `.ksy` specs (45 message specs + 5 shared types; 260 declared fields).
-Current as of 2026-08-19, end of an extended live-debugging session covering
-`0x140`/`0x141`, `0x13e`/`0x13f`, `0x136 attr_tail`, `member_slot_ec`,
+Current as of 2026-08-20. The 2026-08-19 pass covered `0x140`/`0x141`,
+`0x13e`/`0x13f`, `0x136 attr_tail`, `member_slot_ec`,
 `0x12f room_settings_tail`/`0x130 room_object_tail`, `room_flags_e8`,
-`member_data.card_stat_2`/`card_stat_3`, and `stat_line`'s `task-%x`.
+`member_data.card_stat_2`/`card_stat_3`, and `stat_line`'s `task-%x`. The
+2026-08-20 pass opened the DC00 payload's directory - all 392 of `net.bin`'s
+globals are now named and their tables dumpable (`research/tools/dc_dir.py`,
+`research/notes/2026-08-20-dc-directory-and-catalogs.md`), which moved
+`rank_tier`, `equipped_gesture_id`, the emblem colour catalog and
+`search_window_lo`/`search_window_hi`, and shrank the DC-blocked set.
 
 The bar for **Tier 1** is the project's reserved standard applied to a whole
 message or field: a NAME, a DEFINITION (what the bytes are), and a game or
@@ -235,15 +240,30 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
 37. **`0x142` HostRank `entries`** - per-player values from the player object's
     `vtable[0]` getter. Live: constant `0x0002` on unranked accounts. Proven NOT
     to be `member_data.rank_value`. Encoding needs a ranked capture.
-38. **`member_data.rank_tier`** - bracket-scan mechanism verified; the hash
-    `0xC85E199D` it reads was NAME-CORRECTED 2026-08-19 to `*net-money-info*`
-    (reverse-matched against the retail disc's DC source-symbol list, see
-    `docs/protocol/dc_table.md`) - not a rank/tier concept, likely a
-    currency/scrap-economy table. Whether this wire field is genuinely
-    money-derived, or genuinely rank/tier-derived through a money-table
-    lookup, is still open.
+    RECONFIRMED 2026-08-20 across all 241 captured frames (3 more than the
+    previous pass): every one still ends in `0x0002`. Still blocked.
+38. **`member_data.rank_tier`** - **DC PATH RESOLVED 2026-08-20, and it is
+    INERT.** The DC00 directory record is `{key_hash, type_hash, value_ptr}`,
+    not `{value_ptr, key_hash, type_hash}`; the 2026-08-19 "193-entry array
+    that never read as thresholds" belonged to the PRECEDING record
+    (`*net-emblem-layers-frame*`). `*net-money-info*`'s real table is
+    `{count: 99, array -> dc1/net.bin 0x2665c}`, a monotonic cumulative
+    ladder `0, 2000, 4000, 7000, 12000, ...`. Running `FUN_003c8e30`'s
+    instruction-verified loop on it exits on the first iteration returning 0
+    (`array[0] == 0`, `array[1] > 0` trips the sentinel), so the DC branch
+    can only ever produce 0 - which is exactly the capture (0x0000 in
+    855/855 live `0x13a` frames). The field is nonzero ONLY via the override
+    at `*(global+0x78)`. Remaining open, and much narrower than before: who
+    writes `global+0x78`. See
+    `research/notes/2026-08-20-dc-directory-and-catalogs.md` sections 1/3.
 39. **`member_data.capability_flag` bit meanings** - which bit is which DLC pack
-    lives in the `.pak` descriptors, not the EBOOT.
+    lives in the `.pak` descriptors, not the EBOOT. RE-CHECKED 2026-08-20 now
+    that `net.bin`'s whole 392-entry DC directory is readable and named
+    (`research/tools/dc_dir.py`): `*dlc-version*` and `*unlock-list*` are both
+    addressable, and `unlock-list`'s 28-byte records do carry a category byte
+    (4 = taunt, 5 = emblem frame; 3 and 6 also seen), but nothing in either is
+    a per-bit DLC-pack map, and no DLC-pack DC symbol appears among the 392.
+    Still open.
 40. **`member_data.card_stat_2` / `card_stat_3`** - bytes and source pinned
     (`P+0x654`, a separate word preceding `custom_appearance`, not literally
     "word 0" of it - corrected 2026-08-19). EXHAUSTIVELY RE-CHECKED
@@ -251,7 +271,9 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     samples): still exactly zero in every one, even after the profile S3
     round-trip was implemented and confirmed working with real non-zero data
     elsewhere in the same file - rules out "needs the round-trip" as the
-    blocker. Display meaning remains unresolved on a much larger evidence
+    blocker. RE-CHECKED AGAIN 2026-08-20 on the current 855-frame set (3 more
+    frames than the previous pass): still exactly zero at both offsets in
+    every one. Display meaning remains unresolved on a much larger evidence
     base.
 41. **`0x13e` `flag` byte** - boolean when written, but live values 0/1/3/4 with
     the stale value often equal to the frame's own `kind`. Only 0 and 1 are
@@ -262,8 +284,16 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
 42. **`value_20` / `value_22` / `value_pair_14`** - a float-derived pair,
     live-constant 1000/1000. Reads as a default rating pair; disabled in every
     capture.
-43. **`search_window_lo` / `search_window_hi`** - a clamped rating/filter window;
-    0 in every live capture (window disabled while searching).
+43. **`search_window_lo` / `search_window_hi`** - a clamped rating/filter
+    window. CORRECTED 2026-08-20 - "0 in every live capture" was drawn from a
+    smaller set. Across all 2,188 captured `0x135` frames the pair is NONZERO
+    in 653, and every nonzero pair decomposes against the decompiled clamp as
+    a point window at `param_5` or `param_5 +/- 60` (the client alternates a
+    narrow and a wide probe). `param_5` is a per-account quantity that climbs
+    with play - `comradesean` 397/365/373 vs `mgnomad2` 29/31/44/45 - and is
+    NOT `rank_value`, NOT `rank_tier`, and matches no leaderboard board this
+    project logs. The quantity itself is unnamed; see
+    `research/notes/2026-08-20-dc-directory-and-catalogs.md` section 8.
 44. **`caller_arg_1c`** - caller-supplied, live `0xffff` and `0x0000`; the caller
     is not traced.
 45. **`flag_27`** - 0 normally, 4 on one conditional branch; the branch condition
@@ -304,12 +334,25 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
 
 50. **`report-server` response grammar** - the request is captured, the reply is
     not. Deliberately not guessed. Also an implementation risk: our stub answers
-    a ban check with a ticket blob.
+    a ban check with a ticket blob. RECHECKED 2026-08-20: 59 `is-banned`
+    requests in `server/logs/ticket_server.log`, still zero retail replies.
+    Needs a capture.
 51. **`profile_21.game_data` interior** - the 0x5000-byte payload; subsystem
-    index ranges only partly claimed.
+    index ranges only partly claimed. NEW LEAD 2026-08-20: the DC stat registry
+    now has a name and a dump - `*net-stats*` (`crc32_mpeg2` `0x921da350`), 40
+    entries at `dc1/net.bin 0x9c18`, stride 8, `{stat_id_hash,
+    text_string_id}`, 28 of the 40 resolving to display names ("Downed Enemy",
+    "Revive", "Heal Ally", "Execution", "Supplies", "Parts", ...). Entry 0's
+    `stat_id_hash` is `0x5c494554` - the id `protos/profile_21.ksy` already
+    cites for P+0x1E3C and had recorded as "not found in any text table", which
+    is now explained: it is a stat id, not a text key. NOT claimed: that
+    `profile.21`'s `record[8 + (statIdx+581)*4]` indexes this array - nothing
+    ties `statIdx` to a `*net-stats*` row yet. See the 2026-08-20 note, §7.
 52. **`profile_21` zero region `P+0x1E74..0x5008`** - purpose unknown.
-53. **DC-blocked set** - all net-stat slots (including the supplies gate),
-    `rank_tier`'s `net-money-info` table contents, `stat_line`'s `task-%x`
+53. **DC-blocked set** - all net-stat slots (including the supplies gate;
+    `rank_tier`'s own `net-money-info` table is now fully decoded and RESOLVED
+    as inert dead code - see item 38, not part of this blocked set anymore),
+    `stat_line`'s `task-%x`
     (mechanism resolved 2026-08-19 - a genuine DC task-definitions table
     lookup, removed from this list as its own item and folded in here; see
     the "resolved out of this tier" note below - only the specific task
@@ -339,15 +382,35 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     `emblem_location` (was `flag_1e40`, wrongly documented as a boolean -
     it's a 4-value enum, None/Torso/Helmet/Backpack). See
     `research/notes/2026-08-19-emblem-name-resolver-and-dc-catalog.md`
-    §9-§11 and `research/notes/2026-08-20-emblem-shape-catalog.tsv`. Still
-    open: what each colour swatch renders as, the gesture hash algorithm,
-    and a handful of unexplained bytes.
+    §9-§11 and `research/notes/2026-08-20-emblem-shape-catalog.tsv`.
+    UPDATE 2026-08-20 (a second, purely static pass): the DC00 directory
+    record was being read one word off - it is `{key_hash, type_hash,
+    value_ptr}`. Fixing that made the payload's tables directly dumpable,
+    and ALL 392 of `net.bin`'s globals crack by name against the disc's
+    `.dci` corpus (`research/tools/dc_dir.py`). Closed by that route: the
+    emblem COLOUR catalog (`*net-emblem-colors*` = 64 RGBA f32 swatches, an
+    8x8 hue grid - `research/notes/2026-08-20-emblem-color-catalog.tsv`);
+    the GESTURE id map (`*net-taunts*`, 11 rows, all named via
+    `text_table.py` - six byte-exact against the earlier live edits, and the
+    other five exactly the names seen locked in-game); and the shape
+    catalog's provenance (`*net-emblem-layers-{base,frame,parts}*` all
+    literally share ONE array, which is why the four layers use one catalog,
+    and index 0 of that array is the string `none` itself, so
+    `catalog[shape_index]` is direct rather than off-by-one). Still open:
+    the intra-table hash ALGORITHM - pinned to CRC-32 poly `0x04C11DB7`,
+    MSB-first, forward byte order by exact single-byte-delta tests, but NOT
+    globally GF(2)-affine over the name, so something outside the visible
+    string enters the message. That is now a curiosity rather than a
+    blocker, since every table pairs its hash with a plaintext name or a
+    StringId. Also still open: a handful of unexplained bytes.
 54. **`0x142` numeric encoding for a ranked account** - needs a ranked
-    capture. RE-CHECKED 2026-08-19 against all 238 live captured `0x142`
-    frames: every one still ends in the unranked-account constant `0x0002` -
-    the test accounts have not earned a rank change. Still blocked.
+    capture. RE-CHECKED 2026-08-20 against all 241 live captured `0x142`
+    frames (238 on the previous pass): every one still ends in the
+    unranked-account constant `0x0002` - the test accounts have not earned a
+    rank change. Still blocked.
 55. **Intermittent "Host quit for cheating"** teardown - rare, unexplained, no
-    packet correlated with it yet.
+    packet correlated with it yet. RECHECKED 2026-08-20: the string appears
+    nowhere in `server/logs/`. Needs a live reproduction, not static analysis.
 56. **`stat_line` task line's 2nd `%s`** - the accessor is pinned (`base+0x2e6c`
     string field), but `base` resolves to a runtime-allocated object with no
     file-backed content - needs a live memory read during a campaign autosave.

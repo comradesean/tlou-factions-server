@@ -41,6 +41,13 @@ single proto doc.
   runtime hash/string registry that *consumes* DC00 files' contents rather
   than reading their raw bytes, so tracing them doesn't directly explain
   the byte layout.
+
+  CORRECTED 2026-08-20: the record field order above is WRONG - it is
+  `{key_hash, type_hash, value_ptr}`, not `{value_ptr, key_hash, type_hash}`.
+  See `docs/protocol/dc_table.md`'s "SOLVED 2026-08-20" section and
+  `research/notes/2026-08-20-dc-directory-and-catalogs.md` for the
+  corrected layout and everything it unblocked - including `rank_tier`
+  immediately below, which this off-by-one had been misreading.
 - **`rank_tier` (`0xC85E199D`)**: directory entry pinpointed
   (net1.bin `0xed4` -> value blob `0x27da8` -> `{count=193, array@0x2950c}`),
   consumer function (`FUN_003c8e30`) fully decompiled, but the 193-entry
@@ -50,6 +57,9 @@ single proto doc.
   `protos/common/member_data.ksy`'s `rank_tier` field doc for the full
   writeup, including a correction to the scan-loop semantics (it is NOT
   "first satisfied bracket", contrary to the previous day's read).
+  RESOLVED 2026-08-20 - see that same field doc: the 193-entry array
+  belonged to the *next* record over, and `rank_tier`'s real DC branch is
+  dead code.
 - **`stat_line` task table (`0x1ad3445f`)**: this is the biggest correction
   of the session. The hash's table is NOT a task/objective-definitions
   table - it's a string-keyed HUD material/icon-path lookup table (real
