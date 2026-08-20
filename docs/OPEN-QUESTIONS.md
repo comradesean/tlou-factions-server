@@ -58,8 +58,15 @@ live in the data-compiler payload the game loads at runtime.
   read needed after all. Rotation/scale/opacity and the colour picker's
   grid-position formula are solved too. Full table:
   `research/notes/2026-08-20-emblem-shape-catalog.tsv`; derivation:
-  `research/notes/2026-08-19-emblem-name-resolver-and-dc-catalog.md` §9-§10.
-  Still open: what each colour swatch renders as, and a handful of
+  `research/notes/2026-08-19-emblem-name-resolver-and-dc-catalog.md` §9-§11.
+  Also solved: `emblem_location` (was `flag_1e40`, wrongly documented as a
+  boolean - it's a 4-value enum, None/Torso/Helmet/Backpack). NEW OPEN
+  ITEM found along the way: `equipped_gesture_id` (was
+  `gated_customization_id`) - location/mechanism solved, but the hash
+  behind six confirmed (gesture, value) pairs is not `crc32_mpeg2` over
+  anything in this project's disc corpus, nor a `text_table.py` StringId -
+  a genuinely different, uncracked scheme. Still open overall: what each
+  colour swatch renders as, the gesture hash algorithm, and a handful of
   unexplained bytes.
 
 ## Unmapped wire spans

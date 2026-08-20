@@ -68,6 +68,18 @@ customization items live in the data-compiler modules, keyed by ids, and
 essentially empty, so every player is on the **default** head/emblem. There is
 nothing to *mismatch* on the cosmetic axis — both ends default.
 
+CORRECTED 2026-08-20: "no EBOOT code reference" does NOT hold once a
+profile has real progression. `emblems/%s` (`0x00e69658`/`0x00e79658`) IS
+referenced by real EBOOT code - `FUN_00345038`/`FUN_0034527c`, fully
+decompiled in `research/notes/2026-08-19-emblem-name-resolver-and-dc-catalog.md`,
+which builds that exact sprintf path from a persisted `profile.21` index.
+The "near-empty profile -> both ends default" reasoning was correct for
+the specific accounts sampled at the time, not a structural fact about
+the emblem system - a populated account (`comradesean`, later in the
+project) has real, non-default, fully-resolved emblem data across all
+four layers. See that note (and `protos/profile_21.ksy`'s `emblem_layer`
+type) for the current, much fuller picture.
+
 By contrast the **loadout** system is fully present in the EBOOT
 (`NET_SM_SELECT_LOADOUT_SCREEN` `0x00e6d6f8`,
 `loadoutNum >= 0 && loadoutNum < kNumCustomLoadoutsPerMode` `0x00e6e078`,

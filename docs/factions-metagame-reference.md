@@ -1427,6 +1427,13 @@ boosters_owned              multiset over booster ids (index space up to 64, per
 unlocked_items              set (head items, emblems, gestures) — survives clan reset
 loadout_slots               6 custom + 8 premade
 emblem_config               4 layers x {image, colour(64), rotation, opacity, scale} + placement
+                             (CONFIRMED 2026-08-20 byte-for-byte against a real profile.21 - every
+                             field in this line independently verified: image = a 192-entry name
+                             catalog index, colour = an 8x8=64-swatch grid position (row*8+col,
+                             matching "colour(64)" exactly), rotation/opacity/scale each a
+                             confirmed live field, placement = a 4-value enum (None/Torso/Helmet/
+                             Backpack). See protos/profile_21.ksy's emblem_layer/emblem_location
+                             and research/notes/2026-08-19-emblem-name-resolver-and-dc-catalog.md.)
 survivor_roster             [(name, state)] where state ∈ {healthy, starving, sick}
 max_clan_size_reached       high-water mark (stat/leaderboard, not a cap — see §1.3)
 ```

@@ -324,18 +324,24 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     `net-money-info`, `hud`). What's still genuinely blocked: DC hashes
     this project has not yet cited anywhere (no known hash to search for),
     and most of the emblem shape/colour catalog. UPDATE 2026-08-20: the
-    emblem shape catalog is fully SOLVED for all four layers (identical
-    formula, no per-layer offset) - live edit-and-diff testing (not a
-    memory read) found the off-by-one a static-analysis-only pass had
+    emblem shape catalog is fully SOLVED, all four layers directly and
+    independently tested (none inferred) - live edit-and-diff testing (not
+    a memory read) found the off-by-one a static-analysis-only pass had
     missed; `shape_index-1` indexes directly into a 192-entry flat name
     catalog on the retail disc, proven against the entire catalog on
-    layer0 (192/192, zero mismatches) and cross-confirmed on layer1/layer2.
-    Rotation/scale/opacity and the colour picker's grid-position formula
-    are also solved. See
+    layer0 (192/192, zero mismatches) and confirmed on layers 1-3 too, one
+    identical formula, no per-layer offset. Rotation/scale/opacity and the
+    colour picker's grid-position formula are also solved. Two more
+    customization fields cracked by the same method: `equipped_gesture_id`
+    (was `gated_customization_id` - location/mechanism solved via six
+    live edits, but the hash behind the six confirmed values is NOT
+    solved, ruled out against every hash scheme this project has) and
+    `emblem_location` (was `flag_1e40`, wrongly documented as a boolean -
+    it's a 4-value enum, None/Torso/Helmet/Backpack). See
     `research/notes/2026-08-19-emblem-name-resolver-and-dc-catalog.md`
-    §9-§10 and `research/notes/2026-08-20-emblem-shape-catalog.tsv`. Still
-    open: what each colour swatch renders as, and a handful of unexplained
-    bytes.
+    §9-§11 and `research/notes/2026-08-20-emblem-shape-catalog.tsv`. Still
+    open: what each colour swatch renders as, the gesture hash algorithm,
+    and a handful of unexplained bytes.
 54. **`0x142` numeric encoding for a ranked account** - needs a ranked
     capture. RE-CHECKED 2026-08-19 against all 238 live captured `0x142`
     frames: every one still ends in the unranked-account constant `0x0002` -
