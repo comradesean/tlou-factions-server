@@ -781,11 +781,14 @@ the name and the type:
 
 - set to "Torso" live, saved, decoded: `0x00000000 -> 0x00000001`.
 - set to "Helmet" live, saved, decoded: `0x00000001 -> 0x00000002`.
+- set to "Backpack" live, saved, decoded: `0x00000002 -> 0x00000003`,
+  human-confirmed as the LAST option in the in-game menu.
 
 Each edit isolated a single clean change to exactly this word. This is a
-small ENUM, not a boolean: `0 = None, 1 = Torso, 2 = Helmet`. The prior
-"boolean" claim was an assumption from the field never having been
-observed at any value other than `0`/`1` before this pass tested a third
-option - a caution for reading old "confirmed" docs on fields that were
-never actually tested against their full value range. Whether higher
-values exist (a fourth+ emblem-placement option) is untested.
+small ENUM, not a boolean: `0 = None, 1 = Torso, 2 = Helmet, 3 = Backpack`,
+and since "Backpack" was confirmed as the final menu entry, 0-3 is very
+likely the complete value range. The prior "boolean" claim was an
+assumption from the field never having been observed at any value other
+than `0`/`1` before this pass tested further options - a caution for
+reading old "confirmed" docs on fields that were never actually tested
+against their full value range.

@@ -221,12 +221,13 @@ types:
               0 = None
               1 = Torso
               2 = Helmet
+              3 = Backpack
 
           (0->1 confirmed by a clean, isolated diff when set to "Torso";
-          1->2 confirmed the same way when set to "Helmet" - each edit
-          changed only this word, nothing else, so both transitions are
-          solid.) Whether higher values exist (a third emblem-placement
-          option) is untested. Dedicated setter FUN_003188d4(this, value)
+          1->2 confirmed the same way when set to "Helmet"; 2->3 confirmed
+          when set to "Backpack", human-confirmed as the LAST option in
+          the in-game menu, so 0-3 is very likely the complete value
+          range.) Dedicated setter FUN_003188d4(this, value)
           stores the caller's argument verbatim here (`stw r28,7744(r3)`
           @0x318918) and mirrors it to obj+0xC (UI-refreshed) - this part
           of the original finding stands unchanged, only the value's
