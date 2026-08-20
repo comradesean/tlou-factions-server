@@ -402,10 +402,12 @@ if __name__ == "__main__":
         entry_order = []
         for e in psarc["entries"][1:]:
             content = psarc["read_entry_data"](e)
-            with open(os.path.join(args.outfile, e.name), "wb") as f:
+            outpath = os.path.join(args.outfile, e.name)
+            os.makedirs(os.path.dirname(outpath), exist_ok=True)
+            with open(outpath, "wb") as f:
                 f.write(content)
             entry_order.append(e.name)
-            print(f"wrote {len(content)} bytes to {os.path.join(args.outfile, e.name)}")
+            print(f"wrote {len(content)} bytes to {outpath}")
         _write_manifest(args.outfile, entry_order)
         print(f"wrote {MANIFEST_FILENAME}")
 
@@ -430,10 +432,12 @@ if __name__ == "__main__":
         entry_order = []
         for e in psarc["entries"][1:]:
             content = psarc["read_entry_data"](e)
-            with open(os.path.join(args.outfile, e.name), "wb") as f:
+            outpath = os.path.join(args.outfile, e.name)
+            os.makedirs(os.path.dirname(outpath), exist_ok=True)
+            with open(outpath, "wb") as f:
                 f.write(content)
             entry_order.append(e.name)
-            print(f"wrote {len(content)} bytes to {os.path.join(args.outfile, e.name)}")
+            print(f"wrote {len(content)} bytes to {outpath}")
         _write_manifest(args.outfile, entry_order)
         print(f"wrote {MANIFEST_FILENAME}")
 
