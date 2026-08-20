@@ -108,19 +108,46 @@ types:
           a locked option can't be selected/saved): Salute, Come Here,
           Neck Crack, Bow, Close Call.
 
-          NOT resolved: the hash algorithm. All six values were checked
-          against `research/tools/text_table.py` (the `text1.psarc`
-          StringId table - including confirming "Blow Smoke"'s OWN
-          text-table key, `0x328e4395`, does NOT match its
-          `equipped_gesture_id` value, ruling out "it's just the display
-          name's StringId" as a hypothesis) and
-          `research/tools/dc_hash_crack.py` (the disc's `crc32_mpeg2`
-          compiler-symbol corpus) - no match under either tool for any of
-          the six values. Whatever hash/id scheme this is, it is
-          DIFFERENT from every other id scheme this project has cracked so
-          far (DC00 directory hashes, text StringIds). A live RPCS3
-          memory read is the only remaining lever identified for this
-          field specifically.
+          RESOLVED 2026-08-20 - the id -> gesture mapping is a DC table
+          lookup, and all ELEVEN values are now known, including the five
+          that could never be captured because they are locked. The DC
+          global is `*net-taunts*` (`crc32_mpeg2("*net-taunts*") ==
+          0xb2b6e512`), a `{count: 11, array -> dc1/net.bin 0x1a740}`
+          table with 12-byte records `{taunt_id_hash, display_string_id,
+          unknown_hash}`; resolving word 1 through
+          `research/tools/text_table.py` against `text1.psarc`'s
+          `2.networking` table gives:
+
+              0x0e69839d = NONE          0xf6c7a49a = Come Here
+              0xd40e5495 = Fist Pump     0x02d688fe = Back Off
+              0xdd8c6ffb = Knuckles      0xc3cb3ffe = Neck Crack
+              0xc70a2249 = Chest Pound   0xca490490 = Bow
+              0xd94d724c = Blow Smoke    0xf206b92d = Close Call
+              0xce881927 = Salute
+
+          The six live-edit values above land on six rows of this table in
+          order, with no leftovers, and the five remaining rows are exactly
+          the five names observed in-game as locked/unselectable - so the
+          static table and the live evidence corroborate each other
+          completely. It also explains the "Blow Smoke" text key
+          `0x328e4395` that this doc previously cited only to rule out: it
+          is `0xd94d724c`'s SIBLING word in the same record, not the id.
+
+          Word 2 of each record (`0xed22a97d` for NONE, `0xf1751261` for
+          Blow Smoke, ...) resolves in none of the four English
+          `text1.psarc` categories; not identified.
+
+          STILL NOT resolved, and no longer needed for this field: the hash
+          ALGORITHM behind the ids. It is not `crc32_mpeg2`, not a
+          `text1.psarc` StringId, and not any of ~50 stock hashes/variants
+          tried. Exact single-byte-difference tests over the sibling
+          `*net-emblem-layers-frame*` catalog pin it to the CRC-32 poly
+          `0x04C11DB7`, MSB-first, forward byte order - yet a global
+          GF(2)-affine fit over 193 known (name, hash) pairs is inconsistent
+          on all 32 output bits, so something outside the visible name enters
+          the message. See
+          `research/notes/2026-08-20-dc-directory-and-catalogs.md` sections 5
+          and 6. Resolution by table lookup makes this moot in practice.
       member_blob_word:
         pos: 0x064C
         type: u4
@@ -134,7 +161,7 @@ types:
         type: emblem_layer
         repeat: expr
         repeat-expr: 4
-        doc: "P+0x07E8..0x0807. Four emblem layers x {shape_word:{shape_index,rotation,scale,unknown}, color_word:{color_index,opacity,unknown x2}}. SOLVED 2026-08-20: every field except the two unknown bytes is confirmed by controlled live edits, and shape_index resolves to a real display name (all four layers, identical formula - see the emblem_layer type doc and research/notes/2026-08-19-emblem-name-resolver-and-dc-catalog.md §9). color_index is a solved GRID POSITION (row*8+col in an 8x8 swatch picker) but the swatches themselves have no recovered names/RGB values."
+        doc: "P+0x07E8..0x0807. Four emblem layers x {shape_word:{shape_index,rotation,scale,unknown}, color_word:{color_index,opacity,unknown x2}}. SOLVED 2026-08-20: every field except the two unknown bytes is confirmed by controlled live edits, and shape_index resolves to a real display name (all four layers, identical formula - see the emblem_layer type doc and research/notes/2026-08-19-emblem-name-resolver-and-dc-catalog.md §9). color_index is a solved GRID POSITION (row*8+col in an 8x8 swatch picker) and the 64 swatches' RGBA values are now recovered too (see the color_index field doc and research/notes/2026-08-20-emblem-color-catalog.tsv)."
       total_matches:
         pos: 0x0A14
         type: u4
@@ -445,7 +472,7 @@ types:
         doc: "Byte 3 of shape_word. Untouched across every controlled edit performed so far (shape, rotation, scale, and multiple color/opacity changes) - genuinely static in every sample; meaning unknown."
       - id: color_index
         type: u1
-        doc: "Byte 0 (top byte) of color_word. CONFIRMED 2026-08-20: the in-game colour picker is a plain 8x8 grid (64 swatches, no names, no per-swatch DC hash resolution found), and color_index = row*8 + column (0-indexed, row-major) - proven at both the top-left (row0,col0 -> index 0, a white swatch) and bottom-right (row7,col7 -> index 63) corners via controlled edits, not just one sample. What each numbered swatch actually LOOKS like (an RGB/palette value) is not resolved - only the grid-position formula is."
+        doc: "Byte 0 (top byte) of color_word. CONFIRMED 2026-08-20: the in-game colour picker is a plain 8x8 grid (64 swatches, no names, no per-swatch DC hash resolution found), and color_index = row*8 + column (0-indexed, row-major) - proven at both the top-left (row0,col0 -> index 0, a white swatch) and bottom-right (row7,col7 -> index 63) corners via controlled edits, not just one sample. SWATCH VALUES RESOLVED 2026-08-20: the DC global `*net-emblem-colors*` (crc32_mpeg2 == 0xbcbbdfbd) holds `{count: 64, array -> dc1/net.bin 0x15e94}`, stride 16, four big-endian f32 (r,g,b,a); alpha is 1.0 in all 64. The 64 entries fall into eight runs of eight, each one hue ramped light-to-dark (row0 grey, then red/orange/yellow/green/teal/blue/purple), which independently corroborates the row*8+col formula. index 0 = #EBEBEB (the confirmed white swatch), index 63 = #2D1E4F. Full table: research/notes/2026-08-20-emblem-color-catalog.tsv; derivation in research/notes/2026-08-20-dc-directory-and-catalogs.md section 4."
       - id: opacity
         type: u1
         doc: "Byte 1 of color_word. CONFIRMED 2026-08-20 via a controlled edit, same pattern as scale: 0xff (default/untouched in every capture before this test) -> 0x00 after setting opacity to \"the other side of the slider\" (human-confirmed, i.e. the transparent/invisible extreme) -> back to 0xff after resetting to \"visible\". 0xff = fully visible, 0x00 = invisible; exact intermediate scale not pinned, only the two endpoints and direction."

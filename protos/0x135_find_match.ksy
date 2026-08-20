@@ -107,10 +107,31 @@ seq:
     doc: "Offset 26:28. Uninitialised padding. DEFINITION: an unwritten 2-byte gap after burst_marker, before the search-window pair. REASON: FUN_00ad6c70's store enumeration (base r1+144) has no store to 170(r1) = wire 26; it captures as 0. Send 0. (This offset plus search_window_lo/hi below were once a single field wrongly named `pad_1a`.)"
   - id: search_window_lo
     type: u2
-    doc: "Offset 28:30. `max(0, param_5 - param_6)` when param_5 >= 0, else 0 (`subf/not/srawi/and` clamp @ 0xad6d90-0xad6dc4). The low end of a rating/filter window; 0 in all live captures (the window is disabled while searching). Was the middle of `pad_1a`."
+    doc: |
+      Offset 28:30. `max(0, param_5 - param_6)` when param_5 >= 0, else 0
+      (`subf/not/srawi/and` clamp @ 0xad6d90-0xad6dc4). The low end of a
+      rating/filter window. CORRECTED 2026-08-20 - the earlier "0 in all live
+      captures, the window is disabled while searching" reading was drawn from
+      a smaller capture set. A census of ALL 2,188 captured `0x135` frames in
+      `server/logs/wire.jsonl` finds the pair NONZERO in 653 of them, and every
+      nonzero pair decomposes cleanly against the clamp above as either a point
+      window at `param_5` or `param_5 +/- 60`:
+          (397,397) x198  (337,457) x91   -> param_5 = 397
+          ( 29, 29) x179  (  0, 89) x82   -> param_5 = 29 (lo clamped to 0)
+          ( 31, 31) x31   (  0, 91) x23   -> param_5 = 31
+          (365,365) x18   (305,425) x10   -> param_5 = 365
+          (373,373) x15   (313,433) x6    -> param_5 = 373
+      So `param_6`/`param_7` are one widen-by-60 step and the client alternates
+      a narrow and a wide probe. Grouping by the connection's `0x12d` online id
+      shows `param_5` is a PER-ACCOUNT quantity that climbs with play:
+      `comradesean` 397/365/373, `mgnomad2` 29/31/44/45. Its source is NOT
+      identified - it is not `member_data.rank_value` (0..3 live), not
+      `rank_tier` (constant 0), and matches no leaderboard board this project
+      logs. See research/notes/2026-08-20-dc-directory-and-catalogs.md section 8.
+      Was the middle of `pad_1a`.
   - id: search_window_hi
     type: u2
-    doc: "Offset 30:32. `param_5 + param_7` when param_5 >= 0, else 0 (same clamp). The high end of the rating/filter window; 0 in all live captures. Was the tail of `pad_1a`."
+    doc: "Offset 30:32. `param_5 + param_7` when param_5 >= 0, else 0 (same clamp). The high end of the rating/filter window. CORRECTED 2026-08-20 alongside search_window_lo - nonzero in 653/2,188 captured frames, not 0 in all of them; see that field's doc for the full census and decomposition. Was the tail of `pad_1a`."
   - id: locale
     size: 4
     doc: "Offset 32:36 (wire 0x20). Region/language, zeroed by default (`stw r26,176(r1)` @ 0xad6d1c) and overwritten with region|language only when param_4 != 0. Live `75 73 00 01` = 'us\\0' + language 1 on criteria-0 searches (same as RoomCreate's region_language); later criteria in a burst send zeros here."

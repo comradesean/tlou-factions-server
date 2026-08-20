@@ -357,118 +357,78 @@ seq:
     doc: |
       Offset 16:18. Producer: `bl 0x003c8e30` @ 0x003b16b4 (args
       r3 = `*(anchor-0x7fec)` = 0x01387240, `li r4,1` @ 0x003b16a8), then
-      `sth r3,0x88(r1)` @ 0x003b16bc. FUN_003c8e30 returns the override at
-      `global+0x78`-1, else a scan result over a DC hash `0xC85E199D`'s table.
-      CORRECTED 2026-08-18 (was the first 2 bytes of `reserved_10`).
+      `sth r3,0x88(r1)` @ 0x003b16bc. CORRECTED 2026-08-18 (was the first 2
+      bytes of `reserved_10`).
 
-      NAME CORRECTION 2026-08-19: hash `0xC85E199D` was previously described
-      as "rank/tier-bracket shaped" - that identification is now known to be
-      WRONG. Both `0xC85E199D` and its sibling `type_hash` (`0xced9d25f`,
-      the adjacent word at net1.bin file offset `0xed4`+8) were reverse-
-      matched byte-exact against the shipping disc's own DC source-symbol
-      lists: `crc32_mpeg2("*net-money-info*") == 0xC85E199D` and
-      `crc32_mpeg2("net-money-info") == 0xced9d25f`
-      (`server/lib/userdata_crypt.py`'s `crc32_mpeg2` - already this
-      project's confirmed hash for `userdata.txt` keys). The candidate pool
-      was 43,674 unique tokens pulled from every `.dci` export/import list
-      inside `bin.psarc` on the retail PS3 disc (`build/main/bin.psarc`,
-      entries under `dc1/*.dci` - plaintext Scheme-style dependency files;
-      `*name*` is this codebase's global-variable naming convention, so
-      `*net-money-info*` is a global and `net-money-info` is its bare
-      type/struct name - both hashed, both hit, on the very same directory
-      record). Two independent exact matches into the same concept, out of
-      a 32-bit hash space, is not a plausible coincidence.
+      RESOLVED 2026-08-20 - the DC branch of this producer is INERT, and the
+      field's only live source is an untraced override. See
+      `research/notes/2026-08-20-dc-directory-and-catalogs.md` sections 1 and 3.
 
-      This means the DC table backing this field is named `net-money-info`
-      in the source, not any rank/tier concept - it is very likely a
-      currency/scrap-economy table (unlock costs, weekly earnings, etc.),
-      NOT a rank-bracket table. This directly explains why the 193-entry
-      payload below never read cleanly as flat rank thresholds. Left
-      OPEN, deliberately not resolved here: whether the wire field at
-      offset 16:18 (still named `rank_tier` for its independent behavioral
-      justification - see `docs/protocol/0x131_member.md`, "the field the
-      lobby reads for a REMOTE player's rank/title") is actually a
-      money-related value misread as rank/tier, or whether `FUN_003c8e30`
-      genuinely produces a rank/tier display value by way of a
-      money-table lookup (e.g. "which reward tier has this player's
-      earned currency crossed") - both are plausible and neither is
-      confirmed. A live RPCS3 memory read while a ranked/high-currency
-      account is displayed, correlated against known scrap/currency
-      totals, would resolve this. Do not rename this field off the
-      strength of this finding alone.
+      `FUN_003c8e30` (01.00, VMA 0x3c8e30-0x3c8eec, verified against
+      `objdump -D -b binary -m powerpc:common64 -EB --adjust-vma=0x10000`):
 
-      PLAUSIBLE FIT (domain knowledge, not byte-level evidence): Factions'
-      known economy is two-tier - in-match "Parts" (the running per-round
-      total, displayed live and shown as the round-end "Score") convert
-      into "Supplies" for the separate survivor-camp meta-game. A table
-      named `net-money-info` with a 193-entry array is a good structural
-      fit for that conversion (rates/costs/breakpoints), better than a flat
-      rank-bracket table. Still inference, not confirmed by any capture.
+          r9 = *(global+0x78)
+          if (r9 != 0) return r9 - 1                 ; the override
+          r3 = 0xC85E199D ; bl 0x9fa9f4              ; DC hash registry lookup
+          if (!r3) return 0
+          count = r3[0]; array = r3[1]; result = 0
+          for (i = 0; i < count; i++) {              ; 4-byte stride, overlapping
+              a = array[i]; b = array[i+1]
+              if (a > 0) { result = i; continue; }
+              if (b > 0) return result                ; sentinel exit
+              result = i;
+          }
+          return count - 1
 
-      LOG CROSS-CHECK 2026-08-19 (inconclusive, not confirming): every
-      captured `0x13a` frame in `server/logs/wire.jsonl` (852 total, three
-      test accounts - `comradesean`, `mgnomad2`, `gmnomad`) has this field at
-      a constant `0x0000`, cross-referenced by npid+timestamp against real
-      `leaderboard-update 405 ...` submissions in
-      `server/logs/ticket_server.log` (board 405 = overall/clan-supplies,
-      sent on every match end - `protos/0x11_leaderboard_line.ksy`) for the
-      same accounts over the same period: `comradesean` plateaued at score
-      `81`, `mgnomad2` climbed `35` -> `53+` across several matches. So this
-      field shows ZERO variation even while the accounts' actual supplies
-      score was visibly climbing - consistent with the bracket-scan
-      "constant absent an override" reading above, but it does NOT
-      distinguish the money-table hypothesis from the old rank-tier guess:
-      both predict a constant 0 for accounts this low/unranked. What would
-      actually resolve this: a capture with a MUCH higher-supplies account
-      (enough to plausibly cross a bracket boundary), or the live memory
-      read of the resolved table already called for above.
+      The table `0xC85E199D` resolves to is now decoded, and it decides the
+      question. `crc32_mpeg2("*net-money-info*") == 0xC85E199D` and
+      `crc32_mpeg2("net-money-info") == 0xced9d25f` (both reverse-matched
+      2026-08-19 against the retail disc's `dc1/*.dci` compiler-symbol
+      corpus, `research/tools/dc_hash_crack.py`). What was WRONG in the
+      2026-08-19 write-up here was the payload, not the name: the DC00
+      directory record is `{key_hash, type_hash, value_ptr}`, not
+      `{value_ptr, key_hash, type_hash}`, so the "193-entry array that never
+      read cleanly as thresholds" was the PRECEDING record's table
+      (`*net-emblem-layers-frame*`, which is the emblem shape catalog and
+      reads perfectly as one). `*net-money-info*`'s own `value_ptr` is at
+      `dc1/net.bin` file offset `0xedc` -> `0x52f4` = `{count: 99,
+      array -> 0x2665c}`, and that array is a clean, monotonic, cumulative
+      threshold ladder:
 
-      FUN_003c8e30 FULLY DECOMPILED 2026-08-19 (see `docs/protocol/dc_table.md`
-      for the DC00 container this hash lives in). Corrected reading of the
-      scan loop (`0x3c8ea0`-`0x3c8ed4`): it is NOT "first satisfied bracket"
-      - it linearly walks `bracket[i]` for `i` in `[0, count)`, treating each
-      entry as a signed-int pair `{fieldA, fieldB}` read via a *4-byte*
-      stride (`r0 = i*4`, then reads `+0`/`+4` from that address - i.e.
-      consecutive iterations' reads overlap by one word). It keeps
-      `result = i` on every iteration EXCEPT one: if `fieldA <= 0 && fieldB >
-      0`, it exits immediately, leaving `result` at whatever the previous
-      iteration set. In practice that means it returns "index of the last
-      bracket before a `{<=0, >0}` sentinel record", which for a
-      well-formed table is just `count - 1` - i.e. this branch, absent the
-      `global+0x78` override, looks like it always resolves to a constant
-      (something like "highest defined tier"), not a live comparison against
-      any player stat - `param_2`/`r4` (passed in as the literal `1` at the
-      call site) is never read anywhere in this function body. This may mean
-      the *real* per-player tier selection happens before this call (this
-      function only resolves the display bracket for an already-decided
-      tier index), but that wasn't traced this session.
+          idx  0   1     2     3     4      5      6      7      8      9
+          val  0  2000  4000  7000  12000  18750  27000  36750  48000  60750  ...
 
-      The DC hash itself is resolved through a separate, engine-wide
-      sorted-hash lookup (`_opd_FUN_009fa9f4` -> `_opd_FUN_009fa88c`, a
-      binary search over a runtime-built `{key_hash:4, value:4}` array,
-      8-byte stride, NOT the same code as `dc_table.ksy`'s file parser) -
-      this is the "named-value registry" the earlier handoff note
-      mis-suspected of being the DC00 file parser itself; it consumes this
-      container's contents rather than parsing its bytes. The registry's
-      resolved value, treated as a pointer, is read as `{count: u4,
-      array: u4}` by FUN_003c8e30 - and that exact record is directly
-      findable in net1.bin's raw bytes: the top-level directory entry for
-      this hash (file offset `0xed4`) is a 3-word
-      `{value_ptr, key_hash, type_hash}` record whose `value_ptr` targets
-      file offset `0x27da8`, which holds `{count=193 (0xc1), array_ptr ->
-      file-off 0x2950c}`. Dumping `0x2950c` onward, however, does NOT read
-      as a clean flat array of 193 threshold numbers under either the 4-byte
-      stride the decompile literally uses or an 8-byte-struct reading - it
-      looks like more DC-directory-shaped data (a mix of hash-looking words
-      and further fixup pointers, in a period-3 pattern), i.e. either this
-      is itself a nested sub-directory (not a leaf numeric array) or the
-      hash resolved by the runtime registry for the live binary is not
-      literally "file offset 0x27da8 in net1.bin" (a static-file coincidence
-      rather than the true runtime pointer) - genuinely unresolved which.
-      Confidence: HIGH on the bracket-scan mechanism and the directory-entry
-      location; LOW/UNRESOLVED on what the 193 entries actually encode. A
-      live RPCS3 memory read of the resolved table while a ranked account is
-      displayed would close this; static analysis alone did not.
+      Run the loop above on it: entry is at `i = 0` with `result = 0`, the
+      first body iteration reads `a = array[0] = 0` (not > 0) and
+      `b = array[1] = 2000` (> 0), so it returns immediately with 0. There is
+      no input that changes this - `param_2`/`r4` (the literal `1` at the
+      call site) is never read in the function body, and the table is static.
+
+      **So the DC path returns a hard 0, and `rank_tier` is nonzero only when
+      `*(global+0x78)` is nonzero.** That matches the capture exactly: the
+      field is `0x0000` in 855/855 live `0x13a` frames
+      (`server/logs/wire.jsonl`, re-counted 2026-08-20; was 852 on the
+      previous pass) across three test accounts, and stayed 0 while those
+      accounts' board-405 supplies score visibly climbed
+      (`mgnomad2` 35 -> 53, `server/logs/ticket_server.log`) - which the old
+      "bracket over a money ladder" reading could not have explained on its
+      own but this one does.
+
+      Status: RESOLVED for the DC branch (confidence HIGH - byte-exact table
+      contents plus instruction-level disassembly, and the predicted constant
+      0 matches 855/855 captured frames). STILL OPEN, and now the only open
+      part: who writes `*(global+0x78)`. `r30 = *(r2-31028)`, then
+      `r9 = *(r30-32756)`, then `+0x78`; the writer was not traced. Do not
+      rename this field - its behavioural justification (the value the lobby
+      reads for a REMOTE player's rank/title, see
+      `docs/protocol/0x131_member.md`) is independent of the DC table's name.
+
+      The DC hash is resolved at runtime through an engine-wide sorted-hash
+      registry (`_opd_FUN_009fa9f4` -> `_opd_FUN_009fa88c`, binary search over
+      a `{key_hash:4, value:4}` array, 8-byte stride) - NOT the DC00 file
+      parser; it consumes the container's contents rather than parsing its
+      bytes. `research/tools/dc_dir.py` walks the same directory statically
+      and reproduces every offset quoted above.
   - id: card_stat_2
     type: u2
     doc: |
