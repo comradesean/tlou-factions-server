@@ -331,3 +331,74 @@ minor and both needing a capture rather than more static analysis:
   orphaning was a real candidate and has been fixed; if freezes continue at the
   same rate the hypothesis is dead and it is environmental. UNBLOCK: copy
   `RPCS3.log` immediately after a freeze, before relaunching.
+
+## Remaining items after the 2026-08-20 tier-2/audit pass, categorized by blocker
+
+The tractable items from that pass (`FUN_00ad5b78`'s caller, `0x13e` kind=3's
+vtable+0x18 selector, `0x142`'s per-u16 encoding, `capability_flag` bit 1) were
+assigned to a follow-up agent the same day - see `research/notes/` for whichever
+dated note it produces. Everything below is what's left, sorted by WHY it's
+stuck rather than left as an undifferentiated pile, so revisiting this list
+doesn't require re-deriving the reason each item stalled.
+
+### Blocked on a live resource this project doesn't have
+
+- **`0x142 HostRank`'s per-entry numeric encoding.** The collection mechanism
+  is fully known (one u16 per local player from `FUN_0039b720`); every
+  captured value is the same live-constant `0x0002` because every account
+  observed so far is unranked (RECONFIRMED 2026-08-20, 241/241 frames still
+  `0x0002`). UNBLOCK: a ranked account, so the field varies at all. No amount
+  of further static tracing can substitute - there's nothing to decode from a
+  constant.
+- **`0x136 attr_tail`'s interior meaning.** Mechanism resolved at instruction
+  granularity (producer, both copy sites, exhaustive no-reader scan); the
+  bytes themselves are opaque without a reference implementation. UNBLOCK: a
+  PS4 Remastered retail capture - see this file's existing `0x136` entry
+  above for the full capture plan, already written and ready to execute the
+  moment PS4 access exists.
+
+### Blocked on a rare or never-reproduced live condition
+
+- **"Host quit for cheating" match teardown.** Reported once, rare, trigger
+  unknown. Unlike the two items above, NO static lead has been attempted yet
+  (no string/caller search has been run against the EBOOT for whatever
+  message or code path produces this) - it's not proven statically
+  unrecoverable, just unstarted. UNBLOCK (partial, doesn't need reproduction):
+  search the EBOOT's string table for a cheating/kick-for-cheating literal
+  and trace its caller, the same method used for every other client-side
+  string in this project. Full resolution of WHY it fires still needs a
+  reproduction.
+
+### Structurally closed, unless new evidence contradicts it
+
+- **`member_data.card_stat_2`/`card_stat_3`'s string content.** Not blocked
+  on a resource - CLOSED on 01.00: the only code path that could ever write a
+  non-empty value into the 8-byte string is gated on a byte
+  (`*(0x013839d0+0x40)`) that no store anywhere in the 01.00 binary touches
+  (see `protos/common/member_data.ksy`'s field doc and
+  `research/notes/2026-08-20-tier2-followup.md` §2). Revisit only if: (a) a
+  future static pass finds a writer this one missed, or (b) the same check is
+  ever run against the 01.11 binary (available since 2026-08-20 but not used
+  for this - card_stat has read as zero in both build eras' captures, so
+  there's no known build-specific behavior motivating the extra work yet).
+
+### Genuinely unknown - no static trace attempted, no live blocker identified
+
+These are open because nobody has looked yet, not because looking is known to
+fail. Lower priority than the tractable list above only because nothing
+currently depends on the answer.
+
+- **`profile_21`'s zero region, `P+0x1E74..0x5008`.** Purpose unknown; no
+  static pass has walked this range's producers the way `career_stats` (a
+  smaller unmapped gap in the same file) was walked on 2026-08-20.
+- **`report-server`'s RESPONSE grammar** (distinct from the already-solved
+  `is-banned` REQUEST / `pReportArray` table above). This project's stub is
+  fail-open regardless (an empty body never triggers a ban - see the
+  `pReportArray` entry above), so there's no correctness urgency, only
+  documentation completeness.
+- **`stat_line`'s second `%s`** in the campaign-save line
+  (`stat %s task-%x %s %s\n`). The overall grammar is resolved by decompile
+  (`protos/0x11_stat_line.ksy`); this one parameter within it isn't, and the
+  service has never been observed live to check against (0/452 sibling
+  hellos), so even a resolved format string can't be verified against a real
+  frame yet.

@@ -2525,7 +2525,25 @@ def handle(conn, addr, log_lock, log):
                          f"member_id={target_member_id} from room "
                          f"{room_entry['room_id'].hex()}: 0x138 to target, 0x134 "
                          f"to the rest")
-                    broadcast_member_departure(id(tconn), room_id=room_entry["room_id"])
+                    # reseed_party=True: a kicked member's own 0x138 handler
+                    # (@0x00ad7f28) runs the same client-side LeaveRoom
+                    # teardown as a voluntary 0x133 leave, so it ends up with
+                    # the same zeroed party_obj+0x10 the rejoin-party fix
+                    # addresses (see reseed_departed_party) - without this, a
+                    # kicked party member would be stuck unable to rejoin
+                    # anyone's party afterward, same symptom as the original
+                    # bug report. UNLIKE the voluntary-leave case, this
+                    # reseed is SERVER-INITIATED and races the target's own
+                    # processing of the 0x138 we just sent it (a voluntary
+                    # leaver has already finished its local teardown by the
+                    # time its 0x133 reaches us; a kicked member has NOT yet
+                    # processed our 0x138 at the moment we send this). Not
+                    # live-tested - if kicked members report the same
+                    # "Join" symptom as the original bug, or a NEW symptom
+                    # (garbled party state right after being kicked),
+                    # suspect this race first.
+                    broadcast_member_departure(id(tconn), room_id=room_entry["room_id"],
+                                               reseed_party=True)
             elif opcode == PROMOTE_OPCODE and len(chunk) >= 16:
                 # PROMOTE TO PARTY LEADER - wired up 2026-08-17. Payload
                 # (live-decoded): opcode(4) | new_owner member_id u16 @+4 |
