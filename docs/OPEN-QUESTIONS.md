@@ -44,9 +44,23 @@ live in the data-compiler payload the game loads at runtime.
   reply never enters. Same disposition and same unblock as above.
 
 - **DC net-stat slots, `rank_tier`'s `net-money-info` array contents, and
-  every id->asset map** (cosmetics, character and name pools). Long-standing;
-  see `docs/protocol/knowledge-inventory.md` Tier 3. `rank_tier`'s backing DC
-  symbol was name-corrected 2026-08-19 - see `docs/protocol/dc_table.md`.
+  most of the id->asset map** (cosmetics, character and name pools).
+  Long-standing; see `docs/protocol/knowledge-inventory.md` Tier 3.
+  `rank_tier`'s backing DC symbol was name-corrected 2026-08-19 - see
+  `docs/protocol/dc_table.md`. PARTIALLY UNBLOCKED 2026-08-19: cosmetic
+  StringIds are now resolvable live via `research/tools/text_table.py`
+  (confirmed: hat/mask/helmet) and `research/tools/dc_hash_crack.py`
+  (confirmed: character skin variant). SOLVED 2026-08-20 for the emblem
+  shape catalog on all four layers (one identical formula, no per-layer
+  offset): `shape_index-1` indexes directly into a 192-entry flat name
+  catalog on the disc, proven against all 192 entries via live
+  edit-and-diff testing (`research/tools/profile21_codec.py`) - no memory
+  read needed after all. Rotation/scale/opacity and the colour picker's
+  grid-position formula are solved too. Full table:
+  `research/notes/2026-08-20-emblem-shape-catalog.tsv`; derivation:
+  `research/notes/2026-08-19-emblem-name-resolver-and-dc-catalog.md` §9-§10.
+  Still open: what each colour swatch renders as, and a handful of
+  unexplained bytes.
 
 ## Unmapped wire spans
 

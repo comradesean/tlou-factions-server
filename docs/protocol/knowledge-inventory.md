@@ -309,13 +309,33 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     index ranges only partly claimed.
 52. **`profile_21` zero region `P+0x1E74..0x5008`** - purpose unknown.
 53. **DC-blocked set** - all net-stat slots (including the supplies gate),
-    `rank_tier` thresholds, `stat_line`'s `task-%x` (mechanism resolved
-    2026-08-19 - a genuine DC task-definitions table lookup, removed from
-    this list as its own item and folded in here; see the "resolved out of
-    this tier" note below - only the specific task identity remains
-    DC-blocked), and every id→asset map (cosmetics, character/name pools).
-    Blocked on extracting `net1.bin`/`net10.bin` registries; not reachable by
-    decompiling the EBOOT.
+    `rank_tier`'s `net-money-info` table contents, `stat_line`'s `task-%x`
+    (mechanism resolved 2026-08-19 - a genuine DC task-definitions table
+    lookup, removed from this list as its own item and folded in here; see
+    the "resolved out of this tier" note below - only the specific task
+    identity remains DC-blocked), and most of the id→asset map (cosmetics,
+    character/name pools) - PARTIALLY UNBLOCKED 2026-08-19: `net1.bin`/
+    `net10.bin`'s container format is solved (`docs/protocol/dc_table.md`),
+    and cosmetic/customization StringIds are now resolvable via
+    `research/tools/text_table.py` against `text1.psarc`'s locale text
+    tables (confirmed live: hat/mask/helmet, a milestone-event message) or
+    via `research/tools/dc_hash_crack.py` against the retail disc's
+    compiler-symbol corpus (confirmed live: character skin variant,
+    `net-money-info`, `hud`). What's still genuinely blocked: DC hashes
+    this project has not yet cited anywhere (no known hash to search for),
+    and most of the emblem shape/colour catalog. UPDATE 2026-08-20: the
+    emblem shape catalog is fully SOLVED for all four layers (identical
+    formula, no per-layer offset) - live edit-and-diff testing (not a
+    memory read) found the off-by-one a static-analysis-only pass had
+    missed; `shape_index-1` indexes directly into a 192-entry flat name
+    catalog on the retail disc, proven against the entire catalog on
+    layer0 (192/192, zero mismatches) and cross-confirmed on layer1/layer2.
+    Rotation/scale/opacity and the colour picker's grid-position formula
+    are also solved. See
+    `research/notes/2026-08-19-emblem-name-resolver-and-dc-catalog.md`
+    §9-§10 and `research/notes/2026-08-20-emblem-shape-catalog.tsv`. Still
+    open: what each colour swatch renders as, and a handful of unexplained
+    bytes.
 54. **`0x142` numeric encoding for a ranked account** - needs a ranked
     capture. RE-CHECKED 2026-08-19 against all 238 live captured `0x142`
     frames: every one still ends in the unranked-account constant `0x0002` -
