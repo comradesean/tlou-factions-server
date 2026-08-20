@@ -615,9 +615,24 @@ def recv_exact(conn, n, timeout=10):
 # names live in the data-compiler payload, not the EBOOT, so we cannot check.
 #
 # TODO(pReportArray): the literal entry NAMES in the DC-resident pReportArray
-# table are unknown. They live in the data-compiler payload, not the EBOOT, so no
-# static search can recover them - it needs a DC/.psarc dump or a runtime read of
-# the resolved table. NOTHING NEEDS DOING HERE unless this project ever wants to
+# table are unknown. UPDATE 2026-08-19: the "data-compiler payload" isn't the
+# unreadable wall this comment used to imply - net10.bin (01.11's DC00 registry,
+# server/data/served_content/net10.bin.psarc.crypt, see docs/protocol/dc_table.md
+# for the container format) DOES contain the literal hash 0xFFAC56F2 once, at
+# file offset 0x148c. Its directory entry decodes (dc_table.ksy's format) as
+# {value_ptr -> file-off 0x25314, key_hash=0xFFAC56F2, type_hash=0xF99A36AA};
+# the target at 0x25314 is {count=1, array_ptr -> file-off 0x3bc68, tag=0x13c5fb80}
+# - i.e. as of 01.11's shipped data, this table has exactly ONE entry defined
+# (not empty, not populated with many ban rows). What's still NOT recovered:
+# the entry's actual NAME (the string strcmp'd against the server's ban reply)
+# and its associated integer id - the blob at 0x3bc68 is further DC-directory
+# -shaped data (floats, nested fixup pointers) that wasn't fully decoded this
+# session; see dc_table.ksy's doc for why (the same "nested structure, unclear
+# exact stride" gap as member_data.rank_tier). A DC/.psarc dump was NOT needed
+# to get this far - it needed finding+decoding the container format, which is
+# now done at the container level. What remains needs either finishing that
+# one nested blob's decode or a runtime read of the resolved table.
+# NOTHING NEEDS DOING HERE unless this project ever wants to
 # deliberately ban an account: our reply is an EMPTY body, so buf[0] is 0x00, the
 # '+' test at 0x36e2cc fails, and the ban index at g_net+916 stays at the -1 it
 # was initialised to at 0x36e1a0/0x36e1a8. The check is fail-open regardless of

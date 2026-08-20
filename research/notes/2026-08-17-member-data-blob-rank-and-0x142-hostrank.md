@@ -211,7 +211,7 @@ room objects via `FUN_00ad1fc0(room, buf, 32)` (`0x3b17cc` → room `0x01383bd8`
 | 9 | 1 | `*(u8*)(x+0x303)` or 0 | used as `value-1` index into a name/string lookup (`0x3c2ad0` → `FUN_0039c69c`) — title/badge shaped |
 | 10..13 | 4 | 4 bytes from global `0x01382082` | 4 one-byte ids; `FUN_003a2310` loops `k=0..3` comparing `blob[10+k]` and subtracting a cost (`0x3a262c`-`0x3a2664`) — **loadout / equipped-item shaped** |
 | 14 | 2 | `FUN_00323818(a, b)` | `min(a,999) + min(b,9)*1000`, where `a = (P[0x1E34] + P[0x1E38]) / 7` and `b = P[0x1E44]`, `P = FUN_003cb89c(...)` (the persistent progression record) |
-| 16 | 2 | `FUN_003c8e30(0x01387240, 1)` | an override at `<global>+0x78` minus 1, else a walk over a resource table (hash `0xC85E199D`) returning the first bracket index whose two thresholds are satisfied — **rank/tier-lookup shaped**. (Its two arguments are dead on the traced path; `r3` is overwritten with the hash at `0x3c8e58`.) |
+| 16 | 2 | `FUN_003c8e30(0x01387240, 1)` | an override at `<global>+0x78` minus 1, else a walk over a resource table (hash `0xC85E199D`) returning the first bracket index whose two thresholds are satisfied — **rank/tier-lookup shaped**. (Its two arguments are dead on the traced path; `r3` is overwritten with the hash at `0x3c8e58`.) NAME CORRECTION 2026-08-19: `0xC85E199D` reverse-matched to DC symbol `*net-money-info*`, not a rank/tier concept — see `protos/common/member_data.ksy`'s `rank_tier` field doc. |
 | 18..21 | 4 | 4 bytes from `FUN_003cb89c(...)+0x654` | two more u16s |
 | 22..31 | 10 | **NEVER WRITTEN — uninitialised stack** | live captures show the player-array global `0x0137d700` and TOC `0x01305870` leaking through here |
 

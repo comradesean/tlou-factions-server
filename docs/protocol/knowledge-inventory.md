@@ -235,8 +235,13 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
 37. **`0x142` HostRank `entries`** - per-player values from the player object's
     `vtable[0]` getter. Live: constant `0x0002` on unranked accounts. Proven NOT
     to be `member_data.rank_value`. Encoding needs a ranked capture.
-38. **`member_data.rank_tier`** - bracket-lookup mechanism verified; the
-    displayed tier needs the DC threshold table (hash `0xC85E199D`).
+38. **`member_data.rank_tier`** - bracket-scan mechanism verified; the hash
+    `0xC85E199D` it reads was NAME-CORRECTED 2026-08-19 to `*net-money-info*`
+    (reverse-matched against the retail disc's DC source-symbol list, see
+    `docs/protocol/dc_table.md`) - not a rank/tier concept, likely a
+    currency/scrap-economy table. Whether this wire field is genuinely
+    money-derived, or genuinely rank/tier-derived through a money-table
+    lookup, is still open.
 39. **`member_data.capability_flag` bit meanings** - which bit is which DLC pack
     lives in the `.pak` descriptors, not the EBOOT.
 40. **`member_data.card_stat_2` / `card_stat_3`** - bytes and source pinned

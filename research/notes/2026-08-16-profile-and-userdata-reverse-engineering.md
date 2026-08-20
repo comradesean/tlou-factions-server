@@ -385,7 +385,7 @@ disassembly (`0x3b15bc`-`0x3b17f8`). Stack buffer base is `r1+120`.
 | `9` | 1 | `stb r0,129(r1)` @ `0x3b16f0` | `*(u8*)(P + 0x303)` — **profile field**, `0` if `FUN_0003b584()` returns non-zero | title / badge index (used as `value-1` into a name lookup at `0x3c2ad0`) |
 | `10..13` | 4 | `stb`×4 @ `0x3b17b8`-`0x3b17c4` | 4 bytes copied from **global `0x01382082`** | equipped loadout item-ids, `0xFF` = unset. **Live selection, NOT read from the profile here** |
 | `14..15` | 2 | `sth r3,134(r1)` @ `0x3b16ac` | `FUN_00323818(a, b)` = `min(a,999) + min(b,9)*1000`, `a = (P[0x1E34] + P[0x1E38]) / 7`, `b = P[0x1E44]` | **profile-derived**: `weeks_survived + journeys*1000`. `/7` = matches→in-game weeks |
-| `16..17` | 2 | `sth r3,136(r1)` @ `0x3b16bc` | `FUN_003c8e30()` — returns `*(int*)(g+0x78) - 1` if non-zero, else the first satisfying bracket index in DC table `0xC85E199D` | **rank / tier index**, computed live from a DC threshold table, not stored |
+| `16..17` | 2 | `sth r3,136(r1)` @ `0x3b16bc` | `FUN_003c8e30()` — returns `*(int*)(g+0x78) - 1` if non-zero, else the first satisfying bracket index in DC table `0xC85E199D` | **rank / tier index**, computed live from a DC threshold table, not stored. NAME CORRECTION 2026-08-19: `0xC85E199D` reverse-matched to DC symbol `*net-money-info*`, not a rank/tier concept — see `protos/common/member_data.ksy`'s `rank_tier` field doc |
 | `18..21` | 4 | `stb`×4 @ `0x3b1744`-`0x3b175c` | `P + 0x654` BE u32, copied verbatim | two more UI u16 stats |
 | `22..31` | 10 | **never written** | uninitialised stack | garbage — live captures show `0x0137D700` (player-array base) and `0x01305870` (TOC) leaking here |
 

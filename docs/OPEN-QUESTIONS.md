@@ -43,9 +43,10 @@ live in the data-compiler payload the game loads at runtime.
   NOTHING NEEDS DOING - it is reachable only on the banned path, which our empty
   reply never enters. Same disposition and same unblock as above.
 
-- **DC net-stat slots, `rank_tier` thresholds, and every id->asset map**
-  (cosmetics, character and name pools). Long-standing; see
-  `docs/protocol/knowledge-inventory.md` Tier 3.
+- **DC net-stat slots, `rank_tier`'s `net-money-info` array contents, and
+  every id->asset map** (cosmetics, character and name pools). Long-standing;
+  see `docs/protocol/knowledge-inventory.md` Tier 3. `rank_tier`'s backing DC
+  symbol was name-corrected 2026-08-19 - see `docs/protocol/dc_table.md`.
 
 ## Unmapped wire spans
 
