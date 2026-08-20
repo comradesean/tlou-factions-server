@@ -60,9 +60,33 @@ seq:
       (`li r28,-1` @ 0xad2b44; `lbz r0,8(r3)` / `and r28,r28,r0` @ 0xad2b6c-70),
       then each map/mode candidate is kept only if `common_caps &
       descriptor.required_mask(+0x14) != 0` (@0x3a25b4, @0x35ad84); a candidate
-      whose required mask is 0 is always eligible. INDIVIDUAL BIT MEANINGS are
-      DC/entitlement-defined (which bit = which DLC pack lives in the .pak
-      descriptor tables + the owned-content register, not the EBOOT). Was 0 in all
+      whose required mask is 0 is always eligible.
+
+      INDIVIDUAL BIT MEANINGS - SOLVED 2026-08-20. The descriptor table the
+      AND-reduce is tested against is the DC global `*net-maps*`, stride 76
+      (`mulli r0,r11,76` @ 0x3a2574), and the required mask is its word at
+      `+0x14` (`lwz r0,20(r29)` @ 0x3a2598, then `and r3,r3,r0` @ 0x3a25b4).
+      Decoding that table from both shipped bundles:
+        01.00 `dc1/net.bin`  {count 8,  array 0x14984} - mask 0 on all 8 maps.
+        01.11 `net10.bin`    {count 19, array 0x23740}:
+          mask 0x00  huntercity-2 lakeside-2 university-2 billschurch-2
+                     highschool-2 outskirts-2 dam-2 (x2) warzone
+          mask 0x01  bookstore-2 busdepot-4 hometown-1 suburbs-1
+          mask 0x04  watertower-1 mine-1 capitol-4 wharf-3
+          mask 0x08  plaza-3 beach-final
+      So bit 0 = a four-map pack (Bookstore/Bus Depot/Hometown/Suburbs),
+      bit 2 = a four-map pack (Water Tower/Coal Mine/Capitol/Wharf),
+      bit 3 = a two-map pack (Plaza/Beach), and **bit 1 is required by no map
+      descriptor in either bundle** - which is why the live 01.11 value is
+      0x0d and not 0x0f. Retail marketing names for the three packs are NOT
+      asserted; the grouping above is what the shipped data says. Confidence:
+      high (byte-exact table contents plus the instruction-verified gate; the
+      01.00 all-zero table independently corroborates the column's role).
+      A server synthesizing a card should send 0x00 (base maps only) unless it
+      intends to advertise DLC ownership. See
+      research/notes/2026-08-20-tier2-followup.md section 1.
+
+      Was 0 in all
       47 captures (both test accounts had no MP DLC), which is why the old u16
       `team` read as a clean 0/1/2. Confidence: high (mechanism); bit-level
       semantics are DC-dependent.
@@ -416,11 +440,47 @@ seq:
 
       Status: RESOLVED for the DC branch (confidence HIGH - byte-exact table
       contents plus instruction-level disassembly, and the predicted constant
-      0 matches 855/855 captured frames). STILL OPEN, and now the only open
-      part: who writes `*(global+0x78)`. `r30 = *(r2-31028)`, then
-      `r9 = *(r30-32756)`, then `+0x78`; the writer was not traced. Do not
-      rename this field - its behavioural justification (the value the lobby
-      reads for a REMOTE player's rank/title, see
+      0 matches 855/855 captured frames).
+
+      THE OVERRIDE IS ALSO RESOLVED, 2026-08-20: **nothing writes
+      `*(global+0x78)` anywhere in the 01.00 binary**, so `rank_tier` is
+      structurally `0x0000` on this build for every account, ranked or not.
+
+      The pointer chain was re-derived from the bytes rather than reused:
+      `r2 = 0x01305870`; `r30 = *(0x012FDF3C) = 0x0127227C` (the CU anchor);
+      `objptr_slot = 0x0127227C - 32756 = 0x0126A288`, which holds the
+      literal `0x01385CDC` - the lobby-state / `g_mission` object, and a
+      fixed `.bss` address (`eb.py` reports `0x01385D54` unmapped in both
+      LOAD segments, i.e. zero at load). Verified against the actual
+      disassembly:
+
+          3c8e3c  lwz  r30,-31028(r2)
+          3c8e44  lwz  r9,-32756(r30)     ; -> the object
+          3c8e48  lwz  r9,120(r9)         ; <- the +0x78 read, and the ONLY one
+
+      A whole-binary pointer-taint scan (all 44 TOC slots that hold
+      `0x01385CDC`; propagate the loaded pointer through `mr` and `clrldi`
+      aliases, function-scoped, over `.text`) finds 187 field accesses to
+      this object, 12 of them stores, at displacements `0x00, 0x04, 0x08,
+      0x44, 0x72, 0x7e, 0x7f, 0x88, 0xb8, 0xbc` - **`0x78` is touched exactly
+      once in the whole binary and it is the read above**. No indexed
+      (X-form) store lands on the object at all, and `scan_imm.py` finds no
+      `lis`+`addi` construction of either `0x01385CDC` or `0x01385D54`, so
+      there is no immediate-addressed writer either. An earlier, independent
+      scan of the same object by a different method (resolving each candidate
+      slot's content, 246 accesses / 21 stores) reached the same verdict on
+      `0x78`.
+
+      Caveats, stated plainly: a whole-struct `memset`/`memcpy` through a
+      pointer the scanner loses track of would still write zero and so cannot
+      change the conclusion; a write through a pointer spilled to memory and
+      reloaded elsewhere would not be caught. Within 01.00 this is as close
+      to exhaustive as a static scan gets. 01.11 was deliberately NOT
+      substituted in - the field reads 0 in captured frames from both
+      builds, so there is no 01.11-only behaviour here to explain.
+
+      Do not rename this field - its behavioural justification (the value the
+      lobby reads for a REMOTE player's rank/title, see
       `docs/protocol/0x131_member.md`) is independent of the DC table's name.
 
       The DC hash is resolved at runtime through an engine-wide sorted-hash

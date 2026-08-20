@@ -104,13 +104,37 @@ matches_mode_a + matches_mode_b`, `pop_highwater_a == pop_highwater_menu`,
   ("Downed Enemy", "Revive", "Heal Ally", "Melee Assist", "Execution",
   "Revenge", "Supplies", "Parts", "Won Game"/"Lost Game", ...). Dump it with
   `research/tools/dc_dir.py --array 0x9c18 40 8 --as hash+strid`. Row 0's
-  `stat_id_hash` is `0x5c494554`, exactly the id `protos/profile_21.ksy`
-  cites for P+0x1E3C — which also explains why that id was never found in any
-  text table: it is a stat id, and the text key is the *next* word.
+  `stat_id_hash` is `0x5c494554`, which explains why that id was never found
+  in any text table: it is a stat id, and the text key is the *next* word.
+  (It is NOT, as an earlier version of this bullet and of
+  `protos/profile_21.ksy` both said, "the id cited for P+0x1E3C" — that was a
+  misread of one instruction; see the `match_ratio_1e3c` doc.)
   NOT established: that `statIdx` in the formula above indexes this array.
   Nothing yet links the two, so the per-slot mapping is still open — but the
   registry it would be read against now exists in decoded form. See
   `research/notes/2026-08-20-dc-directory-and-catalogs.md` §7.
+
+  UPDATE 2026-08-20 (second pass): a 40-byte slice of the "P+0x2D0–0x364"
+  range above is no longer unmapped. **P+0x0334–0x035B is two 20-byte
+  cumulative career-stat records**, one for game mode 2 and one for game
+  mode 3, `{score_total, time_total, score_best, downs_dealt, downs_taken}` —
+  now modelled as `career_stats` / `career_stat_record` in
+  `protos/profile_21.ksy`. Writer: `FUN_003f208c` (`NET_SM_RESULTS`) in the
+  01.00 EBOOT, under the same `mode == 2` / `mode == 3` gate
+  (`lhz r0,12(r9)` / `cmpwi` @0x3f28b0–0x3f28c4) that already explained
+  `matches_mode_a`/`matches_mode_b`. This is also a worked example of the
+  *statIdx* question above being answerable from the consumer side rather
+  than the registry side: `downs_dealt`/`downs_taken` are identified not by
+  guessing an index but by the stat-id constants their accumulators pass to
+  `FUN_003e7430` (`0x5C494554` = `*net-stats*` row 0 "Downed Enemy";
+  `0x230015B3` = row 2, no display string, but credited to the *victim* in
+  the downed-player handler `FUN_0040d45c` and sorted *ascending* by the
+  scoreboard comparator at 0x3e75f0, i.e. the player's own downs/deaths).
+  Status: confirmed. Confidence: high — instruction-exact writers plus a
+  numeric check against both stored profiles, via the 01.11 matchmaking rank
+  value that consumes all four counters (see
+  `research/notes/2026-08-20-tier2-followup.md` §6 and
+  `protos/0x135_find_match.ksy`'s `search_window_lo`).
 - **Per-survivor roster sub-structure** (P+0xA3C–0x1A3C): SOLVED
   2026-08-20 — this is NOT a separate per-survivor appearance/state block
   as earlier passes framed it. It is `survivor_seeds`, a single fixed

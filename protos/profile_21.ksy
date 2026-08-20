@@ -148,6 +148,34 @@ types:
           the message. See
           `research/notes/2026-08-20-dc-directory-and-catalogs.md` sections 5
           and 6. Resolution by table lookup makes this moot in practice.
+      career_stats:
+        pos: 0x032C
+        type: career_stat_record
+        repeat: expr
+        repeat-expr: 2
+        doc: |
+          P+0x0334..P+0x035B. TWO 20-byte cumulative career-stat records,
+          index 0 for game mode 2 and index 1 for game mode 3 - the same two
+          modes, in the same order, as `matches_mode_a` (P+0x1E34, "writer
+          guarded on mode == 2") and `matches_mode_b` (P+0x1E38, mode == 3).
+          DECODED 2026-08-20; previously an undocumented gap between
+          `equipped_gesture_id` (P+0x0308) and `member_blob_word` (P+0x0654).
+
+          Writer and mode gate, in the PRIMARY 01.00 EBOOT, inside
+          `FUN_003f208c` (this project's `NET_SM_RESULTS`, the OnMatchEnd
+          path). The mode is a u16 on a global at `-32604(r30)`:
+
+              3f28b0  lhz   r0,12(r9)
+              3f28b4  cmpwi cr7,r0,2
+              3f28b8  beq   cr7,0x3f28c8    ; -> record 0 arm (P+0x0334..)
+              3f28bc  cmpwi cr7,r0,3
+              3f28c0  bne   cr7,0x3f2ffc    ; neither -> write nothing
+              3f28c4  b     0x3f2c60        ; -> record 1 arm (P+0x0348..)
+
+          Both arms are byte-for-byte the same shape, 0x14 apart, and every
+          field is read/written through the profile-block accessor
+          `bl 0x3cb89c` with the unaligned big-endian `lbz`/`sldi`/`or`
+          idiom the rest of this record uses.
       member_blob_word:
         pos: 0x064C
         type: u4
@@ -263,7 +291,23 @@ types:
       match_ratio_1e3c:
         pos: 0x1E34
         type: u4
-        doc: "P+0x1E3C. OnMatchEnd-computed scaled ratio statistic: (matchStatA->0x4 * 6000) / (matchStatB->0x10) (`mulli r29,r29,6000` / `divwu` / `stw r29,7740(r3)` @0x3f29b4-0x3f29c8, also @0x3f2d60 in FUN_003f208c), reported under DC StringId 0x5c494554; cleared to 0 outside a match (@0x3b6124/@0x3b7f00). 0 / 0xE0C2. Precise numerator/denominator meaning is DC-side. NOTE: 0x5c494554 checked against text1.psarc's StringId text tables (docs/protocol/text_table.md) and NOT found in any of the four English category files, nor in bin.psarc/pak23.psarc/actor34.psarc - likely an internal telemetry id with no localized display string, but not conclusively ruled out (untried resources: gallery1.psarc, animstream4.psarc, animtex0.psarc, vtex1.psarc, lut0.psarc, and any 01.11-only content)."
+        doc: "P+0x1E3C. OnMatchEnd-computed scaled ratio statistic: (matchStatA->0x4 * 6000) / (matchStatB->0x10) (`mulli r29,r29,6000` / `divwu` / `stw r29,7740(r3)` @0x3f29b4-0x3f29c8, also @0x3f2d60 in FUN_003f208c), cleared to 0 outside a match (@0x3b6124/@0x3b7f00). 0 / 0xE0C2.
+
+          CORRECTION 2026-08-20: earlier versions of this doc said the value
+          is \"reported under DC StringId 0x5c494554\", and then puzzled over
+          0x5c494554 not resolving in any text table. Both halves were an
+          artefact of reading one instruction too far. `0x5c494554` is set up
+          at 0x3f29c4/0x3f29cc as the argument to the NEXT statement's
+          `bl 0x3e7430` @0x3f29d4, whose result is accumulated into
+          `career_stats[0].downs_dealt` at 0x3f2a28 - it has nothing to do
+          with this field. It is a per-match STAT ID, not a StringId, and it
+          is `*net-stats*` row 0, \"Downed Enemy\"; the text key is that
+          row's sibling word. This field carries no reporting id at all.
+
+          The numerator `matchStat->0x04` and denominator `matchStat->0x10`
+          are the same two quantities `career_stats` accumulates as
+          `score_total` and `time_total`, so the ratio is score per minute
+          scaled by 100."
       emblem_location:
         pos: 0x1E38
         type: u4
@@ -307,6 +351,92 @@ types:
         pos: 0x1E4C
         type: u4
         doc: "P+0x1E54. Population high-water (OnMatchEnd). 0 / 0."
+  career_stat_record:
+    doc: |
+      One 20-byte cumulative career-stat record, one per game mode (see
+      `career_stats`). Two instances exist, at P+0x0334 (mode 2) and
+      P+0x0348 (mode 3). All five columns are accumulated at match end by
+      `FUN_003f208c` in the primary 01.00 EBOOT; the two `downs_*` columns
+      are the numerator and denominator of the 01.11 matchmaking "rank
+      value" carried in `0x135`'s `search_window_lo`/`search_window_hi` -
+      see `protos/0x135_find_match.ksy` and
+      `research/notes/2026-08-20-tier2-followup.md` section 6.
+    seq:
+      - id: score_total
+        type: u4
+        doc: |
+          +0x00 (P+0x0334 / P+0x0348). Cumulative match score.
+          `score_total += matchStat->0x04` (`lwz r29,4(r26)` @0x3f2924,
+          `stw r29,820(r10)` @0x3f2964; mode-3 arm identical at +0x14).
+          `matchStat->0x04` is the SAME quantity the already-documented
+          `match_ratio_1e3c` uses as its numerator, which is what identifies
+          it as the per-match score. Live (record 0 / record 1):
+          comradesean 59770 / 36270, mgnomad2 16945 / 28125.
+      - id: time_total
+        type: u4
+        doc: |
+          +0x04 (P+0x0338 / P+0x034C). Cumulative match time in seconds.
+          `time_total += matchStat->0x10` (`lwz r29,16(r25)` @0x3f2968,
+          `stw r29,824(r10)` @0x3f29a8). Identified as seconds by
+          `match_ratio_1e3c`'s formula `(matchStat->0x04 * 6000) /
+          matchStat->0x10` (@0x3f29b4-0x3f29c8) - i.e. score per minute
+          scaled by 100, which only makes sense with a seconds denominator.
+          Live: comradesean 8992 / 4241 (529 s and 471 s per match against
+          17 and 9 matches played), mgnomad2 7111 / 3812 (790 s and 424 s
+          against 9 and 9 matches played).
+      - id: score_best
+        type: u4
+        doc: |
+          +0x08 (P+0x033C / P+0x0350). Best single-match score (high-water,
+          not a sum): the store at `stw r29,828(r3)` @0x3f291c is guarded by
+          `cmplw cr7,r0,r29` / `bge cr7,skip` @0x3f2908-0x3f290c against the
+          current value, and the mode-3 arm repeats it at
+          `stw r29,848(r3)` @0x3f2cb4. Live: comradesean 6825 / 4485 against
+          per-match average scores of 3516 and 4030; mgnomad2 3045 / 4055
+          against averages of 1883 and 3125.
+      - id: downs_dealt
+        type: u4
+        doc: |
+          +0x0C (P+0x0340 / P+0x0354). Cumulative count of the per-match stat
+          `0x5C494554`, which `*net-stats*` row 0 names **"Downed Enemy"**
+          (`dc1/net.bin` array 0x9c18, stride 8, `{stat_id_hash,
+          text_string_id}`, resolved through `text1.psarc`'s `2.networking`
+          table). `downs_dealt += statQuery(0x5C494554)`
+          (`bl 0x3e7430` @0x3f29d4, `stw r29,832(r10)` @0x3f2a28; mode-3 arm
+          @0x3f2d6c/0x3f2dc0).
+
+          Credited to the ATTACKER: in the downed-player event handler
+          `FUN_0040d45c`, `0x5C494554` is awarded via
+          `FUN_003e7b08(recorder, target, ctx, stat_hash, ...)` with
+          `target = r28` @0x40d6bc, where `r28` is the player resolved from
+          `event->0x18` (@0x40d5d4) - the killer - and the award is skipped
+          entirely when attacker and victim share the team id at
+          `player+0x1DC` (`lwz r9,476(r27)` / `lwz r0,476(r3)` / `cmpw` /
+          `beq -> 0x40d6ec` @0x40d5ec-0x40d5fc).
+          Live: comradesean 166 / 46, mgnomad2 32 / 18.
+      - id: downs_taken
+        type: u4
+        doc: |
+          +0x10 (P+0x0344 / P+0x0358). Cumulative count of the per-match stat
+          `0x230015B3` - `*net-stats*` row 2, which has NO localized display
+          string in any of `text1.psarc`'s four English category tables, so
+          its retail NAME is not asserted here. Its ROLE is established two
+          independent ways:
+
+          1. Credited to the VICTIM. In `FUN_0040d45c` it is awarded with
+             `target = r26` @0x40d59c, and `r26` is the player resolved from
+             `event->0x10` @0x40d4cc - the downed player - awarded before the
+             attacker is even looked up, and without the same-team guard that
+             gates `downs_dealt`.
+          2. Lower is better. The scoreboard comparator at 0x3e75f0 sorts
+             `0x5C494554` descending (`cmpw` / `bgt -> -1` @0x3e7644-0x3e7648)
+             but `0x230015B3` ASCENDING (`cmpw` / `blt -> -1`
+             @0x3e76a0-0x3e76a4).
+
+          So this is the player's own downs/deaths count.
+          `downs_taken += statQuery(0x230015B3)` (`bl 0x3e7430` @0x3f2a2c,
+          `stw r29,836(r10)` @0x3f2a78; mode-3 arm @0x3f2dc4/0x3f2e10).
+          Live: comradesean 36 / 19, mgnomad2 133 / 42.
   custom_appearance:
     doc: |
       Persisted MP character-appearance block, P+0x0660..P+0x068F. The descriptor
