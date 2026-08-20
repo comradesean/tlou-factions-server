@@ -709,5 +709,83 @@ had simply never been the target of a deliberate edit before:
 - What each of the 64 colour-grid positions actually looks like (RGB/
   palette value) - the grid POSITION formula is solved, the swatch
   CONTENT is not.
-- layer3 ("Layer 4")'s shape catalog - inferred to match the other three
-  layers, not independently tested.
+
+### 10e. layer3 ("Layer 4") directly confirmed too - all four layers now tested, none inferred
+
+Set live to "Shorty", saved, decoded: `shape_index=72`. `catalog[71]` =
+`tlou-pistol-shotgun` = "Shorty". Exact match, same formula. This closes
+the last gap §10a/§10d left open - every one of the four emblem layers
+(layer0 "Layer 1": 192/192 entries; layer1 "Layer 2": "Egg"; layer2
+"Layer 3": "El Diablo"; layer3 "Layer 4": "Shorty") has now been directly,
+independently tested against the identical `catalog[shape_index-1]`
+formula, not inferred from the others.
+
+---
+
+## 11. Two more customization fields: gesture (solved location, unsolved hash) and Emblem Location (solved, corrects a wrong prior claim)
+
+Continuing with the same live-edit-and-diff method, moving past emblems
+to the two remaining items in the account's customization menu.
+
+### 11a. Equipped gesture: `P+0x0308`, previously mislabeled `gated_customization_id`
+
+This field already existed in `profile_21.ksy` under the name
+`gated_customization_id`, documented only as "an unlock-gated
+customization id... which asset it maps to is DC-assigned" - a genuinely
+unknown field, despite already having its unlock-gate mechanism traced
+(`FUN_0033f9b4`/`FUN_003ec084`). Six controlled live edits (change
+gesture, save, decode, diff against the pre-change snapshot) each
+isolated a single clean change to exactly this word, confirming it is the
+account's EQUIPPED GESTURE:
+
+| Gesture | value |
+|---|---|
+| None | `0x0e69839d` |
+| Fist Pump | `0xd40e5495` |
+| Knuckles | `0xdd8c6ffb` |
+| Chest Pound | `0xc70a2249` |
+| Blow Smoke | `0xd94d724c` (the account's ORIGINAL/default gesture - matches the very first `profile21_codec.py` dump of this session, before any gesture changes) |
+| Back Off | `0x02d688fe` |
+
+Also confirmed LOCKED for this account (no value obtainable, since a
+locked option can't be selected/saved): Salute, Come Here, Neck Crack,
+Bow, Close Call - five more real unlock-boundary data points, same
+category of finding as the emblem shape catalog's "Vest is the last
+unlocked entry" result in §9.
+
+**The hash/id scheme behind these six values is NOT solved.** Two
+specific hypotheses were tested and ruled out:
+1. `research/tools/text_table.py` (the `text1.psarc` StringId lookup) -
+   no match for any of the six values in `2.networking` (checked all
+   six). Also specifically checked whether the value might just be the
+   gesture's OWN display-name StringId: "Blow Smoke"'s real text-table
+   key is `0x328e4395`, which does NOT equal its `equipped_gesture_id`
+   value (`0xd94d724c`) - ruling this hypothesis out directly, not just by
+   absence of a match.
+2. `research/tools/dc_hash_crack.py` (the disc's `crc32_mpeg2`
+   compiler-symbol corpus) - no match for any of the six values, nor for
+   several manually-guessed candidate strings (`"knuckles"`, `"fist-pump"`,
+   `"*knuckles*"`, etc).
+
+Whatever produces these six values, it is a DIFFERENT id scheme from
+every other one this project has cracked (DC00 directory hashes, text
+StringIds). A live RPCS3 memory read remains the only identified lever
+for this specific field.
+
+### 11b. Emblem Location: `P+0x1E40`, previously mislabeled `flag_1e40` AND wrongly typed as a boolean
+
+This field already existed too, as `flag_1e40`, documented as "a
+persisted boolean toggle setting" with its setter (`FUN_003188d4`)
+traced but its meaning unknown. Two controlled live edits correct BOTH
+the name and the type:
+
+- set to "Torso" live, saved, decoded: `0x00000000 -> 0x00000001`.
+- set to "Helmet" live, saved, decoded: `0x00000001 -> 0x00000002`.
+
+Each edit isolated a single clean change to exactly this word. This is a
+small ENUM, not a boolean: `0 = None, 1 = Torso, 2 = Helmet`. The prior
+"boolean" claim was an assumption from the field never having been
+observed at any value other than `0`/`1` before this pass tested a third
+option - a caution for reading old "confirmed" docs on fields that were
+never actually tested against their full value range. Whether higher
+values exist (a fourth+ emblem-placement option) is untested.

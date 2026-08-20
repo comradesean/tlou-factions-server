@@ -97,7 +97,7 @@ def decode(raw):
 # source of truth for field semantics/evidence, this list exists only so
 # the CLI can print a readable summary.
 FIELDS = [
-    ("gated_customization_id", 0x0300, 4),
+    ("equipped_gesture_id", 0x0300, 4),
     ("member_blob_word", 0x064C, 4),
     ("chosen_char_id_team0", 0x0658, 4),
     ("chosen_char_id_team1", 0x065C, 4),
@@ -128,6 +128,7 @@ FIELDS = [
     ("clan_state", 0x1BE8, 4),
     ("milestone_latch_1e2c", 0x1E24, 4),
     ("match_ratio_1e3c", 0x1E34, 4),
+    ("emblem_location", 0x1E38, 4),
     ("journeys_completed", 0x1E3C, 4),
 ]
 

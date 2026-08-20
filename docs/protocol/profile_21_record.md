@@ -78,6 +78,8 @@ round-tripped sample records**
 | 0x1E50 | wins_mode_b | note §2 `0x3f26b4`; 4 / 0 | high |
 | 0x1E54 | pop_highwater_c | note §3 `0x37e740`; 0 / 0 | med-high |
 | 0x066C | survivor_variant_id | `dc_hash_crack.py` vs retail-disc `.dci` corpus: comradesean=`*cc-fl-base*`, mgnomad2=`*cc-hb5-base*` (CORRECTED 2026-08-19 - was wrongly claimed identical across both accounts) | high |
+| 0x0308 | equipped_gesture_id | RENAMED 2026-08-20 from `gated_customization_id` - six controlled live edits pinned this as the equipped gesture (None/Fist Pump/Knuckles/Chest Pound/Blow Smoke/Back Off, plus 5 locked names on record); hash algorithm behind the values not resolved (ruled out: text_table.py StringId, dc_hash_crack.py corpus) | high (location, mechanism) / open (hash algorithm) |
+| 0x1E40 | emblem_location | RENAMED 2026-08-20 from `flag_1e40` - was wrongly documented as a boolean; two controlled live edits confirm a 3-value enum: 0=None, 1=Torso, 2=Helmet | high |
 | 0x0670-0x0687 | equipped_item_ids[6] | first 3 resolved via `text_table.py` vs `text1.psarc`: "Norwegian Hat"/"Ballistic Mask"/"Military Helmet" - human-confirmed against live in-game UI | high (slots 0-2) / open (3-5) |
 | 0x07E8-0x0807 | emblem_layers[4] | layout, shape catalog (all layers), rotation/scale/opacity, colour-grid position all live-edit-verified, see `research/notes/2026-08-19-emblem-name-resolver-and-dc-catalog.md` §9-§10 and `research/notes/2026-08-20-emblem-shape-catalog.tsv` | high (layout, shape catalog x4 layers, opacity/scale endpoints, colour grid formula) / open (rotation exact curve, colour SWATCH contents, 3 unexplained bytes) |
 | 0x5008 | hmac_pad | zero | high |
@@ -107,11 +109,13 @@ matches_mode_a + matches_mode_b`, `pop_highwater_a == pop_highwater_menu`,
   -> the retail disc's 192-entry flat name catalog (`net.bin` file offset
   `0x2be68`) at `[shape_index-1]` - proven by 192 consecutive live,
   human-confirmed pairs on layer0 (the ENTIRE catalog, zero mismatches)
-  plus independent spot-checks on layer1 and layer2 that confirmed the
-  identical formula and RETRACTED an earlier "layer2 uses a different
-  `+41` offset" theory (that theory was built on a mislabeled ground-truth
-  value from early in the investigation). layer3 inferred to match, not
-  independently tested. Full table: `research/notes/2026-08-20-emblem-shape-catalog.tsv`.
+  plus independent spot-checks on layer1, layer2, and layer3 that all
+  confirmed the identical formula and RETRACTED an earlier "layer2 uses a
+  different `+41` offset" theory (that theory was built on a mislabeled
+  ground-truth value from early in the investigation - see the note's §10
+  for the root cause: a diff snapshot reused instead of a fresh
+  contemporaneous read). All four layers now directly tested, none
+  inferred. Full table: `research/notes/2026-08-20-emblem-shape-catalog.tsv`.
   Rotation/scale/opacity (`shape_word` bytes 1-2, `color_word` byte 1) are
   also solved - real, live fields, not static as first thought - each
   confirmed by a controlled edit moving between two known endpoints
@@ -128,8 +132,12 @@ matches_mode_a + matches_mode_b`, `pop_highwater_a == pop_highwater_menu`,
   (`FUN_00345038`/`FUN_0034527c`) and the two wrong theories this pass
   worked through before landing on the final answer:
   `research/notes/2026-08-19-emblem-name-resolver-and-dc-catalog.md` §9-§10.
-- **`unknown_1e2c`, `unknown_1e3c`, `flag_1e40`, `healthy_count` semantics:**
-  populated but not pinned to a decompile writer.
+- **`healthy_count` semantics:** populated but not pinned to a decompile
+  writer. (`milestone_latch_1e2c` and `match_ratio_1e3c` are tracked in
+  their own field docs; `flag_1e40` is SOLVED and renamed
+  `emblem_location` - see the emblem entry above, this is not the same
+  field despite the similar address, and it's not a boolean like
+  originally documented.)
 - **Everything P+0x1E74 → P+0x5008** (~0x3190 bytes): zero in both samples —
   reserved space for higher stat indices / more survivors than these accounts
   have earned.

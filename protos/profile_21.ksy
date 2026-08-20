@@ -80,10 +80,47 @@ types:
         pos: 0x02F8
         type: u4
         doc: "P+0x0300. Low byte = lobby title/badge index (blob[9] source). 0 in both samples."
-      gated_customization_id:
+      equipped_gesture_id:
         pos: 0x0300
         type: u4
-        doc: "P+0x0308. An unlock-gated customization id: FUN_0033f9b4's tail zeroes it when it fails the unlock check FUN_003ec084 (kind=0), read @P+0x308. comradesean 0xD40E5495 (passes) / mgnomad2 0 (revoked). Which asset it maps to is DC-assigned."
+        doc: |
+          P+0x0308. RENAMED 2026-08-20 from `gated_customization_id` (kept
+          as an alias in old docs) once its real meaning was pinned: this
+          is the account's EQUIPPED GESTURE. Still gated the same way as
+          previously documented - FUN_0033f9b4's tail zeroes it when it
+          fails the unlock check FUN_003ec084 (kind=0); mgnomad2's `0`
+          value is consistent with "no gesture unlocked/selected" under
+          that same gate, not a separate mechanism.
+
+          CONFIRMED via SIX controlled live edits (change gesture in-game,
+          save, decode, diff against the pre-change snapshot - each
+          isolated a single clean change to exactly this word, nothing
+          else):
+
+              0x0e69839d = None
+              0xd40e5495 = Fist Pump
+              0xdd8c6ffb = Knuckles
+              0xc70a2249 = Chest Pound
+              0xd94d724c = Blow Smoke (the account's ORIGINAL/default gesture)
+              0x02d688fe = Back Off
+
+          Also confirmed LOCKED for this account (no value captured, since
+          a locked option can't be selected/saved): Salute, Come Here,
+          Neck Crack, Bow, Close Call.
+
+          NOT resolved: the hash algorithm. All six values were checked
+          against `research/tools/text_table.py` (the `text1.psarc`
+          StringId table - including confirming "Blow Smoke"'s OWN
+          text-table key, `0x328e4395`, does NOT match its
+          `equipped_gesture_id` value, ruling out "it's just the display
+          name's StringId" as a hypothesis) and
+          `research/tools/dc_hash_crack.py` (the disc's `crc32_mpeg2`
+          compiler-symbol corpus) - no match under either tool for any of
+          the six values. Whatever hash/id scheme this is, it is
+          DIFFERENT from every other id scheme this project has cracked so
+          far (DC00 directory hashes, text StringIds). A live RPCS3
+          memory read is the only remaining lever identified for this
+          field specifically.
       member_blob_word:
         pos: 0x064C
         type: u4
@@ -172,10 +209,28 @@ types:
         pos: 0x1E34
         type: u4
         doc: "P+0x1E3C. OnMatchEnd-computed scaled ratio statistic: (matchStatA->0x4 * 6000) / (matchStatB->0x10) (`mulli r29,r29,6000` / `divwu` / `stw r29,7740(r3)` @0x3f29b4-0x3f29c8, also @0x3f2d60 in FUN_003f208c), reported under DC StringId 0x5c494554; cleared to 0 outside a match (@0x3b6124/@0x3b7f00). 0 / 0xE0C2. Precise numerator/denominator meaning is DC-side. NOTE: 0x5c494554 checked against text1.psarc's StringId text tables (docs/protocol/text_table.md) and NOT found in any of the four English category files, nor in bin.psarc/pak23.psarc/actor34.psarc - likely an internal telemetry id with no localized display string, but not conclusively ruled out (untried resources: gallery1.psarc, animstream4.psarc, animtex0.psarc, vtex1.psarc, lut0.psarc, and any 01.11-only content)."
-      flag_1e40:
+      emblem_location:
         pos: 0x1E38
         type: u4
-        doc: "P+0x1E40. Persisted boolean toggle setting. Dedicated setter FUN_003188d4(this, value) stores the caller's argument verbatim here (`stw r28,7744(r3)` @0x318918) and mirrors it to obj+0xC (UI-refreshed). Called indirectly (fn-ptr/vtable), so the exact user-facing option isn't pinned to a call site. 1 / 1 (on)."
+        doc: |
+          P+0x1E40. RENAMED 2026-08-20 from `flag_1e40` once its real
+          meaning was pinned - and the old "boolean toggle" description
+          was WRONG, not just incomplete: CONFIRMED via two controlled
+          live edits as a small enum, not a boolean:
+
+              0 = None
+              1 = Torso
+              2 = Helmet
+
+          (0->1 confirmed by a clean, isolated diff when set to "Torso";
+          1->2 confirmed the same way when set to "Helmet" - each edit
+          changed only this word, nothing else, so both transitions are
+          solid.) Whether higher values exist (a third emblem-placement
+          option) is untested. Dedicated setter FUN_003188d4(this, value)
+          stores the caller's argument verbatim here (`stw r28,7744(r3)`
+          @0x318918) and mirrors it to obj+0xC (UI-refreshed) - this part
+          of the original finding stands unchanged, only the value's
+          meaning was previously unknown.
       journeys_completed:
         pos: 0x1E3C
         type: u4
