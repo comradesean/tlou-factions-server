@@ -1,0 +1,194 @@
+shape_index	dc_asset_name	display_name	notes
+0	(none)	None	sentinel value, not a catalog entry
+1	frame-angledcorner	Angled Corner
+2	frame-circle	Circle
+3	frame-roundedcurve	Round Curve
+4	shape-angledsquare	Angled Square
+5	shape-roundsquare	Rounded Square
+6	shape-techsquare	Tech Square
+7	shape-sharpsquare	Sharp Square
+8	image-bomb	Bomb
+9	image-clover	Clover
+10	image-spraycan	Spray
+11	image-squareemblem	Cubed
+12	image-paw	Paw
+13	image-fist	Fist
+14	tlou-2x4	2x4
+15	tlou-9mm-ammo	9mm Ammo
+16	frame-halfcircles	Half Circle
+17	frame-angled2	New Angle	dc_asset_name repeats at idx=111 ("Angled Pillars") - same internal asset, different UI label
+18	frame-squares	Squares
+19	background-4star	Four Star
+20	shape-octagon	Octagon	dc_asset_name shares display "Octagon" with idx=32 (frame-octagon) - two catalog entries, same UI label
+21	shape-triplehex	Triple Hex
+22	shape-ring	Ring
+23	image-heart	Heart
+24	image-kingscrown	King's Crown
+25	image-eyeball2	Large Eye
+26	image-puzzlepiece	Puzzle Piece
+27	tlou-brick	Brick
+28	tlou-bat	Bat
+29	tlou-revolver-ammo	Revolver Ammo
+30	tlou-binding	Binding
+31	frame-angledtriangles	Angled Triangle
+32	frame-octagon	Octagon	see idx=20 note
+33	frame-angledcorner2	Thin Corners
+34	shape-star	8-Point Star
+35	background-diamond	Diamond
+36	shape-triplestreak	Triple Streak
+37	shape-saw	Saw
+38	image-eyes	Eyes
+39	image-lock	Lock
+40	image-yshape	Y Shape
+41	image-triad	Triad
+42	tlou-arrow	Wooden Arrow	dc_asset_name repeats at idx=75 ("Arrow") - same internal asset, different UI label
+43	tlou-pipe	Pipe
+44	tlou-sugar	Sugar
+45	tlou-9mm	9mm
+46	frame-arrowborder	Arrow Border
+47	frame-sharpcurve	Sharp Curve
+48	background-octagon	Wide Octagon	see idx=20 note - a third "octagon" catalog entry
+49	shape-abstract	Abstract
+50	shape-egg	Egg
+51	shape-shuriken	Shuriken
+52	shape-x	Shape X
+53	image-spade	Spade
+54	image-hand	The Hand
+55	image-bombshell	Bombshell
+56	tlou-auto-ammo	Assault Rifle Ammo	dc_asset_name repeats at idx=178 ("Assault Rifle") - same internal asset, different UI label
+57	tlou-alcohol	Alcohol
+58	tlou-health-kit	Health Kit
+59	tlou-revolver	Revolver
+60	frame-sharpcurvelarge	Large Curve
+61	frame-braid	Braided Border
+62	shape-arrow	Arrow
+63	shape-cog	Cog
+64	shape-splat	Splat
+65	shape-bomb	Bomb	dc_asset_name repeats at idx=8 with the SAME display name "Bomb" - genuine duplicate catalog entry
+66	background-badge	Snowflake Badge
+67	image-acorn	Acorn
+68	image-5star	Star
+69	image-battleaxe	Battleaxe
+70	tlou-bolt-rifle-ammo	Hunting Rifle Ammo	dc_asset_name repeats at idx=141 ("Hunting Rifle") - same internal asset, different UI label
+71	tlou-bottle	Bottle
+72	tlou-pistol-shotgun	Shorty
+73	frame-barbedwire	Barbed Border
+74	frame-dottedoutline	Dotted Outline
+75	image-arrow	Arrow	see idx=42 note
+76	background-5squares	Five Squares
+77	background-badge2	Wide Badge
+78	image-8ball	Eightball
+79	image-nuke	Nuke
+80	image-bonebreaker	Bonebreaker
+81	tlou-shotgun-ammo	Shotgun Shell
+82	tlou-scissors	Scissors
+83	tlou-ellie-pistol	Pistol
+84	tlou-machete	Machete
+85	tlou-shiv	Shiv
+86	frame-bones	Bone Border
+87	frame-oriental2	Squared Oriental
+88	background-badge3	Curve Badge
+89	background-puffystar	Wide Star
+90	background-romanblock	Wide Roman Block
+91	image-star	Fancy Star
+92	image-sun	Sun
+93	image-celticbraid	Celtic Braid
+94	image-4star	Thin Star
+95	tlou-uber-ammo	El Diablo Ammo
+96	tlou-rag	Rag
+97	tlou-el-diablo	El Diablo
+98	tlou-semi-auto	Semi-Auto Rifle
+99	frame-oriental	Oriental Outline
+100	frame-romanblock	Roman Block
+101	background-badge4	Shield Badge
+102	background-rectangle-cluster	Cluster
+103	background-spearhead	Spearhead
+104	image-boot	Boot
+105	image-gasmask	Gasmask
+106	image-wraith	Wraith
+107	tlou-flame-ammo	Flamethrower Ammo
+108	tlou-explosive	Explosive
+109	tlou-firstaid	Bandage
+110	tlou-nail-bomb	Mine
+111	frame-angled2	Angled Pillars	see idx=17 note
+112	frame-hexes	Hexes
+113	background-rectangles	Rectangles
+114	background-bulletring	Bullet Ring
+115	background-plainshield	Plain Shield
+116	image-rockon	Rock On
+117	image-spookyeye	Spooky Eye
+118	image-samurai	Samurai
+119	tlou-upg-2x4	Modded 2x4
+120	tlou-upg-bat	Modded Bat
+121	tlou-upg-pipe	Modded Pipe
+122	tlou-molotov	Molotov
+123	frame-skullswirls	Skull Swirls
+124	frame-sharpsquare	Sharp Square	dc_asset_name repeats at idx=7 with the SAME display name - genuine duplicate catalog entry
+125	background-card	Card
+126	background-circlecluster	Curved Cluster
+127	image-antlers	Antlers
+128	image-arm	Flex
+129	image-demonskull2	Demon
+130	tlou-part	Part
+131	tlou-antlers	Stag
+132	tlou-tactical	Pawn
+133	tlou-medic	Nurse Hat
+134	frame-techlines	Tech Lines
+135	frame-leaves	Leaves
+136	background-crescent	Crescent
+137	image-suit	Suit
+138	image-sharkjaw	Shark Jaw
+139	tlou-supplies	Supplies
+140	tlou-crafter	Crafter
+141	tlou-rifle-bolt	Hunting Rifle	see idx=70 note
+142	tlou-mil-sniper	Military Sniper
+143	background-diamond2	Sideways Diamond
+144	background-doublecurve	Doubled Curve
+145	image-pirateskull	Pirate Skull
+146	image-samuraisword	Katana
+147	image-ninja2	Ninja Two
+148	tlou-brawler	Brawler
+149	tlou-burst-rifle	Burst Rifle
+150	tlou-feather	Feather
+151	tlou-helmet	Helmet
+152	tlou-vest	Vest	last entry unlocked on the account tested (comradesean) - everything below this row was reported LOCKED
+153	background-flower	Flower	LOCKED on tested account
+154	background-helm	Steering Helm	LOCKED on tested account
+155	image-abstracttriangle	Doubled Triangles	LOCKED on tested account
+156	image-hammer	Gavel	LOCKED on tested account
+157	image-skull	Skull	LOCKED on tested account
+158	image-chopper	Chopper	LOCKED on tested account
+159	tlou-kitty	Kitty	LOCKED on tested account
+160	tlou-flamethrower	Flamethrower	LOCKED on tested account
+161	tlou-scope	Scope	LOCKED on tested account
+162	tlou-shotgun	Shotgun	LOCKED on tested account
+163	background-medal	Star Medal	LOCKED on tested account
+164	background-medic	Medic	LOCKED on tested account
+165	image-knife	Knife	LOCKED on tested account
+166	image-leaf	Leaf	LOCKED on tested account
+167	image-ninja	Ninja	LOCKED on tested account
+168	image-demonskull	Demonskull	LOCKED on tested account
+169	tlou-brock	Brock the Brick	LOCKED on tested account
+170	tlou-bow	Bow	LOCKED on tested account
+171	tlou-shield	Armor	LOCKED on tested account
+172	tlou-small-bomb	Lit Bomb	LOCKED on tested account
+173	background-nosign	Denied	LOCKED on tested account
+174	background-banner	Banner	LOCKED on tested account
+175	image-hawk	Hawk	LOCKED on tested account
+176	image-hook	Hook	LOCKED on tested account
+177	image-spikedbat	Spiked Bat	LOCKED on tested account
+178	tlou-automatic	Assault Rifle	LOCKED on tested account; see idx=56 note
+179	tlou-bomb	Large Bomb	LOCKED on tested account
+180	tlou-knight	Knight	LOCKED on tested account
+181	tlou-hawk	Hawk Head	LOCKED on tested account
+182	tlou-smokebomb	Smokebomb	LOCKED on tested account
+183	shape-barbed	Barbed	LOCKED on tested account
+184	shape-bearclaw	Bear Claw	LOCKED on tested account
+185	image-monkeywrench	Monkeywrench	LOCKED on tested account
+186	image-endlessknot	Endless Knot	LOCKED on tested account
+187	image-kabuki	Kabuki	LOCKED on tested account
+188	tlou-brass-knuckles	Brass Knuckles	LOCKED on tested account
+189	tlou-firely	Firefly Emblem	LOCKED on tested account
+190	tlou-hunter	Hunter Sign	LOCKED on tested account
+191	tlou-skull	Bleached Skull	LOCKED on tested account
+192	tlou-stealth	Stealth Mask	LOCKED on tested account
