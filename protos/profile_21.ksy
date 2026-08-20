@@ -150,13 +150,41 @@ types:
       survivor_count:
         pos: 0x0A30
         type: u4
-        doc: "P+0x0A38. Clan roster / population count; the length of survivor_seeds. 86 / 33 in the samples."
+        doc: "P+0x0A38. Clan roster / population count: the number of ACTIVE entries in the fixed-capacity survivor_seeds[512] array below, not the array's length. 86 / 33 in the original samples (both accounts have since grown further live: 164 / 55 observed 2026-08-20 - see research/notes/2026-08-20-survivor-roster-substructure.md)."
       survivor_seeds:
         pos: 0x0A34
         type: u8
         repeat: expr
-        repeat-expr: survivor_count
-        doc: "P+0x0A3C. u64 name seeds, one per survivor (survivor_count entries)."
+        repeat-expr: 512
+        doc: |
+          P+0x0A3C..P+0x1A3B. u64 name seeds. FIXED CAPACITY 512 slots (not
+          survivor_count entries) - SOLVED 2026-08-20, this is the entirety
+          of what earlier passes called the "dense per-survivor
+          appearance/state" region (payload 0xA34-0x1A34, exactly 512*8 =
+          0x1000 bytes). Decompile of the only three call sites that touch
+          this memory (FUN_003cd060 the setter, FUN_003cb92c the getter,
+          both address-formula-confirmed as profile+0xA3C+index*8; callers
+          FUN_0037a7b4 clan-init and FUN_00378a24 survivor-add) shows ALL
+          512 slots are RNG-populated in one pass at clan creation
+          (FUN_0037a7b4, two back-to-back 0..511 loops, the second
+          overwriting the first with a value assembled from two 0xe408d8
+          RNG draws). FUN_00378a24 (survivor-add) only increments
+          survivor_count on its happy path - it reads survivor_seeds[new
+          index] (already populated at init) purely for a duplicate-name
+          check, and does NOT write a fresh seed there. Byte-confirmed on
+          both real samples: all 512 qwords are non-zero, including every
+          slot past the account's current survivor_count, which is exactly
+          what "fully pre-populated at init, only a prefix currently
+          active" predicts and is inconsistent with any layout where
+          inactive slots read zero/reserved. CONCLUSION: there is no
+          second per-survivor array and no wider per-entry struct anywhere
+          in this region - the community-doc hypothesis of a per-survivor
+          `state` field (healthy/starving/sick) living here is REFUTED for
+          this specific byte range (exhaustive: every writer that touches
+          it was decompiled). See the note above for the full derivation,
+          byte-level corroboration on both samples, and a live-test plan
+          to confirm/refute the "growth doesn't touch the seed array"
+          prediction with real RPCS3 access.
       day_counter:
         pos: 0x1ACC
         type: u4

@@ -60,8 +60,8 @@ round-tripped sample records**
 | 0x0654 | member_blob_word | note §6 (member card `card_stat_2/3` source) | high (offset) |
 | 0x0A1C | total_matches | note §2; **== matches_mode_a + matches_mode_b (11 / 7)** | high |
 | 0x0A20 | total_wins_result3 | note §2, `0x3f2750` result==3; 10 / 7 | high |
-| 0x0A38 | survivor_count | `FUN_00378a24` `stw…,2616`; 86 / 33 | high |
-| 0x0A3C | survivor_seeds[] u64 | `*(u64*)(base+i*8+0xa3c)`; populated | high |
+| 0x0A38 | survivor_count | `FUN_00378a24` `stw…,2616`; 86 / 33 (now 164 / 55 live) | high |
+| 0x0A3C | survivor_seeds[512] u64 | fixed 512-slot pool, RNG-filled at clan init `FUN_0037a7b4`; only `survivor_count` of the 512 are "active" - SOLVED 2026-08-20, see research/notes/2026-08-20-survivor-roster-substructure.md | high |
 | 0x1AD4 | day_counter | note §3 `0x37d948`; 13 / 8 | med-high |
 | 0x1AD8 | day_counter2 | note §3 `0x37da4c`; 13 / 8 | med-high |
 | 0x1BE0 | pop_highwater_a | note §3 `0x37e340`; **== pop_highwater_menu (81 / 33)** | high |
@@ -97,9 +97,24 @@ matches_mode_a + matches_mode_b`, `pop_highwater_a == pop_highwater_menu`,
   (`record[8 + (statIdx+581)*4]`) but each slot's meaning — including the
   lifetime-supplies stat that gates gear — is registry-assigned in the data
   compiler `.pak`, not recoverable from the EBOOT.
-- **Per-survivor roster sub-structure** (P+0xA3C–0x1A3C beyond the u64 seed
-  array): dense per-survivor appearance/state; only the name-seed array is
-  decompile-pinned.
+- **Per-survivor roster sub-structure** (P+0xA3C–0x1A3C): SOLVED
+  2026-08-20 — this is NOT a separate per-survivor appearance/state block
+  as earlier passes framed it. It is `survivor_seeds`, a single fixed
+  `u64[512]` array (exactly `512*8` = the region's full size), RNG-filled
+  in one pass at clan creation (`FUN_0037a7b4`, two 0..511 loops, the
+  second overwriting the first). `survivor_count` marks how many of the
+  512 slots are currently "active"; growing the roster
+  (`FUN_00378a24`) only increments that count and reads (never rewrites,
+  on the happy path) the already-pre-generated slot. All three call sites
+  that touch this memory are fully decompiled — no second array, no wider
+  per-entry struct, and specifically no per-survivor health/status field
+  exists anywhere in this byte range, refuting the community-doc's
+  `[(name, state)]` hypothesis for this specific region. Confirmed by
+  decompile-exact address arithmetic AND byte inspection of both real
+  samples (all 512 qwords non-zero in both, including every slot past the
+  account's current `survivor_count`). Full derivation, the three
+  functions traced, and a concrete live-test plan for a future RPCS3
+  session: `research/notes/2026-08-20-survivor-roster-substructure.md`.
 - **Clan cosmetics / emblem block**: real block is **P+0x7E8–0x807** (four
   layers x `{shape_word:{shape_index,rotation,scale,?}, color_word:{color_index,opacity,??}}`),
   not P+0x660–0x67C (that range is `custom_appearance`, the character/
@@ -132,8 +147,14 @@ matches_mode_a + matches_mode_b`, `pop_highwater_a == pop_highwater_menu`,
   (`FUN_00345038`/`FUN_0034527c`) and the two wrong theories this pass
   worked through before landing on the final answer:
   `research/notes/2026-08-19-emblem-name-resolver-and-dc-catalog.md` §9-§10.
-- **`healthy_count` semantics:** populated but not pinned to a decompile
-  writer. (`milestone_latch_1e2c` and `match_ratio_1e3c` are tracked in
+- **`healthy_count` semantics:** the writer IS pinned (`FUN_0037a7b4` clan
+  init `@0x37ac50`, `FUN_0037cf90` per-tick `@0x37d07c`, both computing
+  `1 + rng() % (population - 1)`) - what's NOT pinned is what "healthy"
+  numerically means, or whether it's derived from any per-survivor state at
+  all. The 2026-08-20 survivor-roster pass (see above) confirms it is
+  NOT a sum/count over per-survivor data - no per-survivor health field
+  exists anywhere in the record - it's a standalone RNG aggregate.
+  (`milestone_latch_1e2c` and `match_ratio_1e3c` are tracked in
   their own field docs; `flag_1e40` is SOLVED and renamed
   `emblem_location` - see the emblem entry above, this is not the same
   field despite the similar address, and it's not a boolean like
