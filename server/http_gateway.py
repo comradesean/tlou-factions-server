@@ -70,6 +70,24 @@ _upstream_fail_cache = {}
 _upstream_fail_cache_lock = threading.Lock()
 
 
+def safe_join(base_dir, rel_path):
+    """os.path.join(base_dir, rel_path), refusing anything that would land
+    outside base_dir. rel_path comes straight off the wire (a URL path or a
+    PUT key) with NO sanitization upstream - a request like
+    `GET /../../../../etc/shadow` or `PUT /x/../../../../etc/cron.d/pwn`
+    must not be allowed to read or write outside SERVED_DIR. Returns None if
+    rejected. CRITICAL FIX 2026-08-20 (production server was internet-facing
+    and running as root via `sudo ./run.sh` - this was an unauthenticated
+    remote arbitrary file read (GET) and write (PUT, i.e. root RCE) with no
+    exploitation evidence found in the log at fix time, but the server was
+    live and exposed)."""
+    base_real = os.path.realpath(base_dir)
+    candidate = os.path.realpath(os.path.join(base_dir, rel_path))
+    if candidate != base_real and not candidate.startswith(base_real + os.sep):
+        return None
+    return candidate
+
+
 def get_header(text, name):
     prefix = name.lower() + ":"
     for line in text.split("\r\n")[1:]:
@@ -133,20 +151,24 @@ def build_put_response(request_line, text, body):
     parts = request_line.split()
     raw_path = parts[1].split("?", 1)[0] if len(parts) >= 2 else ""
     key = put_key_from_path(raw_path)
-    file_path = os.path.join(SERVED_DIR, key)
+    file_path = safe_join(SERVED_DIR, key) if key else None
     stored = 0
-    if key and body is not None:
+    note = " (PUT empty)"
+    if key and body is not None and file_path is not None:
         os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
         with open(file_path, "wb") as f:
             f.write(body)
         stored = len(body)
+        note = " (PUT stored)"
+    elif key and body is not None:
+        note = " (PUT rejected: path escapes SERVED_DIR)"
     header = (
         f"HTTP/1.1 200 OK\r\n"
         f"Content-Length: 0\r\n"
         f"Connection: close\r\n"
         f"\r\n"
     ).encode("ascii")
-    return header, key, stored, " (PUT stored)" if stored else " (PUT empty)"
+    return header, key, stored, note
 
 
 # --- Facebook Graph stand-in (folded in from facebook_stub.py) ------------
@@ -276,10 +298,12 @@ def build_response(request_line, text, body=None):
 
     raw_path = parts[1].split("?", 1)[0]
     path = raw_path.lstrip("/")
-    file_path = os.path.join(SERVED_DIR, path)
+    file_path = safe_join(SERVED_DIR, path) if path else None
 
     upstream_note = ""
-    if path and not os.path.isfile(file_path) and UPSTREAM_PROXY_ENABLED:
+    if path and file_path is None:
+        upstream_note = " (rejected: path escapes SERVED_DIR)"
+    elif path and not os.path.isfile(file_path) and UPSTREAM_PROXY_ENABLED:
         host = get_header(text, "Host")
         if host:
             fetched = try_upstream_fetch(host, raw_path.lstrip("/"))
@@ -291,7 +315,7 @@ def build_response(request_line, text, body=None):
             else:
                 upstream_note = f" (live fetch from {host} failed)"
 
-    if path and os.path.isfile(file_path):
+    if path and file_path is not None and os.path.isfile(file_path):
         with open(file_path, "rb") as f:
             body = f.read()
         header = (
