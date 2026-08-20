@@ -254,19 +254,40 @@ cannot see it.
 
 ---
 
-## 5. `0x13e`'s `flag` byte - CORRECTED: it is 4/0, not 0/1
+## 5. `0x13e`'s `flag` byte - the kind=4 half below is correct; the kind=3 half was WRONG and is retracted
 
-The current doc calls the byte "boolean when written (0 or 1)" and treats the
-live values 3 and 4 as stale residue. Half of that is right and half is wrong.
+**RETRACTION (2026-08-20, later same pass, caught by an independent audit):**
+this section originally claimed builder `FUN_00ad6a34` (`kind = 3`) "never
+writes the flag byte at all" and that offset 4 is "genuinely uninitialised
+stack" on every kind=3 frame, to be ignored. **That is false.** Re-reading
+`research/disasm/full.asm` at `0xad6b90`-`0xad6bbc` (the range the original
+pass evidently stopped short of) shows TWO real stores to `116(r1)`, gated by
+a vtable+0x18 call's result:
 
-**Builder `FUN_00ad6a34` (`kind = 3`) never writes the flag byte at all.**
-Disassembling the whole function `0xad6a34`-`0xad6bf8`: the only byte store into
-the 16-byte send buffer at `r1+112` is `stb r0,117(r1)` (`li r0,3` @`0xad6b64`,
-the `kind`). There is no `stb ..,116(r1)` anywhere in it. It reads and writes
-the room's own `+0x19f4` host flag (`lbz r0,6644(r31)` @`0xad6ab8`,
-`stb r0,6644(r31)` @`0xad6af0`) but never puts it on the wire. So on every
-`kind=3` frame, wire offset 4 is genuinely uninitialised stack - which is
-exactly the census's `(0,3) x35`, `(3,3) x35`, `(1,3) x2`.
+```
+ad6b8c  bctrl                  ; vtable+0x18 call, result -> r3
+ad6b94  clrlwi r3,r3,24 / cmpwi cr7,r3,0
+ad6b9c  beq  cr7,0xad6ba8      ; result == 0 -> ENCODED path
+ad6ba0  stb  r29,116(r1)       ; result != 0 -> RAW path: param_3 as-is (0/1)
+ad6ba4  b    0xad6bc0
+ad6ba8  clrlwi r9,r29,24 / addi r9,r9,-1 / srawi r9,r9,31 / not r9,r9 /
+        clrlwi r9,r9,30
+ad6bbc  stb  r9,116(r1)        ; ENCODED path: 3 if param_3 != 0, else 0
+```
+
+`r29` is `param_3` (`mr r29,r5` @`0xad6a68` - the caller's request, 1=become
+host / 0=cease). So kind=3 DOES write offset 4, via one of two paths: the
+RAW path sends 0 or 1 verbatim, the ENCODED path sends 3-or-0 (NOT 1-or-0).
+`(3,3) x35` and `(1,3) x2` from the census below are therefore both real,
+deliberate "become host" writes - not residue - and `(0,3) x35` is the
+"cease" case common to both paths. See `protos/0x13e_set_host_flag.ksy`'s
+`flag` field for the corrected, complete writeup (also corrects the
+2026-08-18 "stale byte from the previous build" hypothesis this section
+believed it was replacing, which was equally wrong). OPEN: what the
+vtable+0x18 call tests to select between the two paths.
+
+The kind=4 analysis below is unaffected and independently re-verified
+correct.
 
 **Builder `FUN_00ad7024` (`kind = 4`) writes 4 or 0, never 1.**
 
@@ -286,7 +307,9 @@ The single `(3,4)` frame out of 117 is unexplained and is the only sample that
 does not fit.
 
 Practical effect: a server should read `kind=4`'s offset-4 byte as
-`4 = set / 0 = clear`, and must ignore offset 4 entirely on `kind=3`.
+`4 = set / 0 = clear`. On `kind=3`, offset 4 is real (not ignorable): treat
+any nonzero value (1 or 3) as "become/claim host" and 0 as "cease host" -
+see `protos/0x13e_set_host_flag.ksy` for the two paths that produce it.
 
 ---
 

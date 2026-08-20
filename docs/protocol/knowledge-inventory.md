@@ -1,7 +1,12 @@
 # Protocol knowledge inventory
 
 What is fully understood, what is partly understood, and what is unknown, across
-all 50 `.ksy` specs (45 message specs + 5 shared types; 260 declared fields).
+all 53 real `.ksy` specs (46 message specs + 7 shared types, plus one unused
+template stub; 325 declared fields - COUNTS CORRECTED 2026-08-20, an audit
+found the previous "50 specs / 260 fields" figures undercounted both;
+`0x11_stat_line.ksy`, `common/dc_table.ksy` and `common/text_table.ksy`, all
+added 2026-08-19, were missing from this count and from `proto-map.md`'s
+tables entirely).
 Current as of 2026-08-20. The 2026-08-19 pass covered `0x140`/`0x141`,
 `0x13e`/`0x13f`, `0x136 attr_tail`, `member_slot_ec`,
 `0x12f room_settings_tail`/`0x130 room_object_tail`, `room_flags_e8`,
@@ -10,7 +15,19 @@ Current as of 2026-08-20. The 2026-08-19 pass covered `0x140`/`0x141`,
 globals are now named and their tables dumpable (`research/tools/dc_dir.py`,
 `research/notes/2026-08-20-dc-directory-and-catalogs.md`), which moved
 `rank_tier`, `equipped_gesture_id`, the emblem colour catalog and
-`search_window_lo`/`search_window_hi`, and shrank the DC-blocked set.
+`search_window_lo`/`search_window_hi`, and shrank the DC-blocked set. A
+SECOND 2026-08-20 pass (`research/notes/2026-08-20-tier2-followup.md`)
+fully solved `search_window_lo`/`_hi` (a career K/D ratio, not "0 in every
+capture"), `member_data.capability_flag` bit-by-bit, closed `rank_tier`'s
+last open question (no override writer exists anywhere in the binary),
+resolved `caller_arg_1c`/`value_20`/`value_22`'s producers, and reframed
+`card_stat_2`/`card_stat_3` as an ASCII string field rather than numeric.
+A THIRD 2026-08-20 pass (`research/notes/2026-08-20-rejoin-party-bug.md`)
+found that `0x13f HostFlagUpdated`'s flag byte is published into NP
+presence for party rooms and gates the friends-list "Join Party" row - a
+side effect neither this file nor `proto-map.md` previously documented. An
+AUDIT the same day found one of the second pass's own claims wrong: see
+`0x13e`'s `flag` field entry below and `protos/0x13e_set_host_flag.ksy`.
 
 The bar for **Tier 1** is the project's reserved standard applied to a whole
 message or field: a NAME, a DEFINITION (what the bytes are), and a game or
@@ -140,6 +157,14 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
 15. **`0x13e` SetHostFlag `kind` / `0x13f` HostFlagUpdated `flag`** - host-flag
     request and confirmation; `0x13f` sets `room_obj+0x19f4`, and without it a
     solo host never becomes host. `kind` is 3 or 4 in 117/117 live frames.
+    UPDATED 2026-08-20 (two findings): (a) for a PARTY room, that byte is ALSO
+    published verbatim into NP presence and gates whether a friend's client
+    draws "Join Party" for that host - see `research/notes/2026-08-20-rejoin-
+    party-bug.md`. (b) `0x13e`'s `kind=3` flag byte is NOT unwritten residue as
+    an earlier same-day pass claimed - it carries a real value (0, 1, or 3)
+    from one of two write paths in the sender; see `protos/0x13e_set_host_
+    flag.ksy`'s `flag` field and `research/notes/2026-08-20-tier2-followup.md`
+    §5 (retraction noted inline).
 16. **`0x143` SetRoomDataBlock / `0x144` `data_block`** - the match-session id
     string `<owner_npid>.<unix-timestamp>`, generated at match start. 15/15 live
     frames; owner name and send-time both verified.
@@ -253,51 +278,78 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     (`array[0] == 0`, `array[1] > 0` trips the sentinel), so the DC branch
     can only ever produce 0 - which is exactly the capture (0x0000 in
     855/855 live `0x13a` frames). The field is nonzero ONLY via the override
-    at `*(global+0x78)`. Remaining open, and much narrower than before: who
-    writes `global+0x78`. See
-    `research/notes/2026-08-20-dc-directory-and-catalogs.md` sections 1/3.
-39. **`member_data.capability_flag` bit meanings** - which bit is which DLC pack
-    lives in the `.pak` descriptors, not the EBOOT. RE-CHECKED 2026-08-20 now
-    that `net.bin`'s whole 392-entry DC directory is readable and named
-    (`research/tools/dc_dir.py`): `*dlc-version*` and `*unlock-list*` are both
-    addressable, and `unlock-list`'s 28-byte records do carry a category byte
-    (4 = taunt, 5 = emblem frame; 3 and 6 also seen), but nothing in either is
-    a per-bit DLC-pack map, and no DLC-pack DC symbol appears among the 392.
-    Still open.
-40. **`member_data.card_stat_2` / `card_stat_3`** - bytes and source pinned
-    (`P+0x654`, a separate word preceding `custom_appearance`, not literally
-    "word 0" of it - corrected 2026-08-19). EXHAUSTIVELY RE-CHECKED
-    2026-08-19 against all 842 live `0x13a` frames (not just the original 2
-    samples): still exactly zero in every one, even after the profile S3
-    round-trip was implemented and confirmed working with real non-zero data
-    elsewhere in the same file - rules out "needs the round-trip" as the
-    blocker. RE-CHECKED AGAIN 2026-08-20 on the current 855-frame set (3 more
-    frames than the previous pass): still exactly zero at both offsets in
-    every one. Display meaning remains unresolved on a much larger evidence
-    base.
-41. **`0x13e` `flag` byte** - boolean when written, but live values 0/1/3/4 with
-    the stale value often equal to the frame's own `kind`. Only 0 and 1 are
-    meaningful. `kind` itself is RESOLVED 2026-08-19 (see item 59's removal
-    below): `kind=3` is a generic host-flag claim/release on either the party
-    or game-room object; `kind=4` is a set-then-clear pair tied to the game
-    room's active-match lifecycle. See `protos/0x13e_set_host_flag.ksy`.
-42. **`value_20` / `value_22` / `value_pair_14`** - a float-derived pair,
+    at `*(global+0x78)`. FULLY CLOSED 2026-08-20: two independent whole-binary
+    pointer-taint scans (187 and 246 field accesses to the resolved object)
+    agree offset `0x78` is touched exactly once in the entire 01.00 binary,
+    and that touch is the READ inside `FUN_003c8e30` itself - no writer
+    exists anywhere. `rank_tier` is structurally `0x0000` on 01.00 for every
+    account, ranked or not. See
+    `research/notes/2026-08-20-dc-directory-and-catalogs.md` sections 1/3 and
+    `research/notes/2026-08-20-tier2-followup.md` §7.
+39. **`member_data.capability_flag` bit meanings** - SOLVED 2026-08-20, bit by
+    bit, against `*net-maps*`'s `+0x14` required-mask column (stride 76,
+    instruction-verified at `0x003a2574`-`0x003a25b4`, a second identical gate
+    at `0x0035ad74`-`0x0035ad8c`). Decoded from both bundles: bit 0 = a
+    four-map pack (Bookstore/Bus Depot/Hometown/Suburbs), bit 2 = a four-map
+    pack (Water Tower/Coal Mine/Capitol/Wharf), bit 3 = a two-map pack
+    (Plaza/Beach); bit 1 is required by no map descriptor in either bundle,
+    which is why the live 01.11 value is `0x0d` not `0x0f`. Retail marketing
+    names for the packs are not asserted, only what the shipped table
+    requires. See `research/notes/2026-08-20-tier2-followup.md` §1.
+40. **`member_data.card_stat_2` / `card_stat_3`** - TYPE CORRECTED 2026-08-20:
+    `P+0x654..0x65B` is not a numeric stat pair, it is an 8-byte NUL-terminated
+    ASCII string (`strcmp`/`strcpy` on the same buffer, `0xe459bc`/`0xe45b10`,
+    verified instruction by instruction), and `card_stat_2`/`card_stat_3` are
+    its first four characters. The buffer is reachable from exactly two
+    functions in the whole binary, and the only value either can write into
+    it (besides reading it back from the profile) is the literal string `"*"`,
+    gated on a byte nothing in the binary ever stores to - so the value space
+    is closed to `""` or `"*"` on 01.00, consistent with 855/855 zero frames
+    without needing "no live data ever populated it" as an unproven excuse.
+    Display meaning of `"*"`, if it ever appears, is still open. See
+    `research/notes/2026-08-20-tier2-followup.md` §2.
+41. **`0x13e` `flag` byte** - RETRACTED-AND-CORRECTED 2026-08-20 (two rounds
+    same day). NOT simple stale-byte residue: on `kind=4` the byte is real
+    (4 or 0, never other values - `rlwinm` masks to a single bit worth 4).
+    On `kind=3` a same-day pass first claimed the byte was "genuinely
+    uninitialised stack" and should be ignored entirely - THAT WAS WRONG, an
+    audit caught it: `kind=3`'s builder has TWO real stores to that byte,
+    selected by a vtable+0x18 call's result - a RAW path (0 or 1, param_3
+    verbatim) and an ENCODED path (3 if param_3 != 0, else 0). So on
+    `kind=3`, any nonzero value (1 or 3) means "become/claim host" and 0
+    means "cease" - not residue to be ignored. `kind` itself is RESOLVED
+    2026-08-19: `kind=3` is a generic host-flag claim/release on either the
+    party or game-room object; `kind=4` is a set-then-clear pair tied to the
+    game room's active-match lifecycle. Additionally (2026-08-20): for a
+    PARTY room, `0x13f`'s confirmation of this flag is published verbatim
+    into NP presence and gates the friends-list "Join Party" row - see item
+    15 above. See `protos/0x13e_set_host_flag.ksy`.
+42. **`value_20` / `value_22` / `value_pair_14`** - PRODUCER RESOLVED
+    2026-08-20: `bl 0xacb6bc` @`0xad5c70`, a three-instruction getter reading
+    floats off a config object at `+0x48`/`+0x4C`. A float-derived pair,
     live-constant 1000/1000. Reads as a default rating pair; disabled in every
     capture.
-43. **`search_window_lo` / `search_window_hi`** - a clamped rating/filter
-    window. CORRECTED 2026-08-20 - "0 in every live capture" was drawn from a
-    smaller set. Across all 2,188 captured `0x135` frames the pair is NONZERO
-    in 653, and every nonzero pair decomposes against the decompiled clamp as
-    a point window at `param_5` or `param_5 +/- 60` (the client alternates a
-    narrow and a wide probe). `param_5` is a per-account quantity that climbs
-    with play - `comradesean` 397/365/373 vs `mgnomad2` 29/31/44/45 - and is
-    NOT `rank_value`, NOT `rank_tier`, and matches no leaderboard board this
-    project logs. The quantity itself is unnamed; see
-    `research/notes/2026-08-20-dc-directory-and-catalogs.md` section 8.
-44. **`caller_arg_1c`** - caller-supplied, live `0xffff` and `0x0000`; the caller
-    is not traced.
-45. **`flag_27`** - 0 normally, 4 on one conditional branch; the branch condition
-    is untraced.
+43. **`search_window_lo` / `search_window_hi`** - SOLVED 2026-08-20 (not just
+    corrected). The value is the game's own matchmaking "rank value" - a
+    career kill/death ratio x100, summed over both game modes, from two
+    20-byte per-mode career-stat records this pass also decoded in
+    `profile_21.ksy` - +/- a half-width read from the
+    `*net-matchmaking-criteria*` DC column (5/10/0 on 01.00, 60/0 on 01.11,
+    not a code constant). "0 in every live capture" was drawn from a smaller
+    sample; across all 2,188 captured `0x135` frames the pair is NONZERO in
+    653, decomposing exactly against the decompiled clamp. The 01.00 producer
+    is a hard-0 stub (dead on the primary build, which is why 1,535/1,535
+    01.00-sender frames are `(0,0)`); the ratio is computed only in the 01.11
+    EBOOT, cited for that reason only. Numerically verified against both
+    stored profiles. See `research/notes/2026-08-20-tier2-followup.md` §6.
+44. **`caller_arg_1c`** - PRODUCER RESOLVED 2026-08-20: the sender's own
+    `param_5` (`r7`), verbatim, against `FUN_00ad5b78`'s prologue. Live
+    `0xffff` and `0x0000` are the values that argument actually carried; the
+    function's OWN caller (reached via `bctrl` through vtable slot `+0x10`,
+    invisible to a static branch scan) is not traced.
+45. **`flag_27`** - PRODUCER RESOLVED 2026-08-20: `4` iff the sender's own
+    `param_4` (`r6`) `!= 0`, else `0`, against the same `FUN_00ad5b78`
+    prologue. The caller (same untraced `bctrl`, see item 44) is still open.
 46. **`member_slot_ec`** (`0x131`/`0x132` entry) - genuinely read off the wire
     into `member_slot+0xEC`; write-only, no consumer. STRENGTHENED 2026-08-19:
     independently re-verified across the WHOLE binary (not just the original
@@ -342,12 +394,20 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     now has a name and a dump - `*net-stats*` (`crc32_mpeg2` `0x921da350`), 40
     entries at `dc1/net.bin 0x9c18`, stride 8, `{stat_id_hash,
     text_string_id}`, 28 of the 40 resolving to display names ("Downed Enemy",
-    "Revive", "Heal Ally", "Execution", "Supplies", "Parts", ...). Entry 0's
-    `stat_id_hash` is `0x5c494554` - the id `protos/profile_21.ksy` already
-    cites for P+0x1E3C and had recorded as "not found in any text table", which
-    is now explained: it is a stat id, not a text key. NOT claimed: that
-    `profile.21`'s `record[8 + (statIdx+581)*4]` indexes this array - nothing
-    ties `statIdx` to a `*net-stats*` row yet. See the 2026-08-20 note, §7.
+    "Revive", "Heal Ally", "Execution", "Supplies", "Parts", ...). RETRACTED
+    same day: this item originally claimed entry 0's `stat_id_hash`
+    `0x5c494554` was the id `protos/profile_21.ksy` cited for `match_ratio_1e3c`
+    at P+0x1E3C, "explaining" why that id was never found in a text table.
+    That was a misread of one instruction later in the same pass -
+    `0x5c494554` is set up as the argument to the NEXT statement's stat-query
+    call (`bl 0x3e7430` @`0x3f29d4`), which accumulates into a newly-decoded
+    `career_stats[0].downs_dealt` field, and has nothing to do with
+    `match_ratio_1e3c`. `0x5c494554` = row 0 = "Downed Enemy". See
+    `protos/profile_21.ksy`'s `match_ratio_1e3c` doc (correction) and
+    `career_stat_record` type (the new field), and
+    `research/notes/2026-08-20-tier2-followup.md` §6. Separately, whether
+    `profile.21`'s `record[8 + (statIdx+581)*4]` indexes `*net-stats*` is
+    still not established.
 52. **`profile_21` zero region `P+0x1E74..0x5008`** - purpose unknown.
 53. **DC-blocked set** - all net-stat slots (including the supplies gate;
     `rank_tier`'s own `net-money-info` table is now fully decoded and RESOLVED

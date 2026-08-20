@@ -210,10 +210,15 @@ headline gap; full evidence in
 - `0x140`/`0x141` carry a **u16 at offset 4**, not a 4-byte bitmask; offset 6 is
   uninitialised stack, which fully explains the phantom "packed settings"
   bitmask.
-- **`0x13f`/OwnerChanged is a real server→client message** — as of 2026-08-17
-  the stub sends it (paired with `0x13d`) on every Promote, and `RoomCreate`'s
-  own sender clears the `room_obj+0x19f4` "I am the host" flag it is the only
-  writer of. Ranked first in the earlier unsent-opcode list; now closed.
+- **`0x13f`/HostFlagUpdated is a real server→client message** (name corrected
+  2026-08-20 - this bullet previously called it "OwnerChanged", which is
+  `0x13d`'s name, not `0x13f`'s) — as of 2026-08-17 the stub sends it (paired
+  with `0x13d`) on every Promote, and `RoomCreate`'s own sender clears the
+  `room_obj+0x19f4` "I am the host" flag it is the only writer of. Ranked
+  first in the earlier unsent-opcode list; now closed. UPDATE 2026-08-20: for
+  a PARTY room this flag byte is also published into NP presence and gates
+  the friends-list "Join Party" row - see
+  `research/notes/2026-08-20-rejoin-party-bug.md`.
 
 **2026-08-17 correction — the 0x137-0x144 tail, live-verified via working
 Kick/Promote and the Join Party root-cause fix** (full detail:

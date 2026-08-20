@@ -90,10 +90,12 @@ live in the data-compiler payload the game loads at runtime.
   gesture's id-hash (confirmed NOT `crc32_mpeg2` by exact single-byte-delta
   tests, though the CRC-32 polynomial is visible in the deltas - a
   curiosity, not a blocker, since every table pairs its hash with a
-  plaintext name or StringId anyway), `member_data.capability_flag` bit
-  meanings (re-checked against the full directory, no DLC-pack symbol
-  found), `global+0x78`'s writer (feeds `rank_tier`), and a handful of
-  unexplained bytes in the emblem words.
+  plaintext name or StringId anyway), and a handful of unexplained bytes in
+  the emblem words. CLOSED 2026-08-20: `member_data.capability_flag` bit
+  meanings (solved bit-by-bit against `*net-maps*`'s required-mask column -
+  see `research/notes/2026-08-20-tier2-followup.md` §1) and `global+0x78`'s
+  writer (proven to not exist anywhere in the binary, closing `rank_tier`
+  entirely - see §7 of the same note).
 
 ## Unmapped wire spans
 

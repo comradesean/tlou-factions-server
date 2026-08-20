@@ -33,9 +33,11 @@ doc: |
   section 2; the short version:
 
   - `room_obj+0x19f4` is confirmed to be "I am the room owner/host" by the
-    0x13e/SetHostFlag sender at 0x00ad6b58, which reads it as the current
-    state, REJECTS a promote when it is already 1 and a demote when it is
-    already 0, and otherwise sets it to the requested value.
+    0x13e/SetHostFlag sender's read of it at 0x00ad6ab8 (ADDRESS CORRECTED
+    2026-08-20 - was previously mis-cited as 0x00ad6b58, which is only the
+    opcode-318 literal load, not the flag read), which reads it as the
+    current state, REJECTS a promote when it is already 1 and a demote when
+    it is already 0, and otherwise sets it to the requested value.
 
   - The RoomCreate sender `FUN_00ad5b78` (vtable +0x10, confirmed by its
     `li r0,303` at 0x00ad5c38) CLEARS it unconditionally on the create path:
@@ -43,11 +45,13 @@ doc: |
         ad5c98:  stb  r27,6644(r31)     ; room_obj+0x19f4 = 0
     with r31 = the room object (`mr r31,r4` at 0x00ad5b84).
 
-  - A full-binary objdump sweep for displacement 6644 finds exactly four
-    writers: 0x00ad1f58 (internal), 0x00ad5c98 (RoomCreate, sets 0), the two
-    0x13e/SetHostFlag builders (only from an explicit in-UI promote/demote
-    action), and 0x00ad82cc - THIS HANDLER. No other inbound message can
-    set it.
+  - A full-binary objdump sweep for displacement 6644 finds exactly five
+    writers (COUNT CORRECTED 2026-08-20 - was previously miscounted as
+    "four" while still listing all five): 0x00ad1f58 (internal reset),
+    0x00ad5c98 (RoomCreate, sets 0), 0x00ad6af0 (0x13e/SetHostFlag builder
+    FUN_00ad6a34, promote path), 0x00ad6c04 (0x13e/SetHostFlag builder
+    FUN_00ad7024, demote path), and 0x00ad82cc - THIS HANDLER. No other
+    inbound message can set it.
 
   - Readers in the game/lobby layer: 0x00397e08, 0x003cab10 (inside the
     9-state room state machine dispatched by `_opd_FUN_003ca9d0`, gating a
@@ -85,7 +89,12 @@ doc: |
 
   This is a DIFFERENT and complementary piece of ownership state from
   0x13d/OwnerChanged, which writes `room_obj+0x19f0` ("which member id is
-  the owner"). Neither is currently sent by server/session_manager.py.
+  the owner"). CORRECTED 2026-08-20: an earlier version of this sentence said
+  "neither is currently sent by server/session_manager.py" - stale, and
+  contradicted by this same file's "NOW SENT AND LIVE-VERIFIED" section
+  above. Both are sent - on RoomCreate (Member + 0x13f, see this file's flag
+  field) and on Promote (0x13d + 0x13f to every member, see
+  `protos/0x13c_promote.ksy`).
 
   SEQUENCING (hard requirement): room_obj+0x10 is set ONLY by Member's
   (0x131) handler. Send 0x13f strictly AFTER Member - sent first, the

@@ -31,17 +31,48 @@ seq:
   - id: flag
     type: u1
     doc: |
-      Offset 4:5. Boolean WHEN WRITTEN (0 or 1), derived differently by each of
-      the two confirmed sender call sites - see doc for both. Written into the
-      matched room's +0x19f4 'is host' flag by 0x13f's handler on the round trip.
-      LIVE CAVEAT (117 frames, 2026-08-18): on the wire this byte takes 0, 1, 3
-      AND 4, and in the two most common shapes it EQUALS the frame's own kind
-      byte (0x0404, 0x0303) - the signature of a stale byte left by the previous
-      0x13e build in the same buffer slot rather than a freshly written boolean.
-      Observed (flag, kind) pairs: (4,4) x40, (0,3) x35, (3,3) x35, (0,4) x4,
-      (1,3) x2, (3,4) x1. A reader must treat only 0 and 1 as meaningful and
-      ignore values >1 as residue. See
-      research/notes/2026-08-18-wire-residue-and-field-corrections.md §3.
+      Offset 4:5. NOT a plain boolean on the kind=3 path (builder
+      `FUN_00ad6a34`) - CORRECTED 2026-08-20, reversing an earlier
+      "unwritten stack residue" claim that was itself wrong (see below).
+      `param_3` (`r29`, `mr r29,r5` @`0xad6a68` - the caller's request,
+      1=become host / 0=cease host) reaches the wire through ONE of two
+      real, deliberate stores, selected by the result of a vtable+0x18
+      call (`bctrl` @`0xad6b8c`; result truncated to a byte and compared
+      to 0 @`0xad6b94`-`0xad6b98`):
+
+          ad6b9c  beq cr7,0xad6ba8      ; result == 0 -> ENCODED path
+          ad6ba0  stb r29,116(r1)       ; result != 0 -> RAW path: 0 or 1
+          ad6ba4  b   0xad6bc0
+          ad6ba8  clrlwi r9,r29,24 / addi r9,r9,-1 / srawi r9,r9,31 /
+                  not r9,r9 / clrlwi r9,r9,30
+          ad6bbc  stb r9,116(r1)        ; ENCODED: 3 if param_3!=0, else 0
+
+      So on the ENCODED path, "become host" (`param_3=1`) is sent as
+      **3**, not 1 - `3` is a deliberate value meaning "claiming host",
+      not leftover residue. Written into the matched room's +0x19f4 'is
+      host' flag by 0x13f's handler on the round trip (that handler ANDs
+      with 1, so a wire value of 3 arrives there as 1 - see
+      `protos/0x13f_host_flag_updated.ksy`).
+
+      Live observed (flag, kind) pairs (117 frames, 2026-08-18): (4,4) x40,
+      (0,3) x35, (3,3) x35, (0,4) x4, (1,3) x2, (3,4) x1. On kind=3, `(3,3)
+      x35` is the ENCODED path's "become" case, `(1,3) x2` is the RAW
+      path's "become" case, and `(0,3) x35` is the "cease" case common to
+      both (encode(0)=0, raw(0)=0) - not a case of stale/contaminated
+      bytes, three genuinely different call outcomes on the same builder.
+
+      RETRACTED (2026-08-20): `research/notes/2026-08-20-tier2-followup.md`
+      §5 claimed this byte is "genuinely uninitialised stack" on kind=3 and
+      that a reader "must... ignore values >1 as residue". Both claims are
+      false - re-verified directly against `research/disasm/full.asm`
+      `0xad6b90`-`0xad6bbc`, which shows the two real stores above. The
+      EARLIER (2026-08-18) "stale byte from the previous build" hypothesis
+      this note thought it was correcting was ALSO wrong, for the same
+      reason: both non-boolean values (3 and, on kind=3 only, 1) are live
+      writes, not left-over bytes.
+
+      OPEN: what the vtable+0x18 call (`ad6b74`-`ad6b8c`) tests to select
+      between the two encodings - not yet traced.
   - id: kind
     type: u1
     doc: |

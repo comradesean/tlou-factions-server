@@ -385,7 +385,10 @@ seq:
       bytes of `reserved_10`).
 
       RESOLVED 2026-08-20 - the DC branch of this producer is INERT, and the
-      field's only live source is an untraced override. See
+      field's only theoretical live source is an override which, per the
+      fuller resolution later in this doc string, turns out to have NO
+      writer anywhere in the binary (so the field is structurally always
+      0x0000 on 01.00). See
       `research/notes/2026-08-20-dc-directory-and-catalogs.md` sections 1 and 3.
 
       `FUN_003c8e30` (01.00, VMA 0x3c8e30-0x3c8eec, verified against
