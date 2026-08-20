@@ -8,15 +8,19 @@ doc: |
   The ~0x5028-byte NetPlayerData progression record, version 21. This .ksy
   models the DECRYPTED+DECOMPRESSED plaintext. On the wire the file is
   LZF( [u32 ver][u32 enc_len][ Blowfish-ECB( payload || pad || HMAC ) ][8] );
-  that container framing is out of scope for this schema. NOTE: no server/ module
-  currently implements the profile.21 container as a unit - server/lib/psarc_crypt.py
+  that container framing is out of scope for this schema. server/lib/psarc_crypt.py
   and userdata_crypt.py handle the DIFFERENT .psarc.crypt/.txt.crypt format (no LZF
   layer; HMAC placed/scoped differently) and only share the Blowfish-ECB primitive
-  and the two static keys. A standalone profile.21 codec (LZF + that Blowfish core +
-  the in-band HMAC over the 0x5004 bytes) is an open want. It is not needed at
-  runtime: server/http_gateway.py serves/stores profile.21 as a byte-exact
-  pass-through (the client signs its own record), so the container is never
-  re-derived server-side.
+  and the two static keys. A STANDALONE CODEC NOW EXISTS (2026-08-19):
+  `research/tools/profile21_codec.py` implements the LZF decompressor (not
+  present anywhere else in the repo) plus this Blowfish core, and can dump
+  every decompile-confirmed field below or diff two captures of the same
+  account - the exact technique that live-verified custom_appearance's
+  equipped_item_ids and the emblem_layers persisted format (see their own
+  doc entries). It is not needed at runtime: server/http_gateway.py
+  serves/stores profile.21 as a byte-exact pass-through (the client signs
+  its own record), so the container is never re-derived server-side - this
+  codec is a research/verification tool only.
 
   Big-endian throughout (PPC target; version reads `00 00 00 15`, and every
   field is assembled BE in the decompile). Layout from FUN_003cb818 (init),
@@ -88,6 +92,12 @@ types:
         pos: 0x0658
         type: custom_appearance
         doc: "P+0x0660..P+0x068F. Persisted MP character-appearance block (chosen character, survivor variant, equipped items, palette). See the custom_appearance type."
+      emblem_layers:
+        pos: 0x07E0
+        type: emblem_layer
+        repeat: expr
+        repeat-expr: 4
+        doc: "P+0x07E8..0x0807. Four emblem layers x {shape_word:{shape_index,rotation,scale,unknown}, color_word:{color_index,opacity,unknown x2}}. SOLVED 2026-08-20: every field except the two unknown bytes is confirmed by controlled live edits, and shape_index resolves to a real display name (all four layers, identical formula - see the emblem_layer type doc and research/notes/2026-08-19-emblem-name-resolver-and-dc-catalog.md §9). color_index is a solved GRID POSITION (row*8+col in an 8x8 swatch picker) but the swatches themselves have no recovered names/RGB values."
       total_matches:
         pos: 0x0A14
         type: u4
@@ -145,7 +155,7 @@ types:
       milestone_latch_1e2c:
         pos: 0x1E24
         type: u4
-        doc: "P+0x1E2C. One-shot milestone latch (bitfield). FUN_0035f1bc sets bit0 (`ori r0,r31,1` / `stw r0,7724(r3)` @0x35f26c/0x35f274) the first time its predicate-6 holds at game-state==3, awarding event 0x40b5d875. Persisted so the award fires once. comradesean 1 (done) / mgnomad2 0 (not). Which milestone is DC-assigned."
+        doc: "P+0x1E2C. One-shot milestone latch (bitfield). FUN_0035f1bc sets bit0 (`ori r0,r31,1` / `stw r0,7724(r3)` @0x35f26c/0x35f274) the first time its predicate-6 holds at game-state==3, awarding event 0x40b5d875 - resolved via `research/tools/text_table.py` against `text1.psarc`'s `2.networking` StringId table (see docs/protocol/text_table.md) to the display string \"Added Extra Supplies from Promotion!\". Persisted so the award fires once. comradesean 1 (done) / mgnomad2 0 (not)."
       pop_highwater_menu:
         pos: 0x1E28
         type: u4
@@ -161,7 +171,7 @@ types:
       match_ratio_1e3c:
         pos: 0x1E34
         type: u4
-        doc: "P+0x1E3C. OnMatchEnd-computed scaled ratio statistic: (matchStatA->0x4 * 6000) / (matchStatB->0x10) (`mulli r29,r29,6000` / `divwu` / `stw r29,7740(r3)` @0x3f29b4-0x3f29c8, also @0x3f2d60 in FUN_003f208c), reported under DC StringId 0x5c494554; cleared to 0 outside a match (@0x3b6124/@0x3b7f00). 0 / 0xE0C2. Precise numerator/denominator meaning is DC-side."
+        doc: "P+0x1E3C. OnMatchEnd-computed scaled ratio statistic: (matchStatA->0x4 * 6000) / (matchStatB->0x10) (`mulli r29,r29,6000` / `divwu` / `stw r29,7740(r3)` @0x3f29b4-0x3f29c8, also @0x3f2d60 in FUN_003f208c), reported under DC StringId 0x5c494554; cleared to 0 outside a match (@0x3b6124/@0x3b7f00). 0 / 0xE0C2. Precise numerator/denominator meaning is DC-side. NOTE: 0x5c494554 checked against text1.psarc's StringId text tables (docs/protocol/text_table.md) and NOT found in any of the four English category files, nor in bin.psarc/pak23.psarc/actor34.psarc - likely an internal telemetry id with no localized display string, but not conclusively ruled out (untried resources: gallery1.psarc, animstream4.psarc, animtex0.psarc, vtex1.psarc, lut0.psarc, and any 01.11-only content)."
       flag_1e40:
         pos: 0x1E38
         type: u4
@@ -208,18 +218,156 @@ types:
         doc: "P+0x0668. No traced reader or writer (the item loop starts at P+0x670; the char-id writes are 0x660/0x664). 0 in both samples; left named rather than folded into a pad."
       - id: survivor_variant_id
         type: u4
-        doc: "P+0x066C. Persisted survivor / appearance-variant StringId; linear-searched in the character record's list at +0x0C to yield descriptor slot desc[1] (read @0x0034185c; desc[1]=0 if not found). 0x638EF35A in both samples. Asset meaning is DC-assigned."
+        doc: |
+          P+0x066C. Persisted survivor / appearance-variant StringId;
+          linear-searched in the character record's list at +0x0C to yield
+          descriptor slot desc[1] (read @0x0034185c; desc[1]=0 if not
+          found). CORRECTED 2026-08-19: an earlier pass claimed
+          "0x638EF35A in both samples" - that is WRONG, disproven by a
+          fresh direct decode of both accounts' live profile.21 (see
+          `research/tools/profile21_codec.py`): comradesean =
+          `0x638ef35a`, mgnomad2 = `0x92211c99` (DIFFERENT). Both resolved
+          via `research/tools/dc_hash_crack.py` against the retail disc's
+          `bin.psarc` `.dci` compiler-symbol corpus: comradesean's is DC
+          symbol `*cc-fl-base*`, mgnomad2's is `*cc-hb5-base*` - i.e. per-
+          account character skin/base variant, exactly as expected (two
+          different accounts, two different confirmed real DC symbol
+          names, at the correct offset). status: confirmed (mechanism +
+          both live values); the DDS/render asset each symbol maps to is
+          not further resolved here.
       - id: equipped_item_ids
         type: u4
         repeat: expr
         repeat-expr: 6
-        doc: "P+0x0670..P+0x0687. Six equipped-item StringIds read by the FUN_00341344 loop into desc[2..7]. Only the first three resolve to visible render slots (desc[2..4] -> engine slots 2/3/0); [3..5] are read but never rendered and are 0 in both samples. comradesean 93EA5D87/41ACAD8B/FD0E0860, mgnomad2 6A86861F/456DB03C/0AE569A8 (first three), rest 0. Asset meaning is DC-assigned."
+        doc: |
+          P+0x0670..P+0x0687. Six equipped-item StringIds read by the
+          FUN_00341344 loop into desc[2..7]. Only the first three resolve
+          to visible render slots (desc[2..4] -> engine slots 2/3/0);
+          [3..5] are read but never rendered and are 0 in every capture so
+          far.
+
+          RESOLVED 2026-08-19 for the first three (hat/mask/helmet):
+          decoded comradesean's live profile.21
+          (`research/tools/profile21_codec.py`) and resolved each
+          StringId against `text1.psarc`'s English text table
+          (`research/tools/text_table.py`, `docs/protocol/text_table.md`):
+          `0x02415548` -> "Norwegian Hat", `0xe47d6ec3` -> "Ballistic
+          Mask", `0xf341faee` -> "Military Helmet" - all THREE
+          independently confirmed byte-for-byte against what the account
+          actually had equipped on screen at capture time (a human read
+          the in-game UI and it matched exactly). mgnomad2's slot 0
+          (`0x6a86861f`) resolves to "Default"; slot 1 wasn't in the text
+          table (checked, no match). status: confirmed mechanism (StringId
+          -> text_table lookup) for slots 0-2; slots 3-5 still unobserved
+          non-zero on any account.
       - id: palette
         type: u4
         doc: "P+0x0688. Character palette id (read @0x0034157c). 0 in both samples."
       - id: tint
         type: u4
         doc: "P+0x068C. Character tint id (read @0x003415b8). 0 in both samples."
+  emblem_layer:
+    doc: |
+      One of the four emblem layers, P+0x07E8+i*8..P+0x07EF+i*8. Layer index
+      i (0..3) is passed directly as the cache-slot selector by the draw loop
+      in FUN_00345a0c, and pins each layer to a fixed DC category in a fixed
+      order: layer0 = net-emblem-layers-frame, layer1 = net-emblem-layers-base,
+      layer2 = net-emblem-layers-parts, layer3 = net-emblem-layers-parts AGAIN
+      (FUN_003444fc's init code writes the identical parts hash into both the
+      3rd and 4th cache slots - not a typo, confirmed in the literal
+      instruction stream). See
+      research/notes/2026-08-19-emblem-name-resolver-and-dc-catalog.md.
+
+      status: CONFIRMED for the shape catalog on ALL FOUR layers, plus
+      rotation/scale/opacity and the colour grid position formula
+      (2026-08-20) - see below -
+      the byte layout was already confirmed by three controlled live edits;
+      the EBOOT-side resolver is fully decompiled and disassembly-verified
+      (FUN_00345038/FUN_0034527c: idx = shape_index % *(u32*)value; name =
+      *(u32*)(elemBase + idx*12 + 4); elemBase = *(u32*)(value+4); value =
+      the cached DC resolve of that layer's hash) - what was NOT confirmed
+      until now was what that chain resolves to at runtime, since raw
+      file-offset arithmetic over the DC00 payload (net1.bin/net.bin)
+      reaches a multiply-nested tree of typed sub-records at that address,
+      not a flat name array.
+
+      SOLVED, 2026-08-20: layer0's (the account UI's "Layer 1") shape
+      catalog is the SAME 192-entry flat ASCII name pool this file's
+      2026-08-19 pass already found and then wrongly ruled out (see the
+      history note below) - `net.bin` file offset `0x2be68`, 12-byte
+      stride, name pointer at `elem+0`, 192 contiguous entries. The correct
+      formula, PROVEN by 192 consecutive live, human-confirmed
+      (shape_index, display-name) pairs with ZERO mismatches (every single
+      catalog entry checked, not a sample):
+
+          shape_index == 0            -> "None" (sentinel, not in the catalog)
+          shape_index in [1, 192]     -> catalog[shape_index - 1]
+
+      i.e. the earlier pass's two hypotheses failed only because they
+      never tried the trivial off-by-one (treating `0` as a reserved "no
+      selection" sentinel rather than a valid catalog index) - once that's
+      accounted for, the flat, unfiltered, non-modulo catalog is exactly
+      right, immediately, with no per-category filtering needed. Also
+      recovered along the way: this account's unlock boundary sits at
+      catalog index 151 (`tlou-vest`, shape_index=152, display "Vest") -
+      every entry after that (40 entries, "Flower" through "Stealth Mask")
+      is locked for this account. Full verification methodology and the
+      complete 192-entry index->name table:
+      research/notes/2026-08-19-emblem-name-resolver-and-dc-catalog.md §9.
+
+      ALL FOUR LAYERS CONFIRMED using the SAME formula, 2026-08-20: layer1
+      ("Layer 2", `net-emblem-layers-base`) tested live at shape_index=50 ->
+      `catalog[49]` = `shape-egg` = "Egg", exact match. layer2 ("Layer 3",
+      `net-emblem-layers-parts`) tested live at shape_index=97 ->
+      `catalog[96]` = `tlou-el-diablo` = "El Diablo", exact match - this
+      RETRACTS the earlier `shape_index=55 -> El Diablo` claim below as a
+      mislabeling from early in the investigation (before the live-diff
+      methodology existed), NOT a real second offset. There is no per-layer
+      offset: every layer indexes the identical 192-entry catalog the
+      identical way. Only the colour catalog (`net-emblem-colors`, hash
+      `0xbcbbdfbd`) remains unmapped - see `shape_word`/`color_word`'s
+      field docs below for rotation/scale/opacity (all solved 2026-08-20)
+      and the colour GRID's own solved formula (a plain 8x8 position grid,
+      unrelated to the DC colour catalog's still-unknown contents).
+
+      HISTORY (why this was marked "definitively falsified" for 20+ hours
+      before being solved, and why a wrong per-layer-offset theory briefly
+      replaced it): the 2026-08-19 pass tested `catalog[shape_index]`
+      directly (no offset) and `catalog[shape_index mod family_count]`
+      (per-prefix-family, modulo) against the two ground-truth values then
+      available (shape_index=48/55) and got real, reproducible mismatches
+      under BOTH schemes - a fair test at the time, given what was known.
+      It did not think to try the off-by-one sentinel adjustment, which
+      turned out to be the entire fix for layer0. The `shape_index=55 ->
+      El Diablo` value used in that original test was itself wrong (see
+      above) - once layer0's formula was proven on 192/192 entries and then
+      independently reproduced on layer1 and layer2 with fresh, carefully
+      live-diffed data, the single old "El Diablo" sample no longer held
+      up and the simpler one-formula-for-all-layers explanation won.
+      Recorded here so a future pass sees the full arc, not just the
+      current answer.
+    seq:
+      - id: shape_index
+        type: u1
+        doc: "Byte 0 (top byte) of shape_word. For layer0 SOLVED: 0=\"None\", N in [1,192] -> the retail disc's 192-entry emblem name catalog at [N-1] - see this type's doc for the full formula and research/notes/2026-08-20-emblem-shape-catalog.tsv for the complete table."
+      - id: rotation
+        type: u1
+        doc: "Byte 1 of shape_word. CONFIRMED 2026-08-20 as a real, live field (not static) via a controlled edit: byte moved 0x00 (never touched) -> 0x83 (a ~180-degree/\"upside downish\" rotation, human-confirmed) -> 0x01 (after an in-game \"reset to default\", not confirmed bit-exact - the UI reset may not be perfectly precise). Exact byte->degree scale NOT pinned (0-255 wrapping to 0-360 is plausible given the one confirmed sample, not proven)."
+      - id: scale
+        type: u1
+        doc: "Byte 2 of shape_word. CONFIRMED 2026-08-20 via a controlled edit: 0xff (default/untouched value in every capture before this test) -> 0x00 after \"scaled it down\" (a large slider move, human-confirmed) -> back to 0xff after reset. 0xff plausibly = maximum/default size, 0x00 = minimum - exact scale factor not pinned, only the direction and the two endpoints."
+      - id: shape_word_unknown_byte3
+        type: u1
+        doc: "Byte 3 of shape_word. Untouched across every controlled edit performed so far (shape, rotation, scale, and multiple color/opacity changes) - genuinely static in every sample; meaning unknown."
+      - id: color_index
+        type: u1
+        doc: "Byte 0 (top byte) of color_word. CONFIRMED 2026-08-20: the in-game colour picker is a plain 8x8 grid (64 swatches, no names, no per-swatch DC hash resolution found), and color_index = row*8 + column (0-indexed, row-major) - proven at both the top-left (row0,col0 -> index 0, a white swatch) and bottom-right (row7,col7 -> index 63) corners via controlled edits, not just one sample. What each numbered swatch actually LOOKS like (an RGB/palette value) is not resolved - only the grid-position formula is."
+      - id: opacity
+        type: u1
+        doc: "Byte 1 of color_word. CONFIRMED 2026-08-20 via a controlled edit, same pattern as scale: 0xff (default/untouched in every capture before this test) -> 0x00 after setting opacity to \"the other side of the slider\" (human-confirmed, i.e. the transparent/invisible extreme) -> back to 0xff after resetting to \"visible\". 0xff = fully visible, 0x00 = invisible; exact intermediate scale not pinned, only the two endpoints and direction."
+      - id: color_word_unknown_bytes
+        type: u2
+        doc: "Bytes 2-3 of color_word. Untouched across every controlled edit performed so far; meaning unknown."
   loadout_mode:
     doc: "One custom loadout mode = 14 u32 item/skill slots (kLoadoutSize). 0 = default."
     seq:
