@@ -134,13 +134,21 @@ the RoomCreate reply now sends:
 
 `reseed_departed_party` (section 5) also sends 0 now.
 
-Two sites are knowingly left inverted and commented in place:
+One site is knowingly left as-is:
 
-* the `0x130` join reply already sends 0, which is the value the guard wants;
-* the **Promote** path (`0x13c`) hands the new leader `0x19f4 = 1`, so a
-  promoted party leader should re-acquire this bug. Not changed here because
-  the Promote round trip is live-verified and the reported repro contains no
-  promote - fix it in the same live run that confirms this one.
+* the `0x130` join reply already sends 0, which is the value the guard wants.
+
+**UPDATE: the Promote path is now fixed too.** The `0x13c` handler used to hand
+the new leader `joined_flag=1` (mirroring the pre-fix RoomCreate bug for
+whoever gets promoted); it now sends `joined_flag=0` to every recipient when
+the room is a party (checked via `is_party_ptr(room_entry["room_ptr"])`),
+leaving game-room Promote (if that path is ever reachable - Promote is a
+party-leadership opcode, so it isn't expected to fire on a game room) at its
+prior 1-for-new-owner/0-for-others behavior. Party leadership itself is
+`room_obj+0x19f0`, already set correctly by `OwnerMember` (`0x13d`) in the same
+handler; `0x19f4` was never the right signal for "who leads this party" to
+begin with, only for "should this room be hidden from Join Party" - see
+section 3. Not yet live-tested.
 
 ## 5. The falsified hypothesis (do not re-try as-is)
 
@@ -206,3 +214,145 @@ just looking at the menu:
 Server-side, the log line to look for on a party create is the RoomCreate reply
 emit; the reseed prints `[reseed] ... left a party` and its absence during a
 leave would mean `is_party_ptr` never matched.
+
+---
+
+# Follow-up: the transient dead click after a departure (2026-08-20)
+
+Sections 1-7 above are confirmed fixed live (party host flag = 0, commit
+4ae95d3). A narrower symptom remained: for a few seconds after a member leaves
+a party, the party host clicking "Join Party" on that departed player gets
+nothing at all - no error, no "Joining Party...", no visible retry-then-abort.
+Waiting briefly makes it work.
+
+That is a different code path from sections 1-7, and it is now fully traced.
+**It is not the retry-then-abort state machine at `0x00354ee0`** (that is the
+invite path). The dead click is one specific silent `return` in the click
+handler.
+
+## 8. The click handler and its silent return
+
+The menu entry written at `0x0034be5c` is the pair
+`{label 0xb1600ce3, action 0x0ace8463}`. The action id is bound to a callback
+at `0x0034a7cc` (inside fn `0x0034a560`, whose anchor is
+`r30 = *(r2-31188) = 0x0126fe20`): it calls the registrar `0x0032c2a0` with
+`r4 = 0x0ace8463` and `r5 = *(0x0126803c)` = OPD `0x012bac10` ->
+**`0x00348e6c`**, a thunk whose whole body is `bl 0x0035ca28`. The sibling
+slots register "Invite To Party" (`0x45a9c65b` -> `0x00349f48`) the same way,
+which is what confirms the block is the friends-list action table.
+
+`0x0035ca28` is the real handler. Anchor for this CU: `r30 = *(r2-31180) =
+0x01270650`; every global below was resolved through it rather than assumed:
+
+| slot | value | what |
+|---|---|---|
+| `-32536` | `0x0137d258` | NetFriends manager |
+| `-32448` | `0x013799a4` | the selected friend's NpId |
+| `-32724` | `0x01387f58` | **the clicking player's own PARTY object** |
+| `-32752` | `0x013749e0` | UI/message-box object |
+
+```
+35ca50  bl 0x003985dc        ; NetFriends::FindByNpId -> r29
+35ca64  beq -> 35cb70        ; friend not found: silent return
+35ca68  bl 0x00396b90        ; is the friend already in MY party?
+35ca94  beq -> 35cab8        ;   no -> continue
+35ca98  r4 = 0x855058d8      ;   yes -> "Player is already in your party."
+35caac  bl 0x00338678        ;         message box, then return
+35cab8  ...
+35cabc  bl 0xe5770c          ; sceNpBasicGetFriendPresenceByNpId(friend, buf, 0)
+35cad4  bne -> 35cb0c        ;   call failed -> send anyway
+35cad8  bl 0xe3e064          ; memcpy(r1+128, r1+480, 96)   ; buf+256 = .data
+35cae0  ld  r9,168(r1)       ; blob[0x28] = the friend's advertised room id
+35cae8  beq -> 35cb0c        ;   zero -> send anyway
+35caf0  r11 = *(r30-32724)   ; 0x01387f58, MY party object
+35caf4  lbz r0,184(r11)      ; *(party+0xb8)
+35cafc  beq -> 35cb0c        ;   my party invalid -> send anyway
+35cb00  ld  r0,16(r11)       ; *(party+0x10), MY party room id
+35cb04  cmpd cr7,r0,r9
+35cb08  beq -> 35cb70        ; *** EQUAL -> RETURN. No NP message, no dialog,
+                             ;     no "Joining Party...". The click is inert. ***
+35cb0c  r3 = friend npid; r4 = 267; r5 = r1+112 (payload); r6 = 16
+35cb20  bl 0x003c908c        ; send the NP message, tag 267
+35cb54  r4 = 0xe4e03363      ; "Joining Party..." UI transition
+```
+
+So the handler refuses, silently and with no user feedback, when **the room id
+the friend is currently advertising in presence equals the clicker's own party
+room id** - the client's "you are already in that party, nothing to do" guard.
+Every other failure in this function either shows a dialog or sends anyway;
+this is the only path that just returns.
+
+## 9. Why it fires transiently, and why it self-heals
+
+While the departed player was in the party, this server put the HOST's party
+room id into the joiner's own party object: the `0x130` reply's Member carries
+`room_ptr = join_room_ptr` (the joiner's own `0x01387f58`) and
+`wire[16:24] = host room id`, and the `0x131` arm stores it at
+`room_obj+0x10`. That is correct - both members of one party advertise that
+party's id, which is what lets a third friend join through either of them.
+
+The consequence is that immediately after the leave, the host's client still
+reads, from NP, a presence blob for the departed player whose `blob[0x28]` is
+the host's OWN party id. `cmpd` at `0x0035cb04` matches, and the click dies at
+`0x0035cb08`.
+
+The window closes when the departed player's new presence reaches NP:
+
+* the publisher (`0x00397d74`) only republishes when the 96-byte blob actually
+  changes (`memcmp` @`0x00398074`) and no more often than every 3000 ms
+  (`*(this+0xb0)`, +9000 ms after a failed publish);
+* then PSN/RPCN has to propagate it. `0x0035cabc` calls
+  `sceNpBasicGetFriendPresenceByNpId` fresh on every click, so this is NP's
+  copy, not a stale local `NetFriend` cache - re-opening the menu cannot
+  shortcut it.
+
+`reseed_departed_party` already flips the underlying value at the earliest
+moment the server can: it mints a new party room id and pushes Member within
+the same `0x133` handler, microseconds after the leave. And because
+`synth_party_room_id` draws from a global monotonic sequence, the reseeded id
+can never collide with the host's (live smoke test: host
+`6000000101387f58`, leaver `6000000201387f58`), so once presence propagates the
+guard cannot match again. **That is precisely why the symptom self-heals rather
+than sticking.**
+
+Worth recording explicitly: publishing the transient `room_id = 0` that the
+`0x133` sender leaves behind would NOT cause this symptom - `0x0035cae8`
+branches to the send path when the friend advertises zero. Only the stale
+host-id value triggers it.
+
+## 10. Conclusion: no server-side fix available
+
+The click path never touches this server. It reads NP presence, compares it
+against a local object, and either sends an NP message (tag 267) directly to
+the friend or returns. The server's only lever on any value in that comparison
+is `party_obj+0x10` via `0x131`, and the reseed already sets it to a correct,
+non-colliding value at the first instant the server learns of the departure.
+
+So the residual window is NP presence propagation plus the client's own 3000 ms
+publish throttle. Nothing in `server/session_manager.py` can shorten it, and no
+sequencing change was made: the `0x134` fan-out and the reseed go out
+microseconds apart in the same handler, three orders of magnitude below the
+throttle, so reordering them would be noise, not a fix.
+
+Two things were checked and found NOT to be contributors:
+
+* No sleep or timer sits on the departure path. `time.sleep(0.25)` exists only
+  in the RoomCreate reply, which the leave path does not use.
+* The remaining members' roster update is immediate: the `0x134` arm
+  (`0x00ad7c80`) resolves the member and calls `0x00ad3190`, which clears the
+  slot (`stb 0,224(slot)`, `stw -1,240(slot)`) and fires the room's removal
+  notification callback in the same call. Nothing server-side holds a departed
+  member in a half-removed state.
+
+The "LEAVING" roster status observed during the window could not be traced: no
+standalone `LEAVING`/`Leaving` label exists in `text1.psarc` `2.common`,
+`2.networking` or `2.subtitles`, nor as a C string in the EBOOT, so it is
+rendered from something not yet identified. It is a display of the same
+transition, not a separate server state.
+
+## 11. If it needs to be confirmed live
+
+On the HOST console during the dead window, read
+`*(0x01387f58 + 0x10)` (its own party id) and compare it with the room id the
+departed player is advertising. The prediction is that they are equal for the
+duration of the dead clicks and differ the moment clicking starts working.

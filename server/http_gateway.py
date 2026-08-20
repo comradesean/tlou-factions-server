@@ -46,6 +46,29 @@ SERVED_DIR = sys.argv[4] if len(sys.argv) > 4 else os.path.join(_DATA, "served_c
 UPSTREAM_PROXY_ENABLED = os.environ.get("TLOU_HTTP_PROXY_UPSTREAM", "1") != "0"
 UPSTREAM_TIMEOUT = 20
 
+# Cap on concurrent request-handler threads. Each thread holds its socket's
+# file descriptor open for its whole lifetime, and a cache-miss request can
+# block for up to UPSTREAM_TIMEOUT doing a live upstream fetch (see
+# try_upstream_fetch / _UPSTREAM_FAIL_CACHE below) - without a cap, enough
+# concurrent slow requests exhausts the process's fd limit and accept() dies
+# with "Too many open files" (observed in production 2026-08-20, took the
+# whole backend down via run_all's die-together supervision). Excess
+# connections simply queue in the kernel's listen backlog instead of each
+# grabbing an fd immediately.
+MAX_CONCURRENT_HANDLERS = int(os.environ.get("TLOU_HTTP_MAX_HANDLERS", "64"))
+_handler_slots = threading.Semaphore(MAX_CONCURRENT_HANDLERS)
+
+# Negative cache for upstream fetch failures: (host, raw_path) -> fail time.
+# A dead/unreachable upstream (e.g. a permanently-gone S3 bucket) previously
+# got re-attempted, and re-blocked for the full UPSTREAM_TIMEOUT, on EVERY
+# single request for that path - only a SUCCESSFUL fetch was ever cached to
+# SERVED_DIR. That repeated-slow-block pattern is what starves
+# MAX_CONCURRENT_HANDLERS/exhausts fds under real traffic. Remember failures
+# for a TTL and skip straight to the fast FALLBACK_STATUS path instead.
+UPSTREAM_FAIL_CACHE_TTL = int(os.environ.get("TLOU_HTTP_FAIL_CACHE_TTL", "300"))
+_upstream_fail_cache = {}
+_upstream_fail_cache_lock = threading.Lock()
+
 
 def get_header(text, name):
     prefix = name.lower() + ":"
@@ -56,13 +79,30 @@ def get_header(text, name):
 
 
 def try_upstream_fetch(host, raw_path):
-    """Best-effort live fetch of the real original file. Returns bytes or None."""
+    """Best-effort live fetch of the real original file. Returns bytes or None.
+
+    Recently-failed (host, raw_path) pairs are skipped for
+    UPSTREAM_FAIL_CACHE_TTL seconds rather than re-attempted - see the
+    _upstream_fail_cache comment above."""
+    import time
+    key = (host, raw_path)
+    now = time.monotonic()
+    with _upstream_fail_cache_lock:
+        failed_at = _upstream_fail_cache.get(key)
+    if failed_at is not None and now - failed_at < UPSTREAM_FAIL_CACHE_TTL:
+        return None
+
     url = f"http://{host}/{raw_path}"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "DNTG-HTTPC/1.1"})
         with urllib.request.urlopen(req, timeout=UPSTREAM_TIMEOUT) as resp:
-            return resp.read()
+            data = resp.read()
+        with _upstream_fail_cache_lock:
+            _upstream_fail_cache.pop(key, None)
+        return data
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError):
+        with _upstream_fail_cache_lock:
+            _upstream_fail_cache[key] = now
         return None
 
 
@@ -335,6 +375,7 @@ def handle(conn, addr, log, log_lock):
             pass
     finally:
         conn.close()
+        _handler_slots.release()
 
 
 def main():
@@ -342,11 +383,18 @@ def main():
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("0.0.0.0", PORT))
     srv.listen(5)
-    print(f"Listening on 0.0.0.0:{PORT}, logging to {LOG_PATH}, serving from {SERVED_DIR}", flush=True)
+    print(f"Listening on 0.0.0.0:{PORT}, logging to {LOG_PATH}, serving from {SERVED_DIR}, "
+          f"max {MAX_CONCURRENT_HANDLERS} concurrent handlers", flush=True)
 
     log_lock = threading.Lock()
     with open(LOG_PATH, "a", buffering=1) as log:
         while True:
+            # Gate ACCEPT on the semaphore, not just the handler thread: a
+            # connection we haven't accepted() yet holds no fd of ours and
+            # simply waits in the kernel's listen backlog, so a burst of
+            # slow (upstream-fetch-bound) requests queues there instead of
+            # each grabbing an fd immediately - see MAX_CONCURRENT_HANDLERS.
+            _handler_slots.acquire()
             conn, addr = srv.accept()
             threading.Thread(target=handle, args=(conn, addr, log, log_lock), daemon=True).start()
 

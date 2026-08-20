@@ -2537,22 +2537,25 @@ def handle(conn, addr, log_lock, log):
                          f"sender not in a matching room, no action")
                 else:
                     owner_msg = build_owner_member(room_entry["room_id"], new_owner_id)
+                    # room_obj+0x19f4 ("host flag") is separate from the
+                    # +0x19f0 owner id OwnerMember just set. On a PARTY room
+                    # it is published verbatim into presence (blob offset 7)
+                    # and hides "Join Party" on that host's friends-list row
+                    # whenever it is nonzero - see build_owner_changed and
+                    # research/notes/2026-08-20-rejoin-party-bug.md section 4.
+                    # Promote only ever targets party rooms (it elects a new
+                    # PARTY leader; leadership itself is +0x19f0, already
+                    # handled by OwnerMember above), so every recipient keeps
+                    # flag=0 there, new leader included - mirroring RoomCreate
+                    # rather than reproducing the fixed bug for a fresh victim.
+                    is_party = is_party_ptr(room_entry.get("room_ptr", 0))
                     sent = 0
                     for mid, c, em in conns:
                         try:
                             c.sendall(owner_msg)
-                            # FOLLOW-UP (2026-08-20, deliberately NOT changed
-                            # here): on a PARTY room this hands the new leader
-                            # room_obj+0x19f4 = 1, which is exactly the value
-                            # that hides "Join Party" on its friends-list row
-                            # (see build_owner_changed). So a promoted party
-                            # leader should re-acquire the rejoin-party bug.
-                            # Left alone because the Promote round trip is
-                            # live-verified and the reported repro does not
-                            # involve a promote - fix it in the same live run
-                            # that confirms the create-path fix, not before.
+                            flag = 0 if is_party else (1 if mid == new_owner_id else 0)
                             c.sendall(build_owner_changed(
-                                room_entry["room_id"], 1 if mid == new_owner_id else 0))
+                                room_entry["room_id"], joined_flag=flag))
                             sent += 1
                         except OSError:
                             pass
