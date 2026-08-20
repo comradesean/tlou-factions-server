@@ -975,7 +975,7 @@ def build_room_closed(room_id):
     return bytes(body)
 
 
-def close_room_and_notify(entry, reason, exclude_key=None):
+def close_room_and_notify(entry, reason, exclude_key=None, notify_timeout=None):
     """Retire a room and TELL ITS SURVIVING MEMBERS, instead of silently
     dropping it. Caller must NOT hold rooms_lock.
 
@@ -983,6 +983,17 @@ def close_room_and_notify(entry, reason, exclude_key=None):
       0x134 RoomLeave(owner_member_id)  - the owner is gone from the roster
       0x139 RoomClosed(room_id)         - and the room itself is finished
     then stops the refresher and purges the room's cached member blobs.
+
+    notify_timeout: override each recipient socket's send timeout for just
+    this notification (seconds). Left None for the live disconnect/Kickout
+    paths, which keep the connection's normal 600s operational timeout - a
+    live peer that's merely slow to ACK shouldn't have its notification cut
+    short. Set to a small number by drain_rooms_for_shutdown: that path runs
+    synchronously inside the SIGTERM/SIGINT handler on the main thread, and a
+    stale/dead connection (this project has no client reconnect - see
+    project_no_client_reconnect memory) would otherwise block sendall() for
+    the full 600s PER dead connection, making the process visibly "refuse to
+    die" until kill -9 (observed in production 2026-08-20).
     """
     room_id = entry["room_id"]
     leave = build_room_leave(room_id, MEMBER_ID)
@@ -1002,6 +1013,8 @@ def close_room_and_notify(entry, reason, exclude_key=None):
         # and the owner IS one of the recipients.
         msg = closed if mid == MEMBER_ID else leave + closed
         try:
+            if notify_timeout is not None:
+                mconn.settimeout(notify_timeout)
             mconn.sendall(msg)
             memit(f"   [close] room {room_id.hex()} closed ({reason}) - sent "
                   + ("RoomClosed(0x139)" if mid == MEMBER_ID
@@ -2649,7 +2662,11 @@ def drain_rooms_for_shutdown(reason="server shutting down"):
           flush=True)
     for info in entries:
         try:
-            close_room_and_notify(info, reason)
+            # 2s, not the connection's normal 600s operational timeout - see
+            # close_room_and_notify's notify_timeout doc. Bounds the whole
+            # drain to a couple seconds per stale connection instead of
+            # minutes, so the process actually exits on SIGTERM/SIGINT.
+            close_room_and_notify(info, reason, notify_timeout=2.0)
         except Exception as e:      # never let shutdown die on a dead socket
             print(f"{_ts()}   drain of room "
                   f"{info.get('room_id', b'').hex()} failed: {e}", flush=True)
