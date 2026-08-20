@@ -134,7 +134,22 @@ seq:
       for a client served net10.bin.
   - id: pad_1a
     size: 2
-    doc: "Offset 26:28. Uninitialised padding. DEFINITION: an unwritten 2-byte gap after burst_marker, before the search-window pair. REASON: FUN_00ad6c70's store enumeration (base r1+144) has no store to 170(r1) = wire 26; it captures as 0. Send 0. (This offset plus search_window_lo/hi below were once a single field wrongly named `pad_1a`.)"
+    doc: |
+      Offset 26:28. BUILD-DEPENDENT - genuinely padding on 01.00, a real
+      field on 01.11 (CLARIFIED 2026-08-20; an earlier version of this doc
+      described only the 01.00 case, which a same-day audit flagged as
+      contradicting the 01.11 finding in `search_window_lo`'s own doc).
+
+      On 01.00: uninitialised padding. `FUN_00ad6c70`'s store enumeration
+      (base r1+144) has no store to 170(r1) = wire 26; it captures as 0.
+      Send 0 to a 01.00-built client.
+
+      On 01.11: the search-attempt counter, written by the DIFFERENT 01.11
+      sender `FUN_003cfd90` and counting `0,1,2,3,4,5` across one burst -
+      see `search_window_lo`'s doc for the full derivation and the
+      01.00-era-vs-01.11-era wire census that uses this exact byte as the
+      build discriminator. (This offset plus search_window_lo/hi below were
+      once a single field wrongly named `pad_1a`.)
   - id: search_window_lo
     type: u2
     doc: |

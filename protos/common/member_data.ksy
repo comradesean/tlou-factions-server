@@ -505,29 +505,45 @@ seq:
       description, not a structural claim - fixed here for precision). The
       UI reads this as card cell index 2 (`blob+0xE+idx*2`).
 
-      EXHAUSTIVELY RE-CHECKED 2026-08-19 against live traffic, not just the
+      TYPE CORRECTED 2026-08-20: `card_stat_2`/`card_stat_3` (this field plus
+      the next) are NOT independent numeric stat cells - `P+0x654..0x65B` as
+      a whole is a single 8-byte, NUL-terminated ASCII STRING, and this `u2`
+      is simply its first two bytes. Established by tracing `FUN_0034d378`,
+      the function that syncs this buffer with a profile-side dirty flag: its
+      LOAD path calls `0xe459bc`/`0xe45b10`, the classic word-at-a-time
+      `strcmp`/`strcpy` idiom (`0x7f7f7f7f` zero-byte trick), on this exact
+      buffer - settling the type question regardless of what the string ever
+      contains. The buffer is reachable from exactly TWO functions in the
+      whole binary, and the only value either can ever WRITE into it (besides
+      reading back whatever the profile already has) is the literal string
+      `"*"` (`li r0,42` / `stb r0,0(r29)` / `stb r0,1(r29)`), gated on a byte
+      (`*(u8*)(0x013839d0+0x40)`, a net-event-recorder object's field) that no
+      store anywhere in the binary ever touches. So on 01.00 the value space
+      is closed to exactly `""` or `"*"` - consistent with every observed
+      frame being zero, without needing "no live data ever populated it" as
+      an unproven excuse. See `research/notes/2026-08-20-tier2-followup.md`
+      §2 for the full trace, including the object identification and the
+      scan that ruled out a writer for the gating byte.
+
+      EXHAUSTIVELY RE-CHECKED 2026-08-19 (before the type correction, still
+      valid as a byte-level census) against live traffic, not just the
       original 2 samples: every `0x13a` frame in `server/logs/wire.jsonl`
-      (842 total) has this field at exactly zero - including AFTER the
-      profile S3 PUT/GET round-trip was implemented and confirmed working
+      (855 as of 2026-08-20) has this field at exactly zero - including AFTER
+      the profile S3 PUT/GET round-trip was implemented and confirmed working
       (`server/http_gateway.py`'s `build_put_response`; real, non-empty
       `profile.21` files exist for multiple accounts with genuine non-zero
       DATA ELSEWHERE in the same file, e.g. `custom_appearance`'s
-      `equipped_item_ids`). This rules out "the round-trip just needs
-      fixing" as the blocker - the round-trip works, and this specific word
-      is still always zero for every account observed. The real blocker is
-      unidentified: either this word requires some specific client action
-      never yet triggered by these accounts (distinct from whatever writes
-      `custom_appearance`'s other fields, which DO show real values), or it
-      is DC-asset-dependent and would need non-zero live data plus a DC
-      table to interpret even if triggered. High confidence on bytes/source;
-      display meaning remains unresolved, now on a much larger evidence base.
+      `equipped_item_ids`) - ruling out "the round-trip just needs fixing" as
+      the blocker. High confidence on bytes/source/type; the STRING'S MEANING
+      (if it's ever anything but `""`) remains unresolved.
   - id: card_stat_3
     type: u2
     doc: |
-      Offset 20:22. Second half of the same BE u32 `P+0x654` (byte stores to
-      r1+0x8c/0x8d @ 0x003b1730+). UI card cell index 3. Same provenance,
-      the same 842-frame exhaustive re-check, and the same still-zero result
-      as `card_stat_2` - see that field's doc.
+      Offset 20:22. Second half of the same 8-byte ASCII string at `P+0x654`
+      (byte stores to r1+0x8c/0x8d @ 0x003b1730+) - see `card_stat_2`'s doc
+      for the full type correction (2026-08-20: this is string bytes 2-3, not
+      an independent numeric stat cell) and provenance. Same 855-frame
+      exhaustive re-check, same still-zero result.
   - id: pad_16
     size: 10
     doc: |
