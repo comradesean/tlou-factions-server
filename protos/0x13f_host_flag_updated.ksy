@@ -54,6 +54,35 @@ doc: |
     large block behind `if (room_obj+0x19f4 == 0) skip`), and 0x003cb3d0
     (`FUN_003cb204`, skipping its `_opd_FUN_00ad124c` owner bookkeeping).
 
+  *** THE FLAG LEAVES THE CONSOLE - ADDED 2026-08-20 ***
+
+  `room_obj+0x19f4` is not console-local state. When the room in question is
+  the PARTY object (0x01387f58), the presence publisher copies the byte
+  verbatim into the outgoing presence blob:
+
+      00397dfc  lwz r9,-32756(r30)   ; r9 = 0x01387f58, resolved through the
+                                     ; net-friends anchor 0x012714e8 -> slot
+                                     ; 0x012694f4
+      00397e08  lbz r0,6644(r9)      ; *(party_obj+0x19f4)
+      00397e10  stb r0,127(r1)       ; presence blob offset 7
+
+  and a REMOTE player's client reads that byte to decide whether to draw the
+  "Join Party" row for this player in its friends list:
+
+      00348e14  -> 1 when the friend has no usable presence data, else
+                   `blob[7] != 0`
+      0034be00  bl 0x00348e14
+      0034be10  bne -> 0x0034be8c    ; nonzero: the "Join Party" item
+                                     ; (StringId 0xb1600ce3, text1.psarc
+                                     ; 2.common) is never written
+
+  So sending `flag = 1` for a PARTY room makes that party unjoinable from
+  every friend's list, silently and permanently. A party host is meant to sit
+  at the 0 its own RoomCreate sender wrote. `server/session_manager.py` now
+  sends 0 on the party-create path and keeps 1 only for game rooms, whose copy
+  of the byte never reaches presence. See
+  research/notes/2026-08-20-rejoin-party-bug.md.
+
   This is a DIFFERENT and complementary piece of ownership state from
   0x13d/OwnerChanged, which writes `room_obj+0x19f0` ("which member id is
   the owner"). Neither is currently sent by server/session_manager.py.
@@ -69,7 +98,7 @@ seq:
     doc: "Fixed 0x13f (319 decimal), passed through FUN_00a0e324 in place before dispatch - a confirmed no-op (research/notes/2026-08-15-byteswap-helper-is-a-noop.md), so this stays plain big-endian."
   - id: flag
     type: u1
-    doc: "Offset 4:5. Only the low bit is used (ANDed with 1) before being stored into the matched room's +0x19f4 'is host' flag byte."
+    doc: "Offset 4:5. Only the low bit is used (ANDed with 1) before being stored into the matched room's +0x19f4 'is host' flag byte. WHEN THE ROOM IS THE PARTY OBJECT THIS VALUE IS PUBLIC: the presence publisher exports it as presence blob offset 7 (0x00397e08/0x00397e10) and a remote client hides its \"Join Party\" menu row for any friend advertising a nonzero byte (0x00348e14, `bne` @0x0034be10). Send 0 for a party host; 1 is for a game room that genuinely needs the host flag set."
   - id: pad_5
     size: 3
     doc: "Offset 5:8. ALIGNMENT PADDING (proven 2026-08-18): the 0x13f receive arm (FUN_00ad825c, opcode 319) loads only wire+0 (opcode), wire+4 (`lbz r3,4(r29)` = host-flag byte, whose low bit -> room_obj+0x19F4) and wire+8 (room_id); wire+5..7 are never loaded. Definition: 3-byte gap aligning the 8-byte room_id after the single flag byte at +4. Not a field - send 0. (Was `unknown_3`.)"

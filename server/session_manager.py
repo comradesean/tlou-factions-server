@@ -1037,25 +1037,139 @@ def build_kickedout(room_id):
     return bytes(body)
 
 
-def broadcast_member_departure(departing_key, room_id=None):
+def reseed_departed_party(conn, emit, npid, room_ptr, max_players):
+    """Re-establish a solo PARTY room for a member that just left someone
+    else's party, so its party object gets a fresh nonzero room id.
+
+    ROOT CAUSE this addresses (rejoin-party bug, 2026-08-20). The client's
+    own LeaveRoom sender (_opd_FUN_00ad65e8, the 0x133 builder) ends with:
+
+        ad665c  ld   r9,16(r31)      ; room_id = *(room_obj+0x10)
+        ad6664  cmpdi r9,0           ; nothing to leave -> just flag it
+        ad667c  li   r0,1
+        ad6680  li   r3,307          ; 0x133
+        ad6684  stb  r0,184(r31)     ; *(room_obj+0xb8) = 1   (stays VALID)
+        ...     build+send the 16-byte 0x133
+        ad66e0  std  r0,16(r31)      ; *(room_obj+0x10) = 0   (id CLEARED)
+        ad66e4  bl   0xad32c4        ; wipe all 12 member slots
+
+    So a leaver is left holding a party object that still claims to be valid
+    (+0xb8 == 1) but whose room id is zero, and NOTHING on the client puts an
+    id back: `*(room_obj+0x10)` is written in exactly one place, the 0x131
+    Member receive arm (`ld r9,16(r28)` / `std r9,16(r29)` @0x00ad7804-
+    0x00ad780c), which takes its room object straight from the message's own
+    wire offset 8 and is not gated on +0xb8. Only the server can restore it.
+
+    Why that kills the next Join Party. The party-join/invite state machine
+    (0x00354ee0, state 6) reads the LOCAL party object 0x01387f58 - resolved
+    from this CU's anchor slot 0x01267eb4 - and refuses to proceed unless
+    both fields are good:
+
+        354f40  lwz  r9,-32620(r30)  ; r9 = 0x01387f58 (party room object)
+        354f44  lbz  r0,184(r9)      ; *(party+0xb8)
+        354f48  beq  -> 0x354f6c     ; invalid -> wait, then give up
+        354f50  ld   r0,16(r9)       ; *(party+0x10)
+        354f54  cmpdi r0,0
+        354f58  beq  -> 0x354f6c     ; ZERO -> wait, then give up
+        354f5c  bl   0x00354c2c      ; build the "Join" payload and send it
+
+    0x00354c2c is the payload builder: it resolves the target friend through
+    NetFriends::FindByNpId (0x003985dc) and packs `*(party+0x10)` at offset
+    0x10 of the message. The 0x354f6c arm just re-checks until 3000 ms have
+    passed and then aborts. The same field is what presence advertises -
+    the 96-byte presence blob built at 0x00397d74 stores
+    `*(0x01387f58+0x10)` at blob offset 0x28 (`ld r9,16(r9)` @0x00397e0c,
+    `std r9,160(r1)` @0x00397e14) - so a leaver publishes room id 0 too.
+
+    The fix is the same job start_member_refresher does for a solo GAME host
+    ("keep room_obj+0x10 nonzero"), applied ONCE to the party object at the
+    moment the client zeroes it. This is not a re-assertion into an
+    established room - the client has just torn this room down itself - so it
+    is not the 0x138/0x13d bug class; the bytes are identical in shape to the
+    live-proven RoomCreate reply (Member + 0x13f + 0x13d, solo roster).
+    """
+    room_id = synth_party_room_id(room_ptr)
+    member = build_member([(MEMBER_ID, npid)], room_id, max_players,
+                          owner_ref_id=MEMBER_ID, local_ref_id=MEMBER_ID,
+                          room_ptr=room_ptr, populate_self_npid=True)
+    # joined_flag=0: a party host must advertise room_obj+0x19f4 == 0 or no
+    # friend's client will draw "Join Party" on its row. See
+    # build_owner_changed.
+    msg = (member + build_owner_changed(room_id, joined_flag=0)
+           + build_owner_member(room_id, MEMBER_ID))
+    try:
+        conn.sendall(msg)
+    except OSError as e:
+        emit(f"   [reseed] party re-seed for {npid!r} failed ({e}) - the "
+             f"connection is gone, nothing to restore")
+        return
+    with rooms_lock:
+        # A connection can only ever be in ONE party, and it just left the
+        # previous one, so retire any other room it owns on the SAME party
+        # object. Rooms on its GAME object are untouched (a client in a party
+        # while hosting a game is normal - see active_rooms).
+        for k in room_keys_owned_by(id(conn)):
+            stale = active_rooms[k]
+            if stale["room_id"] != room_id and is_party_ptr(stale.get("room_ptr", 0)):
+                stale["stop_event"].set()
+                del active_rooms[k]
+                emit(f"   [reseed] retired this connection's previous party "
+                     f"entry {stale['room_id'].hex()}")
+        active_rooms[(id(conn), room_id)] = {
+            "npid": npid, "conn": conn, "emit": emit,
+            "room_id": room_id, "room_ptr": room_ptr,
+            "max_players": max_players,
+            "stop_event": threading.Event(),
+            "conns": {id(conn): (MEMBER_ID, conn, emit)},
+            "members": [(MEMBER_ID, npid)],
+            "last_join_ts": time.monotonic(),
+            "next_member_id": JOINER_MEMBER_ID,
+            "room_ptrs": {MEMBER_ID: room_ptr},
+            "public": False,
+            "mode": None,
+            "build": build_of(room_ptr),
+        }
+    emit(f"   [reseed] {npid!r} left a party - minted a fresh solo party "
+         f"room_id {room_id.hex()} and sent Member+OwnerChanged+OwnerMember "
+         f"({len(msg)} bytes, room_ptr={room_ptr:#010x}) so its party object "
+         f"stops holding the zero its own 0x133 sender wrote to +0x10")
+
+
+def broadcast_member_departure(departing_key, room_id=None, reseed_party=False):
     """A joined connection left (0x133 or socket close): remove it from any
     room it was a member of, tell the remaining members via 0x134, and
     restart the room owner's refresher with the shrunken roster so the
-    departed member stops being re-registered every interval."""
+    departed member stops being re-registered every interval.
+
+    reseed_party: the departure came from a LIVE connection's own 0x133 (not
+    a dead socket), so the leaver is still there to be talked to. When the
+    room it left was a party, give it a fresh solo party room id - see
+    reseed_departed_party for the full mechanism. Never set on the socket-
+    close path: that connection cannot receive anything."""
     affected = []
+    reseed = []
     with rooms_lock:
         for other in active_rooms.values():
             if departing_key in other.get("conns", {}) and (
                     room_id is None or other["room_id"] == room_id):
-                mid = other["conns"].pop(departing_key)[0]
+                mid, dep_conn, dep_emit = other["conns"].pop(departing_key)
                 if id(other["conn"]) == departing_key:
                     continue  # room owner leaving - entry teardown handles it
+                dep_npid = next((n for m, n in other.get("members", [])
+                                 if m == mid), b"")
                 other["members"] = [m for m in other.get("members", [])
                                     if m[0] != mid]
                 # Drop the departed member's cached blob so it is not replayed
                 # to a future joiner of this (shared-id) room.
                 member_blobs.pop((other["room_id"], mid), None)
                 affected.append((other, mid))
+                if reseed_party and is_party_ptr(other.get("room_ptr", 0)):
+                    # The leaver's OWN party-object address, recorded when it
+                    # joined (0x130 wire offset 8) - each client has its own.
+                    reseed.append((dep_conn, dep_emit, dep_npid,
+                                   other.get("room_ptrs", {}).get(
+                                       mid, other["room_ptr"]),
+                                   other["max_players"]))
     for other, mid in affected:
         leave = build_room_leave(other["room_id"], mid)
         for m2id, c2, em2 in list(other["conns"].values()):
@@ -1073,6 +1187,9 @@ def broadcast_member_departure(departing_key, room_id=None):
                                MEMBER_ID, MEMBER_ID, ev,
                                room_ptr=other["room_ptr"],
                                populate_self_npid=True)
+    for dep_conn, dep_emit, dep_npid, dep_room_ptr, dep_max in reseed:
+        reseed_departed_party(dep_conn, dep_emit, dep_npid, dep_room_ptr,
+                              dep_max)
 
 
 def evaluate_late_dead_peer_removal(sender_key, target_member_id, room_id_tail,
@@ -1182,25 +1299,46 @@ def build_member_blob(member_id, room_id, blob):
     return bytes(body)
 
 
-def build_owner_changed(room_id, is_owner=1):
+def build_owner_changed(room_id, joined_flag=1):
     """Build a NetMatchmakingOwnerChanged (opcode 0x13f), 16 bytes.
 
-    2026-08-16 dispatch audit finding #1 (see research/notes/2026-08-16-
-    sessmgr-dispatch-audit-and-unsent-opcodes.md 2): RoomCreate's own sender
-    unconditionally CLEARS the client's "I am the host" flag
-    (room_obj+0x19f4), and this message's handler (0xad8264-0xad82d0) is the
-    only inbound writer of that flag - so a solo host that never receives
-    this never becomes the host, and three game-layer readers (including the
-    9-state room state machine at _opd_FUN_003ca9d0) gate on it.
+    Layout: opcode(4) | joined_byte(1) | unused(3) | room_id(8).
+    The handler (0x00ad825c-0x00ad82d0) searches the 4 room slots for
+    room_obj+0x10 == wire[8:16] before writing `wire[4] & 1` into
+    room_obj+0x19f4 - room_obj+0x10 is only set by Member's handler, so this
+    MUST be sent after Member or it is silently swallowed.
 
-    Layout: opcode(4) | is_owner_byte(1) | unused(3) | room_id(8).
-    The handler searches the 4 room slots for room_obj+0x10 == wire[8:16]
-    before writing wire[4] & 1 - room_obj+0x10 is only set by Member's
-    handler, so this MUST be sent after Member or it is silently swallowed.
+    room_obj+0x19f4 is the host flag, as previously documented. What was NOT
+    known before 2026-08-20 is that it LEAVES THE CONSOLE: the presence
+    publisher copies the PARTY object's copy of it into the presence blob
+    (`lbz r0,6644(r9)` @0x00397e08 with r9 = 0x01387f58, `stb r0,127(r1)`
+    @0x00397e10 = blob offset 7), and a friend's client refuses to offer
+    "Join Party" when that byte is nonzero:
+
+      0x00348e14  returns 1 when the friend has no presence data, else
+                  `blob[7] != 0`
+      0x0034be10  `bne` on that result -> skips the "Join Party" menu item
+                  (StringId 0xb1600ce3, text1.psarc 2.common)
+
+    Writers of room_obj+0x19f4, full sweep for displacement 6644:
+      0x00ad1f58  room-object reset                      -> 0
+      0x00ad5c98  the 0x12f RoomCreate SENDER            -> 0
+                  (`li r27,0` @0x00ad5c6c - unconditional)
+      0x00ad6af0  SetHostFlag promote (fn 0x00ad6a34,    -> 1
+                  a vtable method at slot 0x012e9c80;
+                  it also emits the 0x13e request)
+      0x00ad6c04  SetHostFlag demote                     -> 0
+      0x00ad82cc  THIS message's handler                 -> wire[4] & 1
+
+    So on a real server a PARTY host sits at 0 unless something explicitly
+    promotes it, and 0 is what its friends need to see. Sending 1 on the
+    party-create path removes "Join Party" from that host's row in every
+    friend's list, permanently - the rejoin-party bug. See
+    research/notes/2026-08-20-rejoin-party-bug.md.
     """
     body = bytearray(16)
     struct.pack_into(">I", body, 0, OWNER_CHANGED_OPCODE)
-    body[4] = is_owner & 1
+    body[4] = joined_flag & 1
     body[8:16] = room_id
     return bytes(body)
 
@@ -1666,7 +1804,31 @@ def handle(conn, addr, log_lock, log):
                 # flag and only 0x13f can set it - without this a solo host
                 # never becomes the host (see build_owner_changed's
                 # docstring). Must come after Member in the write.
-                owner_changed = build_owner_changed(room_id, is_owner=1)
+                # 0x13f writes room_obj+0x19f4 (the host flag) and nothing
+                # else.
+                #
+                # PARTY ROOMS: send 0. ROOT CAUSE of the rejoin-party bug
+                # (2026-08-20). The PARTY object's copy of this byte is
+                # exported in presence (blob offset 7, `lbz r0,6644(r9)`
+                # @0x00397e08), and a friend's client skips the "Join Party"
+                # menu item entirely when the byte it sees is nonzero
+                # (0x00348e14 -> `bne` @0x0034be10). The client's own
+                # RoomCreate sender leaves it 0 (`li r27,0` @0x00ad5c6c,
+                # `stb` @0x00ad5c98) and only an explicit SetHostFlag promote
+                # (0x00ad6a34) ever sets it to 1, so 0 is what a party host is
+                # supposed to advertise. Sending 1 here made every party this
+                # server answered permanently unjoinable from the friends list,
+                # whether or not anyone had ever joined and left it.
+                #
+                # GAME ROOMS: still 1, UNCHANGED and deliberately so. The
+                # 2026-08-16 audit added it to make a solo host "become the
+                # host", the find-match path is live-working with it, and the
+                # GAME object's copy of the byte never reaches presence - the
+                # publisher reads the party object only. Whether the game room
+                # also wants 0 is a separate question needing its own live run.
+                party_create = is_party_ptr(room_ptr)
+                owner_changed = build_owner_changed(
+                    room_id, joined_flag=0 if party_create else 1)
                 # REVERTED to RoomJoined-first (2026-08-15): the Member-first
                 # order was introduced to fix a capacity trap in the
                 # find-match 2-real-player pairing path (see that branch's
@@ -1957,7 +2119,13 @@ def handle(conn, addr, log_lock, log):
                                                    local_ref_id=new_mid,
                                                    room_ptr=join_room_ptr,
                                                    populate_self_npid=True, blobs=blobs)
-                        conn.sendall(self_member + build_owner_changed(target_room_id, 0)
+                        # joined_flag=0 for the joiner is already the value the
+                        # friends-list "Join Party" guard wants to see
+                        # advertised (see build_owner_changed), so this path
+                        # needs no change for the rejoin-party bug.
+                        conn.sendall(self_member
+                                     + build_owner_changed(target_room_id,
+                                                           joined_flag=0)
                                      + build_owner_member(target_room_id, MEMBER_ID))
                         emit(f"   parsed opcode={opcode:#x} (RoomJoin) - JOINED "
                              f"{host['npid']!r}'s room {target_room_id.hex()} as "
@@ -2196,8 +2364,14 @@ def handle(conn, addr, log_lock, log):
                          f"be answered normally if it searches again)")
                 # If this connection had JOINED someone else's room with this
                 # id, notify the remaining members (0x134) and shrink their
-                # refresher roster.
-                broadcast_member_departure(id(conn), room_id=room_id_tail)
+                # refresher roster. reseed_party: this is a LIVE connection
+                # leaving under its own steam, and its 0x133 sender has just
+                # zeroed its party object's +0x10 (0x00ad66e0) while leaving
+                # +0xb8 set - hand it a fresh party room id so the next Join
+                # Party is not gated out at 0x00354f54. See
+                # reseed_departed_party.
+                broadcast_member_departure(id(conn), room_id=room_id_tail,
+                                           reseed_party=True)
             elif opcode == CREATE_PARTY_OPCODE and len(chunk) >= 16:
                 # RE-CORRECTED 2026-08-16: this is SetPartyData - the client
                 # pushing its own <=64-byte per-member data blob for a room
@@ -2367,6 +2541,16 @@ def handle(conn, addr, log_lock, log):
                     for mid, c, em in conns:
                         try:
                             c.sendall(owner_msg)
+                            # FOLLOW-UP (2026-08-20, deliberately NOT changed
+                            # here): on a PARTY room this hands the new leader
+                            # room_obj+0x19f4 = 1, which is exactly the value
+                            # that hides "Join Party" on its friends-list row
+                            # (see build_owner_changed). So a promoted party
+                            # leader should re-acquire the rejoin-party bug.
+                            # Left alone because the Promote round trip is
+                            # live-verified and the reported repro does not
+                            # involve a promote - fix it in the same live run
+                            # that confirms the create-path fix, not before.
                             c.sendall(build_owner_changed(
                                 room_entry["room_id"], 1 if mid == new_owner_id else 0))
                             sent += 1
