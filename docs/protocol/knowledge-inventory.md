@@ -487,12 +487,33 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     both a rating (normally set at profile load) and a location (meaningless
     before NetInit finishes connecting). CLOSING STATE: a `g_70` network-
     config default, hardcoded to `1000.0`, stamped into both halves once
-    during NetInit, never observed to change afterward. The exact
-    parameter it configures (timeout in ms vs. a threshold vs. something
-    else) was not recovered - no string or named cross-reference settled
-    it, and the containing function's own identity wasn't pinned down
-    (no prologue found scanning back several KB - likely a large
-    jump-table-driven init routine). See
+    during NetInit, never observed to change afterward.
+
+    CONTAINING FUNCTION FOUND, same night, follow-up pass: `0x003557a8`
+    - the same function this project already cites in
+    `research/notes/2026-08-20-followup-open-items.md` as constructing/
+    installing the ND Session Manager singleton (`0x00356284`'s
+    `bl 0xad84cc`/`stw r28,0(0x014DB270)`). So the `1000.0` default is
+    set inside core Session Manager bring-up, not generic boilerplate.
+    Its literal pool (`0x01268400`-`0x0126848c`+) is shared with
+    `FUN_00352de8` (the heartbeat/telemetry line builder that reads this
+    same value and touches `"GetLocation"`) - same compilation unit,
+    explaining that earlier proximity as two sibling functions rather
+    than coincidence. Two more untouched round-number float defaults
+    (`20.0`, `180.0`) sit in the same pool.
+
+    NET1.BIN CHECKED, NO CONFIRMED MATCH: searched all 392 `net.bin` DC
+    globals for an exact `1000` value (float and int). One hit,
+    `*net-max-world-players*` = `1000` - but as a different scalar TYPE
+    (integer, matching sibling globals like `*net-quit-penalty-time*`)
+    than our target's float bit pattern, and semantically unrelated (a
+    world/lobby player cap vs. a per-client NetInit config value). Not
+    claimed as a match - a shared round number is not evidence, same
+    discipline as this project's earlier retracted `net1.bin` lead for a
+    different field.
+
+    The exact parameter this configures (timeout in ms vs. a threshold
+    vs. something else) still was not recovered. See
     `protos/0x12f_room_create.ksy`'s `value_20` doc for the full trace,
     including the retracted SPU-DMA theory the initial negative result
     prompted (retracted the same night once the constructor's zero-write

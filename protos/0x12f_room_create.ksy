@@ -787,20 +787,70 @@ seq:
       parameter default being set during network bring-up is exactly
       where you would expect one.
 
+      CONTAINING FUNCTION FOUND 2026-08-21 (follow-up pass): `0x003557a8`
+      (`stdu r1,-1808(r1)`, an 1808-byte frame - the last real prologue
+      before the setter call site, no other prologue interrupts between
+      them). This function ALSO contains `0x00356284`
+      (`research/notes/2026-08-20-followup-open-items.md` already
+      documents this address: `bl 0xad84cc` @`0x3562ac` then
+      `stw r28,0(r9)` @`0x3562cc` with `r9 = 0x014DB270` - the constructor
+      call that installs the ND Session Manager singleton). So the
+      `1000.0` default is set inside the SAME function that constructs
+      the game's core Session Manager object - core session/matchmaking
+      subsystem bring-up, not generic unrelated NetInit boilerplate.
+      Consistent with, and now considerably strengthening, the NetInit-
+      thread network-config reading above.
+
+      LITERAL POOL CROSS-CHECKED 2026-08-21: the `1000.0` constant at
+      `0x0126843c` sits in the SAME anchor-relative slot table
+      (`0x01268400`-`0x0126848c`+) as several `0x00e7a0xx`-range string
+      pointers this project already resolved earlier the SAME night as
+      belonging to `FUN_00352de8` - the presence/telemetry line builder
+      whose format string is `'%s heartbeat %s headset %d party %d
+      match_mode %d gametype %d nat %d playlist %'` and which touches the
+      literal `"GetLocation"` (see the READER-side trace above). Same
+      anchor table implies the SAME compilation unit - the setter
+      (`0x3557a8`) and that reader are sibling code in one source file,
+      which is why the reader's `"GetLocation"`/telemetry proximity kept
+      showing up: not a coincidence, but two functions in one file that
+      both touch this config value for different reasons (one sets the
+      default, one later reads and gates on it). Two more untouched round-
+      number floats sit in the same pool - `20.0` (`0x1268400`) and `180.0`
+      (`0x1268434`) - consistent with a small cluster of config/timeout
+      defaults compiled together, not a single special-cased constant.
+
+      NET1.BIN CHECKED 2026-08-21, NO CONFIRMED MATCH. Searched all 392
+      `net.bin` DC globals for an exact `1000`/`1000.0` scalar (both float
+      and int bit patterns): exactly one hit, `*net-max-world-players*` =
+      `1000` - but as a plain INTEGER scalar (type `c7cb275c`, the same
+      type tag as `*net-quit-penalty-time-first*`=30 and
+      `*net-quit-penalty-time*`=90, i.e. counts/seconds, not floats),
+      distinct from our target's IEEE-754 FLOAT bit pattern
+      (`0x447a0000`) and semantically unrelated (a world/lobby player cap
+      has no obvious connection to a per-client NetInit config float).
+      Named matchmaking globals actually inspected -
+      `*net-min-time-wait-for-more-players*` (`8.0`, float type
+      `0f182ec3`), `*net-matchmaking-min-weight*` (`1`),
+      `*net-matchmaking-played-penalty*` (`1`),
+      `*net-quit-penalty-time*`/`*-time-first*`/`*-money*`/`*-game*` (`90`/
+      `30`/etc.) - none match `1000` in either value or type. Not claiming
+      a connection here, matching this project's standard after tonight's
+      earlier retracted `net1.bin` lead for a different field: a common
+      round number matching by coincidence is not evidence.
+
       CLOSING STATE: this field is a `g_70`/NetInfo network-config
       default, explicitly hardcoded to `1000.0` and stamped into BOTH
-      halves of the pair once during `NetInit`, then never observed to
-      change afterward (every capture all project long, across both
-      builds, reads `1000`/`1000`). What SPECIFIC parameter it configures
-      (a timeout in ms, a distance/range threshold, something else) is
-      NOT recovered - the containing function's own identity wasn't
-      pinned down (no prologue found scanning back several KB, consistent
-      with a large jump-table-driven init routine rather than a small
-      free-standing function) and no string or named cross-reference
-      settled it. Left unrenamed: the CATEGORY (network-init config
-      default) is now well-supported by three independent lines of
-      evidence (setter mechanism, literal-constant source, NetInit thread
-      context), but the EXACT semantic still isn't, and this project's
+      halves of the pair once - inside the SAME function that constructs
+      the Session Manager singleton - then never observed to change
+      afterward (every capture all project long, across both builds,
+      reads `1000`/`1000`). What SPECIFIC parameter it configures (a
+      timeout in ms, a distance/range threshold, something else) is NOT
+      recovered - no string, named DC cross-reference, or net1.bin value
+      match settled it. Left unrenamed: the CATEGORY (session/matchmaking
+      subsystem init-time config default) is now well-supported by FOUR
+      independent lines of evidence (setter mechanism, literal-constant
+      source, NetInit thread context, and now the containing function's
+      identity), but the EXACT semantic still isn't, and this project's
       standard is not to rename past what's actually settled.
   - id: value_22
     type: u2
