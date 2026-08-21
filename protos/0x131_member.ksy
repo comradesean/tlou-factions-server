@@ -118,9 +118,9 @@ seq:
   - id: room_id_overwrite
     size: 8
     doc: "Offset 16-23. Copied verbatim into the target room object's id field, room_obj+0x10 (`ld r9,16(r28)` / `std r9,16(r29)` @ 0x00ad7804-0x00ad780c). MUST BE NONZERO: the one-shot completion latch at 0x00ad79ec reads this field immediately afterwards and permanently latches the room into an error state (room_obj+0xb0 = -1) if it is zero. It is also the lookup key for every subsequent room-scoped message (0x134, 0x139, 0x13b, 0x13d, 0x13f, 0x141, 0x144) - all of them are silently dropped until this is set. The server chooses this value freely; RoomCreate does not supply one (its offset 4 is uninitialised stack, see protos/0x12f_room_create.ksy)."
-  - id: room_capacity_field
+  - id: max_players
     type: u2
-    doc: "Offset 24. Stored into room_obj+0x1f8 (`lhz r0,24(r28)` / `stw r0,504(r29)` @ 0x00ad7800-0x00ad7808) - the max-member count. `_opd_FUN_00ad33d8` has a compiled-in `if (room_obj+0x1f8 == 0) trap` assert (live-crash-confirmed) and compares the occupied-slot count against it at 0x00ad38c8 to decide whether to reject a new member. The authoritative source is RoomCreate's own wire offset 0x24 (NOT 0x1e - see protos/0x12f_room_create.ksy correction 3), live-constant 8; the client itself writes that same value into room_obj+0x1f8 at RoomCreate time."
+    doc: "Offset 24 (was `room_capacity_field` - renamed 2026-08-21 for consistency with 0x12f_room_create.ksy's own field of the same value/purpose). Stored into room_obj+0x1f8 (`lhz r0,24(r28)` / `stw r0,504(r29)` @ 0x00ad7800-0x00ad7808) - the max-member count. `_opd_FUN_00ad33d8` has a compiled-in `if (room_obj+0x1f8 == 0) trap` assert (live-crash-confirmed) and compares the occupied-slot count against it at 0x00ad38c8 to decide whether to reject a new member. The authoritative source is RoomCreate's own wire offset 0x24 (NOT 0x1e - see protos/0x12f_room_create.ksy correction 3), live-constant 8; the client itself writes that same value into room_obj+0x1f8 at RoomCreate time."
   - id: roster_count
     type: u2
     doc: "Offset 26. Number of member_entry records that follow the 160-byte header. Confirmed - directly used as the dispatch loop's own iteration bound and as the multiplier in the message's total-size check (`0x68 * roster_count + 0xa0`)."

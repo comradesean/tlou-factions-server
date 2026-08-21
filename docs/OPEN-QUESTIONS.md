@@ -487,7 +487,7 @@ the reason each item stalled.
 
 ### Structurally closed, unless new evidence contradicts it
 
-- **`member_data.card_stat_2`/`card_stat_3`'s string content.** Not blocked
+- **`member_data.card_string_0`/`card_string_1`'s string content.** Not blocked
   on a resource - CLOSED on 01.00: the only code path that could ever write a
   non-empty value into the 8-byte string is gated on a byte
   (`*(0x013839d0+0x40)`) that no store anywhere in the 01.00 binary touches

@@ -112,9 +112,9 @@ seq:
   - id: opcode
     type: u4
     doc: "Fixed 0x13f (319 decimal), passed through FUN_00a0e324 in place before dispatch - a confirmed no-op (research/notes/2026-08-15-byteswap-helper-is-a-noop.md), so this stays plain big-endian."
-  - id: flag
+  - id: host_flag
     type: u1
-    doc: "Offset 4:5. Only the low bit is used (ANDed with 1) before being stored into the matched room's +0x19f4 'is host' flag byte. WHEN THE ROOM IS THE PARTY OBJECT THIS VALUE IS PUBLIC: the presence publisher exports it as presence blob offset 7 (0x00397e08/0x00397e10) and a remote client hides its \"Join Party\" menu row for any friend advertising a nonzero byte (0x00348e14, `bne` @0x0034be10). Send 0 for a party host; 1 is for a game room that genuinely needs the host flag set."
+    doc: "Offset 4:5 (was `flag` - renamed 2026-08-21, single confirmed meaning). Only the low bit is used (ANDed with 1) before being stored into the matched room's +0x19f4 'is host' flag byte. WHEN THE ROOM IS THE PARTY OBJECT THIS VALUE IS PUBLIC: the presence publisher exports it as presence blob offset 7 (0x00397e08/0x00397e10) and a remote client hides its \"Join Party\" menu row for any friend advertising a nonzero byte (0x00348e14, `bne` @0x0034be10). Send 0 for a party host; 1 is for a game room that genuinely needs the host flag set."
   - id: pad_5
     size: 3
     doc: "Offset 5:8. ALIGNMENT PADDING (proven 2026-08-18): the 0x13f receive arm (FUN_00ad825c, opcode 319) loads only wire+0 (opcode), wire+4 (`lbz r3,4(r29)` = host-flag byte, whose low bit -> room_obj+0x19F4) and wire+8 (room_id); wire+5..7 are never loaded. Definition: 3-byte gap aligning the 8-byte room_id after the single flag byte at +4. Not a field - send 0. (Was `unknown_3`.)"

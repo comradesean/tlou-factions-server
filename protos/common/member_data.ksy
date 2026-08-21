@@ -590,10 +590,13 @@ seq:
       parser; it consumes the container's contents rather than parsing its
       bytes. `research/tools/dc_dir.py` walks the same directory statically
       and reproduces every offset quoted above.
-  - id: card_stat_2
+  - id: card_string_0
     type: u2
     doc: |
-      Offset 18:20. First half of BE u32 `P+0x654` copied verbatim
+      Offset 18:20 (was `card_stat_2` - renamed 2026-08-21: the type
+      correction below shows this was never a numeric stat cell, so the old
+      name was actively wrong, not just generic). First half of BE u32
+      `P+0x654` copied verbatim
       (`lbz 0x654..0x655` @ 0x003b1714+, byte stores to r1+0x8a/0x8b). `P+0x654`
       is a SEPARATE, PRECEDING field, not literally "word 0 of" the
       `custom_appearance` struct - `custom_appearance` itself begins 12 bytes
@@ -603,7 +606,7 @@ seq:
       description, not a structural claim - fixed here for precision). The
       UI reads this as card cell index 2 (`blob+0xE+idx*2`).
 
-      TYPE CORRECTED 2026-08-20: `card_stat_2`/`card_stat_3` (this field plus
+      TYPE CORRECTED 2026-08-20: `card_string_0`/`card_string_1` (this field plus
       the next) are NOT independent numeric stat cells - `P+0x654..0x65B` as
       a whole is a single 8-byte, NUL-terminated ASCII STRING, and this `u2`
       is simply its first two bytes. Established by tracing `FUN_0034d378`,
@@ -634,14 +637,15 @@ seq:
       `equipped_item_ids`) - ruling out "the round-trip just needs fixing" as
       the blocker. High confidence on bytes/source/type; the STRING'S MEANING
       (if it's ever anything but `""`) remains unresolved.
-  - id: card_stat_3
+  - id: card_string_1
     type: u2
     doc: |
-      Offset 20:22. Second half of the same 8-byte ASCII string at `P+0x654`
-      (byte stores to r1+0x8c/0x8d @ 0x003b1730+) - see `card_stat_2`'s doc
-      for the full type correction (2026-08-20: this is string bytes 2-3, not
-      an independent numeric stat cell) and provenance. Same 855-frame
-      exhaustive re-check, same still-zero result.
+      Offset 20:22 (was `card_stat_3` - renamed 2026-08-21, same reason as
+      `card_string_0`). Second half of the same 8-byte ASCII string at
+      `P+0x654` (byte stores to r1+0x8c/0x8d @ 0x003b1730+) - see
+      `card_string_0`'s doc for the full type correction (2026-08-20: this is
+      string bytes 2-3, not an independent numeric stat cell) and provenance.
+      Same 855-frame exhaustive re-check, same still-zero result.
   - id: pad_16
     size: 10
     doc: |

@@ -10,7 +10,7 @@ tables entirely).
 Current as of 2026-08-20. The 2026-08-19 pass covered `0x140`/`0x141`,
 `0x13e`/`0x13f`, `0x136 attr_tail`, `member_slot_ec`,
 `0x12f room_settings_tail`/`0x130 room_object_tail`, `room_flags_e8`,
-`member_data.card_stat_2`/`card_stat_3`, and `stat_line`'s `task-%x`. The
+`member_data.card_string_0`/`card_string_1`, and `stat_line`'s `task-%x`. The
 2026-08-20 pass opened the DC00 payload's directory - all 392 of `net.bin`'s
 globals are now named and their tables dumpable (`research/tools/dc_dir.py`,
 `research/notes/2026-08-20-dc-directory-and-catalogs.md`), which moved
@@ -21,7 +21,7 @@ fully solved `search_window_lo`/`_hi` (a career K/D ratio, not "0 in every
 capture"), `member_data.capability_flag` bit-by-bit, closed `rank_tier`'s
 last open question (no override writer exists anywhere in the binary),
 resolved `caller_arg_1c`/`value_20`/`value_22`'s producers, and reframed
-`card_stat_2`/`card_stat_3` as an ASCII string field rather than numeric.
+`card_string_0`/`card_string_1` as an ASCII string field rather than numeric.
 A THIRD 2026-08-20 pass (`research/notes/2026-08-20-rejoin-party-bug.md`)
 found that `0x13f HostFlagUpdated`'s flag byte is published into NP
 presence for party rooms and gates the friends-list "Join Party" row - a
@@ -140,7 +140,7 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
 9. **`0x131` Member** - the roster push, and the load-bearing message of the
    whole protocol. Solved: `room_ptr`, `owner_ref_id`, `local_ref_id`,
    `room_id_overwrite` (writes `room_obj+0x10`; must be nonzero or the
-   completion latch never arms), `room_capacity_field` (writes `room_obj+0x1f8`;
+   completion latch never arms), `max_players` (writes `room_obj+0x1f8`;
    zero trips a compiled-in assert - live-crash-confirmed), `roster_count`, and
    per-entry `attributes` (SceNpId), `member_id`, `member_data`.
 10. **`0x132` RoomJoined** - understood well enough to know it must NOT be sent:
@@ -394,10 +394,10 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     getter `FUN_00ad2650`, only the reduce reads offset 8. So nothing consumes
     bit 1 at all. See `research/notes/2026-08-20-tier2-followup.md` §1 and
     `research/notes/2026-08-20-followup-open-items.md` §4.
-40. **`member_data.card_stat_2` / `card_stat_3`** - TYPE CORRECTED 2026-08-20:
+40. **`member_data.card_string_0` / `card_string_1`** - TYPE CORRECTED 2026-08-20:
     `P+0x654..0x65B` is not a numeric stat pair, it is an 8-byte NUL-terminated
     ASCII string (`strcmp`/`strcpy` on the same buffer, `0xe459bc`/`0xe45b10`,
-    verified instruction by instruction), and `card_stat_2`/`card_stat_3` are
+    verified instruction by instruction), and `card_string_0`/`card_string_1` are
     its first four characters. The buffer is reachable from exactly two
     functions in the whole binary, and the only value either can write into
     it (besides reading it back from the profile) is the literal string `"*"`,

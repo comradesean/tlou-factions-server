@@ -57,7 +57,7 @@ round-tripped sample records**
 | 0x0004 | enc_len | `FUN_003cc938` writes 0x5018; both = 0x5018 | high |
 | 0x0008 | loadouts[4][14] u32 | `FUN_003ccb88`/`FUN_003cccd8`, asserts `<14`,`<4`; both all-zero (default) | high |
 | 0x0300 | title_badge | note §5/§6, `lbz r0,771` = blob[9] source | high (offset) |
-| 0x0654 | member_blob_word | note §6 (member card `card_stat_2/3` source) | high (offset) |
+| 0x0654 | member_blob_word | note §6 (member card `card_string_0/3` source) | high (offset) |
 | 0x0A1C | total_matches | note §2; **== matches_mode_a + matches_mode_b (11 / 7)** | high |
 | 0x0A20 | total_wins_result3 | note §2, `0x3f2750` result==3; 10 / 7 | high |
 | 0x0A38 | survivor_count | `FUN_00378a24` `stw…,2616`; 86 / 33 (now 164 / 55 live) | high |
