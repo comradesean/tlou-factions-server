@@ -75,7 +75,7 @@ be wrong:**
    field it writes (`room_obj+0x19f0`) is independently written by member
    registration from the roster entry carrying `is_owner`, and is read back by
    a dedicated "find the owner's member record" lookup (`_opd_FUN_00ad0d98`).
-5. **`0x13f`/OwnerChanged was the single highest-value message the stub had
+5. **`0x13f`/HostFlagUpdated was the single highest-value message the stub had
    never sent — it is now sent and live-verified** (corrected 2026-08-19).
    `RoomCreate`'s own sender clears `room_obj+0x19f4` ("I am the host")
    unconditionally, and `0x13f` is the only inbound message that can set it, so
@@ -127,7 +127,7 @@ supersedes several rows in the table below (noted inline); the headline changes:
 
 - **Solo-host works.** The fix stack: parse `room_ptr` from RoomCreate wire
   offset 8 (per-client, not a hardcode), read `max_players` from 0x24, send
-  `0x13f`/OwnerChanged after Member (the client never becomes host otherwise),
+  `0x13f`/HostFlagUpdated after Member (the client never becomes host otherwise),
   and — critically — **stop sending `RoomJoined` (0x132) on the solo-host
   path** and populate the local member's real NpId in Member. RoomJoined's
   `is_local=0` registration created a phantom second member AND (with the old
@@ -196,6 +196,17 @@ mislabeled. The correct wire→name mapping:
 The inline row NAMES below (and the `.ksy` filename suffixes, which are shifted by
 2) are being reconciled to this mapping; where a row's name disagrees with this
 table, this table is correct. The behaviors described are unaffected.
+
+The rightmost column above is a HISTORICAL snapshot of the stub's constant names
+as of 2026-08-17 and is kept for that reason - do not grep for those identifiers
+expecting to find them. They were renamed in `server/session_manager.py` on
+2026-08-20: `OWNER_CHANGED_OPCODE` -> `HOST_FLAG_UPDATED_OPCODE` (0x13f),
+`SET_ATTR_FLAGS_OPCODE` -> `SET_ROOM_FLAGS_OPCODE` (0x140),
+`UPDATED_ATTR_FLAGS_OPCODE` -> `UPDATED_ROOM_FLAGS_OPCODE` (0x141),
+`UPDATED_ROOM_FLAGS_OPCODE` -> `SET_ROOM_DATA_BLOCK_OPCODE` (0x143), and
+`HOST_RANK_OPCODE` -> `ROOM_DATA_BLOCK_UPDATED_OPCODE` (0x144). That last one
+mattered most: `HostRank` is 0x142, so the old constant name pointed at a
+genuinely different opcode.
 
 **Superseded 2026-08-17 for rows `0x13e`-`0x144` — see the "FINAL CORRECTION"
 banner directly below.** `SetAttrFlags`/`UpdatedAttrFlags` are renamed
@@ -456,8 +467,11 @@ ticket-server's own dead-IP era, see `research/notes/net1bin-server-list.md`.)
 >   confirmed, treat host-rank as retracted") is superseded: the collector
 >   `FUN_0039b720` builds the u16 list from the local player slots, the shifted
 >   declared-name table matches by exact size across 4 messages, and the opcode
->   was tested by hand. Only the exact numeric encoding of each per-player u16
->   remains to be pinned against a ranked-account capture.
+>   was tested by hand. (The "only the exact numeric encoding of each per-player
+>   u16 remains to be pinned against a ranked-account capture" caveat this
+>   banner originally carried is RETRACTED as of 2026-08-20: the encoding is
+>   fully resolved live, each entry is another room member's `member_id`, and a
+>   ranked account was never the blocker. See `protos/0x142_host_rank.ksy`.)
 > - **0x143 / 0x144** — the 128-byte block is a **NUL-terminated string, not an
 >   opaque block**. The `_opd_FUN_00e45b10` = strcpy reading (rows 22/23 marked
 >   "not reconfirmed / treat as open") was independently **re-verified** this

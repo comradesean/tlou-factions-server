@@ -48,10 +48,17 @@ doc: |
   - A full-binary objdump sweep for displacement 6644 finds exactly five
     writers (COUNT CORRECTED 2026-08-20 - was previously miscounted as
     "four" while still listing all five): 0x00ad1f58 (internal reset),
-    0x00ad5c98 (RoomCreate, sets 0), 0x00ad6af0 (0x13e/SetHostFlag builder
-    FUN_00ad6a34, promote path), 0x00ad6c04 (0x13e/SetHostFlag builder
-    FUN_00ad7024, demote path), and 0x00ad82cc - THIS HANDLER. No other
-    inbound message can set it.
+    0x00ad5c98 (RoomCreate, sets 0), 0x00ad6af0 and 0x00ad6c04 (the promote
+    and demote paths of 0x13e/SetHostFlag's kind=3 builder FUN_00ad6a34),
+    and 0x00ad82cc - THIS HANDLER. No other inbound message can set it.
+
+    ATTRIBUTION CORRECTED 2026-08-20: the demote store at 0x00ad6c04 was
+    previously credited to FUN_00ad7024 (0x13e's kind=4 builder). It is not
+    - FUN_00ad6a34 spans 0xad6a34-0xad6c6c, so BOTH 0xad6af0 (`stb r0` with
+    r0=1) and 0xad6c04 (`stb r11` with r11=0) fall inside it, on the two
+    arms of its own promote/demote branch. FUN_00ad7024 (0xad7024-0xad71c0)
+    contains no store to displacement 6644 at all, which is exactly what
+    protos/0x13e_set_host_flag.ksy's kind field doc states independently.
 
   - Readers in the game/lobby layer: 0x00397e08, 0x003cab10 (inside the
     9-state room state machine dispatched by `_opd_FUN_003ca9d0`, gating a

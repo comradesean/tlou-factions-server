@@ -338,12 +338,15 @@ The four tractable items from that pass were worked the same day; results in
 `research/notes/2026-08-20-followup-open-items.md`. Outcomes:
 
 - **`FUN_00ad5b78`'s caller - RESOLVED.** Two vtable-`+0x10` dispatch sites
-  found (`0x0035D440` in the `"Host"` state, `0x003B7FB0` in the `"GATHER"`
-  state), all seven arguments named, and `caller_arg_1c` / `max_players` /
-  `room_flags_e8`'s OR-gate resolved as a consequence. Residual gap below.
+  found statically (`0x0035D440` in the `"Host"` state, `0x003B7FB0` in the
+  `"GATHER"` state), all seven arguments named, and `caller_arg_1c` /
+  `max_players` / `room_flags_e8`'s OR-gate resolved as a consequence. A
+  THIRD site (the party path, `0x003CAC5C`) was then caught live - see the
+  residual-gaps entry below, which closes it.
 - **`0x13e` kind=3's vtable+0x18 selector - RESOLVED.** It is
   `*(u32*)(netsession + 0x358) == 2`, via `FUN_003abe4c` on vtable
-  `0x01224178`. The enum's value names are partial; details in
+  `0x01224178`. All three of the enum's values were live-confirmed later the
+  same day - see the dedicated entry under "Residual gaps" below; details in
   `protos/0x13e_set_host_flag.ksy`.
 - **`0x142`'s per-u16 encoding - FULLY RESOLVED (live).** The value is a
   packed bitfield mechanically, but reduces to a plain `member_id` in every
@@ -387,8 +390,11 @@ the reason each item stalled.
   unpinned - low-priority, the effect is proven three independent ways.
 - **Names for `netsession->field_0x358`'s three values** (the `0x13e` kind=3
   encoding selector) - FULLY RESOLVED 2026-08-20, all three live-confirmed.
-  `0` = idle/no active mode descriptor (breakpoint hit at "Leave Matchmaking"
-  -> Yes). `1` = actively resolving/committed to a mode descriptor - three
+  `0` = idle/no active mode descriptor - two breakpoint hits by two different
+  paths to the same transition ("Leave Matchmaking" -> Yes, and a "Searching
+  for players..." attempt timing out on its own with no explicit cancel), so
+  the reading is "whenever a matchmaking search stops", not "on cancel".
+  `1` = actively resolving/committed to a mode descriptor - three
   breakpoint hits across two distinct contexts (post-match survivor-count
   update, post-match mission selection, AND a fresh find-match entry from
   the main menu at the "Starting in 3...2...1" countdown) settled that this

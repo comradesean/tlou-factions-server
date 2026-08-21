@@ -210,9 +210,14 @@ def try_upstream_fetch(host, raw_path):
 # a profile save (`profiles/<npid>/profile.21`) and a match-session upload
 # (`games/<npid>.<unix-timestamp>`) - see put_key_from_path's doc and
 # server/data/served_content/{profiles,games}/ for the real shapes on disk.
-# Sony's online-ID rule (3-16 chars, letters/digits/hyphen/underscore) sets
-# the id pattern; `__selftest__` (this project's own smoke-test id) still
-# fits it.
+# Sony's online-ID rule (3-16 chars, letters/digits/hyphen/underscore)
+# informs the id pattern, but the pattern below deliberately allows 1-16
+# rather than enforcing the 3-char minimum: this is an allowlist whose job
+# is to bound WHERE a PUT can land, not to validate account names, and
+# being slightly more permissive than the real-world minimum keeps short
+# local test ids working (`__selftest__`, this project's own smoke-test id,
+# fits either way). The character class and the 16-char ceiling are what
+# actually matter - neither admits a path separator or a `..` segment.
 _NPID = r"[A-Za-z0-9_-]{1,16}"
 PUT_KEY_ALLOWLIST = (
     re.compile(rf"^profiles/{_NPID}/profile\.21$"),

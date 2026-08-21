@@ -15,14 +15,23 @@ doc: |
   discriminates the two sender paths (3 or 4), not a generic attribute-flags
   word.
 
-  STATUS: confirmed 16 bytes. Two distinct sender call sites build and send
-  this shape (builders at 0x00ad6b58 and 0x00ad7120), differing in how the
-  flag byte at offset 4 is derived from their respective boolean inputs -
-  one is gated on the room's own +0x19f4 "is host" flag (toggling it
-  locally either way), the other computes it via a small bitwise
-  negate-and-shift sequence. Both are plausible "request to become/cease
-  being room host" call sites; which UI/game-logic path triggers each was
-  not traced this pass.
+  STATUS: confirmed 16 bytes. Two distinct builders send this shape,
+  FUN_00ad6a34 (vtable+0x20, writes kind=3) and FUN_00ad7024 (vtable+0x34,
+  writes kind=4). They differ in what they touch, not just in the kind
+  byte: FUN_00ad6a34 reads and writes the room's own +0x19f4 "is host"
+  flag and is the genuine claim/release of host status, while FUN_00ad7024
+  never touches +0x19f4 at all and is a match-lifecycle notification. The
+  bitwise negate-and-shift sequence is NOT a second builder's alternative
+  derivation - it is one of two branches INSIDE FUN_00ad6a34, selected at
+  run time by netsession->field_0x358; see the flag field's doc below for
+  the selector and the kind field's doc for both builders' fully-traced
+  trigger conditions.
+
+  ADDRESSES CORRECTED 2026-08-20: this paragraph previously named the
+  builders as "0x00ad6b58 and 0x00ad7120". Both of those are `li r0,318`
+  opcode-literal loads inside the respective functions, not entry points -
+  the same mis-citation of 0xad6b58 that protos/0x13f_host_flag_updated.ksy
+  already corrects for the +0x19f4 read.
 doc-ref: ../docs/protocol/session_manager_and_matchmaking.md
 seq:
   - id: opcode
@@ -143,14 +152,20 @@ seq:
       (`0x0039F314`/`0x0039F398`'s "game-mode descriptor" branch) exactly.
 
       VALUE `0`, LIVE-CONFIRMED 2026-08-20 (breakpoint at the writer
-      `0x35ef90`). Hit at the moment of confirming "Leave Matchmaking".
-      Matches the inference exactly: **`field_0x358 == 0` is the idle/
-      no-active-mode-descriptor state**, entered on leaving/cancelling
-      matchmaking - the same value construction (`0x3ac368`) sets, now
-      confirmed as a real reset transition.
+      `0x35ef90`, two independent hits via two different paths to the same
+      outcome): first at the moment of confirming "Leave Matchmaking"
+      (clicked, then confirmed "Yes"); second when a "Searching for
+      players..." attempt ran out its duration and timed out on its own,
+      with no explicit cancel. Both land at the same transition. Matches
+      the inference exactly: **`field_0x358 == 0` is the idle/
+      no-active-mode-descriptor state**, entered whenever a matchmaking
+      search stops - by explicit cancel or by timing out - the same value
+      construction (`0x3ac368`) sets, now confirmed twice over as a real
+      reset transition and not just a static default.
 
       ALL THREE VALUES NOW HAVE A LIVE CORRELATION:
-      `0` idle/no mode descriptor (Leave Matchmaking); `1` actively
+      `0` idle/no mode descriptor (a search stopping, by explicit "Leave
+      Matchmaking" or by timing out on its own); `1` actively
       resolving/committed to a mode descriptor (entering find-match,
       post-match mission resolution); `2` "Host" (party-creation state).
       Reading kind=3's RAW-vs-ENCODED selector in this light: RAW (plain 0/1)

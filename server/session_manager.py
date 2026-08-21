@@ -117,7 +117,7 @@ SERVER_HELLO_OPCODE = 0x12e
 ROOM_CREATE_OPCODE = 0x12f
 MEMBER_OPCODE = 0x131
 ROOM_JOINED_OPCODE = 0x132
-OWNER_CHANGED_OPCODE = 0x13f
+HOST_FLAG_UPDATED_OPCODE = 0x13f
 # The opcode/size table (docs/protocol/session_manager_and_matchmaking.md)
 # labels 0x135 "NetMatchmakingRoomLeft", 24 bytes - but the same doc already
 # flags that naive "0x12d + table index" naming as unconfirmed/wrong for
@@ -164,8 +164,12 @@ ROOM_SEARCH_RESULT_OPCODE = 0x138
 KICKOUT_OPCODE = 0x137
 KICKEDOUT_OPCODE = 0x138
 PROMOTE_OPCODE = 0x13c
-# NetMatchmakingSetAttrFlags (0x140) / NetMatchmakingUpdatedAttrFlags (0x141).
-# Live-captured 2026-08-15 for the first time ever this session - only
+# SetRoomFlags (0x140) / UpdatedRoomFlags (0x141) - protos/0x140_set_room_
+# flags.ksy, protos/0x141_updated_room_flags.ksy. The declared-table names
+# for this pair are NetMatchmakingSetAttrFlags / NetMatchmakingUpdatedAttr
+# Flags; the constants below were renamed off those on 2026-08-20 to match
+# the protos.
+# Live-captured 2026-08-15 for the first time - only
 # reachable once a room survives long enough to actually load into a match
 # (see research/notes/2026-08-15-room-teardown-and-flag-chain.md and the
 # "Stub PPU Traps" RPCS3 workaround that finally got a client this far).
@@ -176,22 +180,27 @@ PROMOTE_OPCODE = 0x13c
 # confirms updated X" pair. Untested: echoing the flags value straight back
 # as 0x141, matching the room_id-echo pattern already proven for 0x137/
 # 0x138.
-SET_ATTR_FLAGS_OPCODE = 0x140
-UPDATED_ATTR_FLAGS_OPCODE = 0x141
-# NetMatchmakingUpdatedRoomFlags (declared name, but client->server despite
-# the name - see docs/protocol/session_manager_and_matchmaking.md row 22):
-# 144 bytes, opcode + room_id(8) + a 128-byte verbatim copy of the client's
-# own room_obj+0x18 region. Never handled by this stub before 2026-08-16 -
-# confirmed via live Ghidra dispatch-case decompile that its counterpart,
-# 0x144/HostRank (server->client, same 128 bytes written back into that same
-# room_obj+0x18 region on receipt), is a message the real server would have
-# sent and ours never has. Following this project's established "echo the
-# client's own data back" pattern (RoomSearchResult/0x138 echoing
-# RoomSearchInfo/0x137, UpdatedAttrFlags/0x141 echoing SetAttrFlags/0x140) -
+SET_ROOM_FLAGS_OPCODE = 0x140
+UPDATED_ROOM_FLAGS_OPCODE = 0x141
+# SetRoomDataBlock (0x143) / RoomDataBlockUpdated (0x144) - protos/0x143_set_
+# room_data_block.ksy, protos/0x144_room_data_block_updated.ksy. NAMES
+# CORRECTED 2026-08-20: these constants were previously UPDATED_ROOM_FLAGS_
+# OPCODE and HOST_RANK_OPCODE, both from the pre-2026-08-17 declared-table
+# reading. HostRank is 0x142, NOT 0x144, so that old constant name collided
+# with a genuinely different opcode. 0x143 is client->server despite its
+# declared name (see docs/protocol/session_manager_and_matchmaking.md row
+# 22): 144 bytes, opcode + room_id(8) + a 128-byte verbatim copy of the
+# client's own room_obj+0x18 region. Never handled by this stub before
+# 2026-08-16 - confirmed via live Ghidra dispatch-case decompile that its
+# counterpart 0x144 (server->client, same 128 bytes written back into that
+# same room_obj+0x18 region on receipt) is a message the real server would
+# have sent and ours never has. Following this project's established "echo
+# the client's own data back" pattern (Kickedout/0x138 echoing Kickout/
+# 0x137, UpdatedRoomFlags/0x141 echoing SetRoomFlags/0x140) -
 # EXPERIMENTAL, not yet live-tested. See
 # research/notes/2026-08-16-net-sm-server-lobby-dispatch.md and follow-ups.
-UPDATED_ROOM_FLAGS_OPCODE = 0x143
-HOST_RANK_OPCODE = 0x144
+SET_ROOM_DATA_BLOCK_OPCODE = 0x143
+ROOM_DATA_BLOCK_UPDATED_OPCODE = 0x144
 PING_OPCODE = 0x145
 CLIENT_HELLO2_OPCODE = 0x146
 # NetMatchmakingKickedout (declared, 16 bytes) - confirmed WRONG both name
@@ -773,10 +782,16 @@ def build_member(members, room_id, max_players, owner_ref_id, local_ref_id, team
               contains `if (room_obj+0x1f8 == 0) { trapWord(0x1f,...); }` -
               an explicit compiled-in assert that this field is never zero.
               Sending zero here hit that trap and crashed RPCS3 outright
-              (PPU Trap at 0x00ad38b8, live-confirmed). Now sourced from
-              RoomCreate's own wire offset 0x1e (2 bytes, captured live as
-              `00 0a` = 10) - the room's own declared max-player count is
-              the obvious source of truth for a "capacity" field.
+              (PPU Trap at 0x00ad38b8, live-confirmed). Sourced from
+              RoomCreate's own wire offset 0x24 (2 bytes, live-constant
+              `00 08` = 8) - the room's own declared max-player count is
+              the obvious source of truth for a "capacity" field - and
+              clamped to 1..RETAIL_MAX_PLAYERS on ingestion, since the same
+              number is also the RoomJoin admission gate. CORRECTED
+              2026-08-16: this used to read offset 0x1e, which RoomCreate's
+              sender never writes (uninitialised stack, masked by an
+              `or 10` fallback); see protos/0x12f_room_create.ksy's pad_1e
+              and clamp_max_players above.
       26  2   roster_count
       28  2   unknown, swapped but unread - zero
       30  130 unread by the traced code - zero
@@ -813,10 +828,10 @@ def build_member(members, room_id, max_players, owner_ref_id, local_ref_id, team
               unmapped region. Live-tested team=0 (u16 @ entry offset 16) +
               ready=1 (u16 @ offset 18): confirmed present correctly on the
               wire (verified via captures/tcp_catch.log hex dump), but did
-              NOT change observed behavior - the user still hit the same
-              3-attempt pattern (id-gate fail -> brief match then silent
-              drop -> permanent NET_SM_SERVER_LOBBY stall) with this field
-              populated. Reverted to zero. The real blocker is more likely
+              NOT change observed behavior - the same 3-attempt pattern
+              recurred with this field populated (id-gate fail -> brief
+              match then silent drop -> permanent NET_SM_SERVER_LOBBY
+              stall). Reverted to zero. The real blocker is more likely
               the `team >= 0 && team < NetInfo::kMaxNetTeams` assertion
               (game/net/net-game-manager.cpp:1358) firing during the 2nd
               attempt's match load - see research/notes/2026-08-16-net-sm-
@@ -1186,7 +1201,7 @@ def reseed_departed_party(conn, emit, npid, room_ptr, max_players):
             "build": build_of(room_ptr),
         }
     emit(f"   [reseed] {npid!r} left a party - minted a fresh solo party "
-         f"room_id {room_id.hex()} and sent Member+OwnerChanged+OwnerMember "
+         f"room_id {room_id.hex()} and sent Member+HostFlagUpdated+OwnerMember "
          f"({len(msg)} bytes, room_ptr={room_ptr:#010x}) so its party object "
          f"stops holding the zero its own 0x133 sender wrote to +0x10")
 
@@ -1356,7 +1371,14 @@ def build_member_blob(member_id, room_id, blob):
 
 
 def build_owner_changed(room_id, joined_flag=1):
-    """Build a NetMatchmakingOwnerChanged (opcode 0x13f), 16 bytes.
+    """Build a NetMatchmakingHostFlagUpdated (opcode 0x13f), 16 bytes.
+
+    NAME NOTE: this function's own name is legacy. `OwnerChanged` is 0x13d's
+    name (built by build_owner_member below), not 0x13f's - see
+    protos/0x13d_owner_changed.ksy vs protos/0x13f_host_flag_updated.ksy.
+    The opcode constant was corrected to HOST_FLAG_UPDATED_OPCODE on
+    2026-08-20; the function name is kept for now because dated research
+    notes reference it by name.
 
     Layout: opcode(4) | joined_byte(1) | unused(3) | room_id(8).
     The handler (0x00ad825c-0x00ad82d0) searches the 4 room slots for
@@ -1393,7 +1415,7 @@ def build_owner_changed(room_id, joined_flag=1):
     research/notes/2026-08-20-rejoin-party-bug.md.
     """
     body = bytearray(16)
-    struct.pack_into(">I", body, 0, OWNER_CHANGED_OPCODE)
+    struct.pack_into(">I", body, 0, HOST_FLAG_UPDATED_OPCODE)
     body[4] = joined_flag & 1
     body[8:16] = room_id
     return bytes(body)
@@ -1867,7 +1889,7 @@ def handle(conn, addr, log_lock, log):
                 create_blobs = {MEMBER_ID: host_blob} if host_blob else None
 
                 # EXPERIMENTAL (2026-08-16, dispatch audit proposal #4, applied
-                # after the OwnerChanged-alone test still hit the team assert):
+                # after the HostFlagUpdated-alone test still hit the team assert):
                 # RoomJoined is DROPPED from the solo-host reply. Audit
                 # evidence: 0x132's handler registers a member with
                 # is_local/is_owner hardcoded 0, which (a) creates a phantom
@@ -1956,7 +1978,7 @@ def handle(conn, addr, log_lock, log):
                 # unchanged, revert this and treat the race theory as
                 # unconfirmed rather than assuming the delay itself is wrong.
                 # NOT a stray-bytes bug: this write is Member (exactly
-                # 0xa0+0x68*n) + 0x13f OwnerChanged (16) + 0x13d OwnerMember
+                # 0xa0+0x68*n) + 0x13f HostFlagUpdated (16) + 0x13d OwnerMember
                 # (16) concatenated into one TCP write for efficiency. Each
                 # carries its own opcode and fixed length, so the client
                 # parses all three correctly off the stream; measuring the
@@ -1969,7 +1991,7 @@ def handle(conn, addr, log_lock, log):
                 conn.sendall(member + owner_changed
                              + build_owner_member(room_id, MEMBER_ID))
                 emit(f"   parsed opcode={opcode:#x} (RoomCreate, map_id={map_id.hex()}), sent "
-                     f"Member+OwnerChanged+OwnerMember as one write, NO RoomJoined "
+                     f"Member+HostFlagUpdated+OwnerMember as one write, NO RoomJoined "
                      f"({len(member)}+{len(owner_changed)} bytes, "
                      f"room_ptr={room_ptr:#x} (parsed from wire offset 8), "
                      f"max_players={max_players} (parsed from wire offset 0x24), "
@@ -2005,7 +2027,7 @@ def handle(conn, addr, log_lock, log):
                         "conns": {id(conn): (MEMBER_ID, conn, emit)},
                         "members": [(MEMBER_ID, npid)],
                         # AUTHORITATIVE LEADER (2026-08-20). The room creator
-                        # is member 1 and starts as owner; a Promote (0x13e)
+                        # is member 1 and starts as owner; a Promote (0x13c)
                         # moves it, which is the same source of truth the
                         # 0x13d OwnerMember message publishes to every client
                         # (room_obj+0x19f0). Kickout and Promote are checked
@@ -2074,14 +2096,20 @@ def handle(conn, addr, log_lock, log):
                 # Set to (current_members, capacity) when the room is full.
                 join_refused = None
                 with rooms_lock:
-                    # The party room_id is a shared static value
-                    # (0000000001387f58) across ALL clients, so several entries
-                    # can carry it. Take the MOST RECENT match on another
-                    # connection: a live host is the freshly-created party,
-                    # while a stale entry left by a failed prior Join Party is
-                    # older. Matching the first (oldest) entry is exactly what
-                    # made a failed attempt "corrupt" the next request (it
-                    # routed the join to a dead connection) - dict preserves
+                    # Take the MOST RECENT match on another connection, not
+                    # the first. Party room_ids are minted unique per room
+                    # since 2026-08-17 (synth_party_room_id, see the
+                    # RoomCreate handler above), so an exact id collision
+                    # between two LIVE parties no longer happens - but a
+                    # stale registry entry for the SAME room can still
+                    # outlive its connection and shadow the live one. Back
+                    # when every client shared the static party room_id
+                    # 0000000001387f58, matching the first (oldest) entry is
+                    # what made a failed Join Party "corrupt" the next
+                    # request by routing it to a dead connection. Keeping
+                    # last-match wins is the cheap defence that still holds
+                    # for the solo/custom game path, which deliberately
+                    # retains its historical static id. dict preserves
                     # insertion order, so iterate and keep the last match.
                     for key, info in active_rooms.items():
                         if info["conn"] is not conn and info["room_id"] == target_room_id:
@@ -2678,10 +2706,11 @@ def handle(conn, addr, log_lock, log):
                 # (live-decoded): opcode(4) | new_owner member_id u16 @+4 |
                 # (u16 @+6 uninitialised) | room_id(8) @+8. Make every client
                 # agree on the new leader: OwnerMember (0x13d) sets
-                # room_obj+0x19f0 (owner member id) everywhere; OwnerChanged
-                # (0x13f) flips the "am I host" flag at room_obj+0x19f4 - 1 for
-                # the new leader, 0 for everyone else. Both opcodes are already
-                # used in the working join flow.
+                # room_obj+0x19f0 (owner member id) everywhere; HostFlagUpdated
+                # (0x13f) carries the "am I host" flag for room_obj+0x19f4,
+                # whose value depends on the room type - see the flag rule
+                # below, which is NOT simply "1 for the new leader". Both
+                # opcodes are already used in the working join flow.
                 new_owner_id = struct.unpack(">H", chunk[4:6])[0]
                 room_id_tail = chunk[8:16]
                 room_entry = None
@@ -2737,24 +2766,25 @@ def handle(conn, addr, log_lock, log):
                     emit(f"   parsed opcode={opcode:#x} (Promote) - new leader "
                          f"member_id={new_owner_id} in room "
                          f"{room_entry['room_id'].hex()}: OwnerMember(0x13d)+"
-                         f"OwnerChanged(0x13f) to {sent} member(s)")
-            elif opcode == SET_ATTR_FLAGS_OPCODE and len(chunk) >= 16:
+                         f"HostFlagUpdated(0x13f) to {sent} member(s)")
+            elif opcode == SET_ROOM_FLAGS_OPCODE and len(chunk) >= 16:
                 flags_value = chunk[4:8]
                 room_id_tail = chunk[8:16]
-                reply = struct.pack(">I", UPDATED_ATTR_FLAGS_OPCODE) + flags_value + room_id_tail
+                reply = struct.pack(">I", UPDATED_ROOM_FLAGS_OPCODE) + flags_value + room_id_tail
                 conn.sendall(reply)
-                emit(f"   parsed opcode={opcode:#x} (SetAttrFlags, flags={flags_value.hex()}) - "
-                     f"sent UpdatedAttrFlags (16 bytes) echoing flags+room_id="
+                emit(f"   parsed opcode={opcode:#x} (SetRoomFlags, flags={flags_value.hex()}) - "
+                     f"sent UpdatedRoomFlags (16 bytes) echoing flags+room_id="
                      f"{room_id_tail.hex()}\n{hexdump(reply)}")
-            elif opcode == UPDATED_ROOM_FLAGS_OPCODE and len(chunk) >= 144:
+            elif opcode == SET_ROOM_DATA_BLOCK_OPCODE and len(chunk) >= 144:
                 room_id_tail = chunk[8:16]
-                rank_payload = chunk[16:144]
-                reply = (struct.pack(">I", HOST_RANK_OPCODE) + chunk[4:8]
-                          + room_id_tail + rank_payload)
+                data_block = chunk[16:144]
+                reply = (struct.pack(">I", ROOM_DATA_BLOCK_UPDATED_OPCODE) + chunk[4:8]
+                          + room_id_tail + data_block)
                 conn.sendall(reply)
-                emit(f"   parsed opcode={opcode:#x} (UpdatedRoomFlags/rank-table submit, "
-                     f"room_id={room_id_tail.hex()}) - sent HostRank (144 bytes) echoing "
-                     f"the same 128-byte payload back\n{hexdump(reply)}")
+                emit(f"   parsed opcode={opcode:#x} (SetRoomDataBlock, "
+                     f"room_id={room_id_tail.hex()}) - sent RoomDataBlockUpdated "
+                     f"(144 bytes) echoing the same 128-byte payload back"
+                     f"\n{hexdump(reply)}")
             elif opcode == PING_OPCODE:
                 emit(f"   parsed opcode={opcode:#x} (Ping keepalive) - "
                      f"no reply sent, appears fire-and-forget (client-side timer driven)")

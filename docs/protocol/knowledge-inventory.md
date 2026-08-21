@@ -91,7 +91,9 @@ message is now live-verified.
 - `member_data.capability_flag` - was `0x00` in 376/376 samples on 01.00 (no MP
   DLC on those accounts). NOW EXERCISED: 01.11 clients with DLC installed send
   `0x0d` (2026-08-19), so the AND-reduce that gates map/mode availability finally
-  has a nonzero input. Individual bit meanings remain DC-defined.
+  has a nonzero input. Individual bit meanings are DC-defined and were decoded
+  bit by bit on 2026-08-20 - see Tier 2 item 39, which also closes bit 1 as
+  consumed by nothing.
 - `region_language` - observed, but constant `"us\0"`+1 in every frame.
 - `party_id` - nonzero in only 21/376 samples.
 

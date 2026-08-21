@@ -36,13 +36,17 @@ doc: |
   LAN implementation shares the interface at vtable `0x01243AE8`
   (`+0x10` = `FUN_00ad512c`).
 
-  TWO call sites dispatch through that slot, both passing
-  `param_2 = 0x01383BD8` (the GAME ROOM object):
+  THREE call sites dispatch through that slot. Two were found by the static
+  `bctrl`-pattern scan, both passing `param_2 = 0x01383BD8` (the GAME ROOM
+  object):
     - `0x0035D440`, in `FUN_0035D1FC` - the state that logs `"Host"`.
     - `0x003B7FB0`, in `FUN_003B7D70` - the state that logs
       `"****** GATHER ******"`.
-  Their arguments are decoded field-by-field in the docs below
-  (`max_players`, `caller_arg_1c`, `flag_27`, `room_flags_e8`).
+  The third is the PARTY path (`0x003CAC5C`, `param_2 = 0x01387F58`), which
+  that scan's search window did not cover; it is documented in its own
+  section below. All three sites' arguments are decoded field-by-field in
+  the docs below (`max_players`, `caller_arg_1c`, `flag_27`,
+  `room_flags_e8`).
 
   THE INTERFACE TAKES A SEVENTH ARGUMENT THIS IMPLEMENTATION IGNORES. Both
   call sites set `r9` before the `bctrl`; at the GATHER site it is the
@@ -254,16 +258,17 @@ seq:
       Offset 28:30. A caller-supplied argument (`sth r27,172(r1)` @ 0x00ad5c60,
       before r27 is reset to 0) - the sender's `param_5` (`r7`) verbatim.
 
-      SOURCE RESOLVED 2026-08-20 from the two now-known call sites (see the
-      doc-level caller note): the `"Host"` site hardcodes `li r7,-1`
+      SOURCE RESOLVED 2026-08-20 from the three now-known call sites (see
+      the doc-level caller note): the `"Host"` site hardcodes `li r7,-1`
       @0x35d430, which is the live `ff ff`; the `"GATHER"` site passes
-      `extsw r7,r26` @0x3b7fa4, which is the live `00 00`. So this is a
+      `extsw r7,r26` @0x3b7fa4, which is the live `00 00`; the PARTY site
+      was caught live with `r7 = 0xFFFFFFFF`, matching the `"Host"` site. So this is a
       per-call-path constant token, not a runtime quantity - which is exactly
       why only two distinct values have ever been observed. A server can
       ignore it.
   - id: pad_1e
     size: 2
-    doc: "Offset 30:32. NEVER WRITTEN - uninitialised stack. server/session_manager.py reads max_players from here; that is a bug (see doc, correction 3). Live values `00 0a` and `00 00`."
+    doc: "Offset 30:32. NEVER WRITTEN - uninitialised stack. Live values `00 0a` and `00 00`. server/session_manager.py USED to read max_players from here, which was a bug (see doc, correction 3); since 2026-08-16 it reads offset 0x24, and since 2026-08-20 it clamps that value to 1..8 on ingestion."
   - id: value_20
     type: u2
     doc: "Offset 32:34. A float converted to int via fctiwz. Live-constant 1000 (0x03e8)."
