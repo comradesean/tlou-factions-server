@@ -1219,7 +1219,25 @@ def broadcast_member_departure(departing_key, room_id=None, reseed_party=False):
     a dead socket), so the leaver is still there to be talked to. When the
     room it left was a party, give it a fresh solo party room id - see
     reseed_departed_party for the full mechanism. Never set on the socket-
-    close path: that connection cannot receive anything."""
+    close path: that connection cannot receive anything.
+
+    REMOVED 2026-08-21 a `id(other["conn"]) == departing_key: continue`
+    guard here ("room owner leaving, entry teardown handles it"). Live-
+    reproduced bug: invite -> accept -> Promote -> new leader kicks the
+    ORIGINAL creator. `other["conn"]` is the room's STRUCTURAL anchor
+    connection (whoever's socket owns the active_rooms dict key) and is
+    never reassigned by Promote - only `owner_member_id` (the LOGICAL,
+    Promote-aware owner `sender_is_room_owner` already checks correctly)
+    moves. The two callers that predate Kickout (the 0x133 leave handler
+    and the connection-close `finally` block) both already delete/pop a
+    connection's STRUCTURALLY-owned rooms from `active_rooms` before ever
+    calling this function, so for them `other["conn"] == departing_key`
+    was always unreachable dead code. For the newer Kickout/dead-peer-
+    removal callers it was actively wrong: kicking a promoted-away former
+    creator (who is still connected, just no longer owner) hit this guard,
+    silently skipped the whole roster-shrink/broadcast/reseed below, and
+    left every other member's client showing a stale roster with the
+    kicked member still in it forever (reproduced live, repeatable)."""
     affected = []
     reseed = []
     with rooms_lock:
@@ -1227,8 +1245,6 @@ def broadcast_member_departure(departing_key, room_id=None, reseed_party=False):
             if departing_key in other.get("conns", {}) and (
                     room_id is None or other["room_id"] == room_id):
                 mid, dep_conn, dep_emit = other["conns"].pop(departing_key)
-                if id(other["conn"]) == departing_key:
-                    continue  # room owner leaving - entry teardown handles it
                 dep_npid = next((n for m, n in other.get("members", [])
                                  if m == mid), b"")
                 other["members"] = [m for m in other.get("members", [])
@@ -1326,7 +1342,15 @@ def evaluate_late_dead_peer_removal(sender_key, target_member_id, room_id_tail,
                                 f"{room_entry['room_id'].hex()}")
         if target[0] == sender_key:
             return None, None, "target IS the sender (self-removal never acted on)"
-        if id(room_entry["conn"]) == target[0]:
+        if target[1] == room_entry.get("owner_member_id", MEMBER_ID):
+            # FIXED 2026-08-21: was `id(room_entry["conn"]) == target[0]`, the
+            # room's STRUCTURAL anchor connection - never reassigned by
+            # Promote, so it silently stopped matching reality once a
+            # different member became owner (see broadcast_member_departure's
+            # docstring for the live-reproduced bug this caused via Kickout;
+            # this function has the identical bug pattern for the automatic
+            # dead-peer path). owner_member_id is the LOGICAL, Promote-aware
+            # owner - the same field sender_is_room_owner already checks.
             return None, None, ("target is the room OWNER - owner departure is the "
                                 "0x133/close path, not a member removal")
         since_join = now - room_entry.get("last_join_ts", now)
