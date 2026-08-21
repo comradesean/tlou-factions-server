@@ -235,7 +235,7 @@ RoomSearchResult/GameList (16+56N); `0x138` **Kickedout** (16, room_id@8 —
 recipient leaves the room); `0x139` **RoomClosed/ForcedTeardown** (16,
 server-initiated, harder teardown: RequestLeave + zeroes slot+0x10); `0x13b`
 MemberDataUpdated (80); `0x13d` OwnerMemberChanged (16, new_owner_member_id@4
--> room+0x19f0); `0x13f` **HostFlagUpdated** (16, flag@4 -> room+0x19f4);
+-> room+0x19f0); `0x13f` **HostFlagUpdated** (16, host_flag@4 -> room+0x19f4);
 `0x141` RoomAttrUpdated (16, value@4 -> room+0x1f0, meaning UNKNOWN); `0x144`
 RoomDataBlockUpdated (144, 128-byte block@16 -> room+0x18).
 

@@ -162,7 +162,7 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     (`vtable[0x34]`, the "New host : X" print). Reason established the hard way
     twice over: re-firing `0x13d` into an already-established room tore down
     join-in-progress until it was removed (2026-08-18).
-15. **`0x13e` SetHostFlag `kind` / `0x13f` HostFlagUpdated `flag`** - host-flag
+15. **`0x13e` SetHostFlag `kind` / `0x13f` HostFlagUpdated `host_flag`** - host-flag
     request and confirmation; `0x13f` sets `room_obj+0x19f4`, and without it a
     solo host never becomes host. `kind` is 3 or 4 in 117/117 live frames.
     UPDATED 2026-08-20 (two findings): (a) for a PARTY room, that byte is ALSO
@@ -171,7 +171,9 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     party-bug.md`. (b) `0x13e`'s `kind=3` flag byte is NOT unwritten residue as
     an earlier same-day pass claimed - it carries a real value (0, 1, or 3)
     from one of two write paths in the sender; see `protos/0x13e_set_host_
-    flag.ksy`'s `flag` field and `research/notes/2026-08-20-tier2-followup.md`
+    flag.ksy`'s `flag` field (0x13e's own field - not to be confused with
+    0x13f's, renamed to `host_flag` 2026-08-21) and
+    `research/notes/2026-08-20-tier2-followup.md`
     §5 (retraction noted inline).
 16. **`0x143` SetRoomDataBlock / `0x144` `data_block`** - the match-session id
     string `<owner_npid>.<unix-timestamp>`, generated at match start. 15/15 live
