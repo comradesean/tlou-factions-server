@@ -100,11 +100,11 @@ def f_ping():
     return struct.pack(">I", PING)
 
 
-def f_find_match(marker, search_obj_ptr=GAME_ROOM_PTR, field_0c=2):
+def f_find_match(marker, search_obj_ptr=GAME_ROOM_PTR, playlist_id=2):
     b = bytearray(36)
     struct.pack_into(">I", b, 0, FIND_MATCH)
     struct.pack_into(">I", b, 8, search_obj_ptr)
-    struct.pack_into(">I", b, 12, field_0c)
+    struct.pack_into(">I", b, 12, playlist_id)
     struct.pack_into(">I", b, 16, 0x102C503F)   # room_flags, live-constant
     struct.pack_into(">HH", b, 20, 1000, 1000)  # value_pair_14
     struct.pack_into(">H", b, 24, marker)       # burst_marker

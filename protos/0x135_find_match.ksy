@@ -53,10 +53,12 @@ seq:
   - id: search_obj_ptr
     type: u4
     doc: "Offset 8:12. The client's own search-object pointer (live 0x01383bd8, `mr`/store from the search object). This is the value the server's 0x136 RoomSearch reply MUST echo back at its own offset 8 - the 0x136 handler dereferences and writes the game list through it. See protos/0x136_room_search.ksy."
-  - id: field_0c
+  - id: playlist_id
     type: u4
     doc: |
-      Offset 12:16. `*(u32*)(search_obj+0x0C)` (`lwz r11,12(r29)` @ 0xad6c90,
+      Offset 12:16 (was `field_0c` - renamed 2026-08-21, meaning has been
+      settled and confirmed since 2026-08-19; see below).
+      `*(u32*)(search_obj+0x0C)` (`lwz r11,12(r29)` @ 0xad6c90,
       `stw r11,156(r1)`).
 
       DEFINITION: the PLAYLIST the client is queueing for - mode plus party
