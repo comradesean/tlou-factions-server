@@ -959,6 +959,32 @@ seq:
       (version, SPU-DMA writer), but the EXACT semantic still isn't
       settled, and this project's standard is not to rename past what's
       actually settled.
+
+      FINAL SUMMARY, 2026-08-21: the best available description is a
+      SENTINEL VALUE - a lot of confirmed mechanism, no recovered name.
+      For clarity, since the round-trip shape of this got asked about
+      directly: `0x12f RoomCreate` and `0x135 FindMatch` are both fully
+      proto'd, real client->server messages that DO reach this project's
+      server (session-manager port 7314) - "we never read them" refers
+      only to these specific 4/8 bytes within messages the server
+      otherwise fully parses and acts on (`room_ptr`, `max_players`,
+      `playlist_id`, etc. all consumed normally). `server/session_manager.py`
+      was grepped directly for every plausible wire offset on both
+      messages (`0x12f` wire `0x20:0x24`, `0x135` wire `0x14:0x18`) - zero
+      references, confirmed not silently miscounted. Separately, the
+      heartbeat sentinel CHECK (the one real consumer traced this session)
+      is a pure LOCAL PROCESS MEMORY READ - the client re-reading the
+      exact address its own constructor wrote at boot, `g_70+0x48`. No
+      network round trip of any kind is involved in that check, not to
+      this project's server, not P2P, not to anything - the client is
+      comparing its own memory against its own hardcoded literal, entirely
+      within itself. The two wire messages carry the value OUT, unread by
+      anyone; nothing ever carries a value back IN. There is no
+      server-side lever here at all, for this project's server or (as far
+      as this trace can show) any server - which fits the "dead sentinel
+      for a fetch some now-defunct original service was supposed to
+      answer" reading as well as anything found tonight, though that
+      framing remains synthesis, not proof.
   - id: value_22
     type: u2
     doc: "Offset 34:36. Second float converted to int. Live-constant 1000 (0x03e8) - see value_20's doc for the full source trace; this is g_70+0x4c, the second half of the same pair."

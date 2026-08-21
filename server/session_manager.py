@@ -1733,6 +1733,14 @@ def handle(conn, addr, log_lock, log):
 
             opcode = struct.unpack(">I", chunk[0:4])[0] if len(chunk) >= 4 else None
             if opcode == ROOM_CREATE_OPCODE and len(chunk) >= 232:
+                # NOT parsed here, deliberately: wire 0x20:0x24 (value_20/
+                # value_22, protos/0x12f_room_create.ksy). Traced 2026-08-21
+                # to a client-local sentinel - one hardcoded 1000.0 literal,
+                # set once at client boot, checked only against itself by a
+                # heartbeat function that never reads anything from a server
+                # to clear it. No server-side lever exists for it, ours or
+                # (as far as that trace could show) any server's - see that
+                # field's doc for the full mechanism trace.
                 name_start = 0x28
                 name_end = chunk.find(b"\x00", name_start)
                 name = chunk[name_start:name_end] if name_end != -1 else b""

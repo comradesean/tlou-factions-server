@@ -538,10 +538,23 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     skipped.
 
     The exact parameter this configures (timeout in ms vs. a threshold
-    vs. something else) still was not recovered. See
-    `protos/0x12f_room_create.ksy`'s `value_20` doc for the full trace,
-    including the retracted SPU-DMA theory the initial negative result
-    prompted (retracted the same night once the constructor's zero-write
+    vs. something else) still was not recovered.
+
+    FINAL SUMMARY: best available description is a SENTINEL VALUE - full
+    mechanism, no recovered name. Both carrying messages (`0x12f`
+    RoomCreate, `0x135` FindMatch) are real client->server traffic that
+    DOES reach this project's server; `session_manager.py` was grepped
+    directly for both messages' relevant wire offsets and confirmed to
+    read neither - these specific bytes are the only part of either
+    message left unparsed, everything else is consumed normally. The
+    heartbeat sentinel check itself is a pure LOCAL PROCESS MEMORY READ -
+    no network round trip to this project's server, no P2P, nothing; the
+    client compares its own memory against its own hardcoded literal
+    entirely within itself. Nothing ever carries a value back IN to
+    clear the sentinel. See `protos/0x12f_room_create.ksy`'s `value_20`
+    doc for the full trace, including the retracted SPU-DMA theory the
+    initial negative result prompted (retracted the same night once the
+    constructor's zero-write
     was caught, before the 1000.0 setter above was found).
 43. **`search_window_lo` / `search_window_hi`** - SOLVED 2026-08-20 (not just
     corrected). The value is the game's own matchmaking "rank value" - a
