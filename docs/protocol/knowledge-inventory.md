@@ -360,10 +360,13 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     net-session state (the one the `"Host"` state installs) and ENCODED in
     every other, which is why RAW appears in only 2 of 72 live `kind=3`
     frames. THE ENUM'S THREE VALUES ARE NOW ALL LIVE-CONFIRMED (2026-08-20,
-    breakpoints at each writer): `0` = idle/no active role (fires on "Leave
-    Matchmaking" -> Yes), `1` = post-match results/mode-resolution phase
-    (survivor-count update, post-match mission selection), `2` = the
-    `"Host"` party-creation state. `kind` itself is RESOLVED
+    breakpoints at each writer): `0` = idle/no active mode descriptor (fires
+    on "Leave Matchmaking" -> Yes, and independently on a search timing out
+    on its own), `1` = actively resolving/committed to a mode descriptor
+    (fires entering a fresh find-match search AND during post-match mission
+    resolution - not specifically "post-match", settled by a hit at a fresh
+    find-match countdown), `2` = the `"Host"` party-creation state. `kind`
+    itself is RESOLVED
     2026-08-19: `kind=3` is a generic host-flag claim/release on either the
     party or game-room object; `kind=4` is a set-then-clear pair tied to the
     game room's active-match lifecycle. Additionally (2026-08-20): for a

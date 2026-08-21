@@ -387,12 +387,15 @@ the reason each item stalled.
   unpinned - low-priority, the effect is proven three independent ways.
 - **Names for `netsession->field_0x358`'s three values** (the `0x13e` kind=3
   encoding selector) - FULLY RESOLVED 2026-08-20, all three live-confirmed.
-  `0` = idle/no active role (breakpoint hit at "Leave Matchmaking" -> Yes).
-  `1` = post-match results/mode-resolution phase (breakpoint hits during a
-  survivor-count update and after post-match mission selection, both
-  accounts). `2` = "Host" party-creation state (static, `FUN_0035D59C`
-  immediately after the `"Host"` RoomCreate state). `kind=3`'s RAW-vs-ENCODED
-  split now reads cleanly in light of this: RAW is reserved for the `"Host"`
+  `0` = idle/no active mode descriptor (breakpoint hit at "Leave Matchmaking"
+  -> Yes). `1` = actively resolving/committed to a mode descriptor - three
+  breakpoint hits across two distinct contexts (post-match survivor-count
+  update, post-match mission selection, AND a fresh find-match entry from
+  the main menu at the "Starting in 3...2...1" countdown) settled that this
+  is a general mode-commitment state, not specifically post-match. `2` =
+  "Host" party-creation state (static, `FUN_0035D59C` immediately after the
+  `"Host"` RoomCreate state). `kind=3`'s RAW-vs-ENCODED split now reads
+  cleanly in light of this: RAW is reserved for the `"Host"`
   state specifically, ENCODED is the general form used in both other states.
   See `research/notes/2026-08-20-followup-open-items.md` §2.
 

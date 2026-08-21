@@ -280,53 +280,61 @@ and the 3-or-0 encoding otherwise.
 
 ### Value `1`, live-confirmed 2026-08-20 (breakpoint at the writer `0x3b5908`)
 
-Two independent hits, both accounts, both in the same broad phase: on
-`comradesean`, the write fired during the post-match results screen's
-survivor-count update; on `mgnomad2`, it fired slightly later in the same
-overall flow, after picking a new mission from the post-match menu (not
-during the survivor-count update itself). Both are the results-screen ->
-next-step handoff, not simultaneous frames of the same instant - consistent
-with `field_0x358` marking a PHASE (a state the game is in for a stretch of
-time) rather than a single-frame event, and consistent with the
-already-documented reader corroboration: `0x0039F314`/`0x0039F398` only take
-the "we have a game-mode descriptor" branch when this field equals `1`,
-which is exactly what resolving "what mission comes next" needs. Reading:
-**`field_0x358 == 1` marks the post-match results/mode-resolution phase** -
-the stretch between a match ending and a new mode descriptor being resolved
-for whatever comes next (menu, new mission, requeue). Not yet distinguished
-from a possibly narrower reading (e.g. specifically "post-match", vs. more
-generally "any mode-descriptor-pending state") - a hit during a NON-post-match
-mode transition (e.g. entering matchmaking fresh from the main menu) would
-settle that distinction, but the phase-level reading above is solid on
-current evidence.
+Three independent hits across two different contexts settle both the value
+AND the earlier open question of exactly what it marks. First two, both
+accounts, post-match: on `comradesean`, the write fired during the
+post-match results screen's survivor-count update; on `mgnomad2`, slightly
+later in the same overall flow, after picking a new mission from the
+post-match menu. Third hit, a DIFFERENT context entirely: on `comradesean`,
+selecting Supply Raid -> Find Match, right as the "Starting in 3... 2... 1"
+countdown reached 1.
+
+That third hit resolves the ambiguity the first two left open (a possibly
+narrower "post-match only" reading vs. a general "mode descriptor pending"
+reading): a FRESH find-match entry from the main menu is not post-match, yet
+it also sets this field to `1`. So the earlier reading was too narrow.
+**`field_0x358 == 1` is not tied to "post-match" at all - it is the general
+state entered whenever the game is committing to a specific mode/playlist**:
+starting a fresh find-match search, and resolving what mission comes next
+after a match ends, are both instances of the same underlying operation
+(binding to a mode descriptor), which is exactly what the already-documented
+reader corroboration says (`0x0039F314`/`0x0039F398`'s "we have a game-mode
+descriptor" branch). Corrected reading: **`field_0x358 == 1` = actively
+resolving/committed to a mode descriptor** (entering find-match, or choosing
+the next mission post-match) - not specifically "post-match".
 
 ### Value `0`, live-confirmed 2026-08-20 (breakpoint at the writer `0x35ef90`)
 
-Hit on `comradesean`'s client at the moment of confirming "Leave
-Matchmaking" (clicked, then confirmed "Yes" on the follow-up prompt).
-Matches the inference exactly: **`field_0x358 == 0` is the idle/no-active-
-role state**, entered when leaving/cancelling matchmaking - the same value
-construction (`0x3ac368`) sets, now confirmed as a real reset transition and
-not just a static default.
+Two independent hits, both `comradesean`, via two different paths to the
+same outcome: first at the moment of confirming "Leave Matchmaking"
+(clicked, then confirmed "Yes"); second when a "Searching for players..."
+attempt ran out its duration and timed out on its own, with no explicit
+cancel. Both land at the same transition. Matches the inference exactly:
+**`field_0x358 == 0` is the idle/no-active-mode-descriptor state**, entered
+whenever matchmaking search stops - by explicit cancel or by timing out -
+the same value construction (`0x3ac368`) sets, now confirmed as a real reset
+transition (twice, independently) and not just a static default.
 
 ### All three values closed
 
-    0  idle / no active role       - live: "Leave Matchmaking" -> Yes
-    1  post-match results / mode-resolution phase
-                                    - live: survivor-count update; post-match
-                                      mission selection
+    0  idle / no active mode-descriptor role
+                                    - live: "Leave Matchmaking" -> Yes
+    1  actively resolving/committed to a mode descriptor
+                                    - live: entering find-match (countdown
+                                      reaching 1); post-match survivor-count
+                                      update; post-match mission selection
     2  "Host" (party-creation state)
                                     - static: FUN_0035D59C, immediately after
                                       the "Host" RoomCreate state, gated on a
                                       party predicate
 
-Every value now has at least one live correlation. `kind=3`'s RAW-vs-ENCODED
-selector (`field_0x358 == 2`) reads correctly in light of this: the RAW 0/1
-encoding is used specifically in the "Host" state, and the ENCODED 3-or-0
-form is used in both other states (idle and post-match) - i.e. RAW is
-reserved for the one state where becoming/ceasing host is the actual
-operation being performed, and ENCODED is the general-purpose form used
-everywhere else.
+Every value now has at least one live correlation (`1` has three, across two
+distinct contexts). `kind=3`'s RAW-vs-ENCODED selector (`field_0x358 == 2`)
+reads correctly in light of this: the RAW 0/1 encoding is used specifically
+in the "Host" state, and the ENCODED 3-or-0 form is used in both other
+states (idle and mode-resolution) - i.e. RAW is reserved for the one state
+where becoming/ceasing host is the actual operation being performed, and
+ENCODED is the general-purpose form used everywhere else.
 
 ### The runtime table, read live - structure confirmed, names still open
 

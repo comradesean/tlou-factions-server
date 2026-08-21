@@ -128,33 +128,34 @@ seq:
       both encodings arrive as the same boolean.
 
       VALUE `1`, LIVE-CONFIRMED 2026-08-20 (breakpoint at the writer
-      `0x3b5908`, two independent hits, both accounts). Both landed in the
-      same broad phase: on one account during the post-match results
-      screen's survivor-count update, on the other slightly later in the
-      same flow, after picking a new mission from the post-match menu.
-      Matches the reader corroboration above (`0x0039F314`/`0x0039F398`'s
-      "game-mode descriptor" branch) exactly - resolving what mission comes
-      next needs a mode descriptor. Reading: **`field_0x358 == 1` marks the
-      post-match results/mode-resolution phase**, the stretch between a
-      match ending and a new mode descriptor being resolved for whatever
-      comes next. Whether this is specifically "post-match" or more broadly
-      "any pending mode-descriptor resolution" (e.g. also fresh matchmaking
-      entry from the main menu) is not distinguished by these two hits alone,
-      but the phase-level reading is solid.
+      `0x3b5908`, three independent hits across two distinct contexts, both
+      accounts). Two hits post-match (survivor-count update on one account,
+      post-match mission selection on the other); a third hit in a
+      DIFFERENT context - selecting Supply Raid -> Find Match, right as the
+      "Starting in 3... 2... 1" countdown reached 1. That third hit settles
+      the ambiguity the first two left open: a fresh find-match entry from
+      the main menu is not post-match, yet it sets this field to `1` too.
+      **`field_0x358 == 1` is not a "post-match" state - it is the general
+      state entered whenever the game is committing to a specific
+      mode/playlist descriptor**: starting a fresh find-match search and
+      resolving what mission comes next post-match are both instances of the
+      same underlying operation. Matches the reader corroboration above
+      (`0x0039F314`/`0x0039F398`'s "game-mode descriptor" branch) exactly.
 
       VALUE `0`, LIVE-CONFIRMED 2026-08-20 (breakpoint at the writer
       `0x35ef90`). Hit at the moment of confirming "Leave Matchmaking".
       Matches the inference exactly: **`field_0x358 == 0` is the idle/
-      no-active-role state**, entered on leaving/cancelling matchmaking -
-      the same value construction (`0x3ac368`) sets, now confirmed as a
-      real reset transition.
+      no-active-mode-descriptor state**, entered on leaving/cancelling
+      matchmaking - the same value construction (`0x3ac368`) sets, now
+      confirmed as a real reset transition.
 
       ALL THREE VALUES NOW HAVE A LIVE CORRELATION:
-      `0` idle (Leave Matchmaking); `1` post-match results/mode-resolution
-      phase (survivor-count update, post-match mission selection); `2`
-      "Host" (party-creation state). Reading kind=3's RAW-vs-ENCODED
-      selector in this light: RAW (plain 0/1) is reserved for the one state
-      where becoming/ceasing host is the actual operation (`2`), and ENCODED
+      `0` idle/no mode descriptor (Leave Matchmaking); `1` actively
+      resolving/committed to a mode descriptor (entering find-match,
+      post-match mission resolution); `2` "Host" (party-creation state).
+      Reading kind=3's RAW-vs-ENCODED selector in this light: RAW (plain 0/1)
+      is reserved for the one state where becoming/ceasing host is the
+      actual operation (`2`), and ENCODED
       (3-or-0) is the general-purpose form used in both other states.
 
       See `research/notes/2026-08-20-followup-open-items.md` section 2 for
