@@ -100,7 +100,22 @@ seq:
       function - treat as a strong inference, not a confirmed result.
   - id: value_pair_14
     size: 4
-    doc: "Offset 20:24. The 0x03e8/0x03e8 (1000/1000) u16 pair, same source as RoomCreate's value_20/value_22 (the two float out-params of _opd_FUN_00acb6bc, fctiwz->sth). Likely a default rating pair; disabled/constant in all live captures."
+    doc: |
+      Offset 20:24. The 0x03e8/0x03e8 (1000/1000) u16 pair, same source as
+      RoomCreate's `value_20`/`value_22` (the two float out-params of
+      `_opd_FUN_00acb6bc`, `fctiwz`->`sth`).
+
+      SOURCE STRUCTURALLY RESOLVED 2026-08-21 (static) - not just "the same
+      producer function" but the literal same VALUE: this sender's own call
+      to that getter (`0x00ad6cf4`-`0x00ad6d00`) resolves through the
+      identical global chain as RoomCreate's (`*(anchor-32748)` ->
+      `0x01441194` -> `*(0x01441194+4)` -> `0x013835c0` = `g_70`/NetInfo),
+      so this field is `g_70+0x48`/`g_70+0x4c` too - the same per-client
+      value RoomCreate stamps, not anything derived from the search itself.
+      See `protos/0x12f_room_create.ksy`'s `value_20` doc for the full
+      trace, live corroboration, and the not-yet-settled rating-vs-location
+      semantic lead. Left unrenamed for the same reason: source confirmed,
+      meaning not.
   - id: burst_marker
     type: u2
     doc: |

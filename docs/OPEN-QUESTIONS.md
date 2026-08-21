@@ -440,7 +440,8 @@ the reason each item stalled.
   breakpoint at `FUN_00ad5b78` during a real party join caught it: the call
   is at `0x003CAC5C`, inside `FUN_003CA9D0` (the 9-state room state machine),
   the `party_obj+0x1A50 == 0` branch of its jump table. This also resolved
-  `flag_27`'s live `0x04` (the party site passes `r6=1`). See
+  `is_party`'s (was `flag_27`, renamed 2026-08-21) live `0x04` (the party
+  site passes `r6=1`). See
   `protos/0x12f_room_create.ksy` and
   `research/notes/2026-08-20-followup-open-items.md` §1.
 - **Which input produces `0x142`'s live `0x0002` - RESOLVED (live).** Not a

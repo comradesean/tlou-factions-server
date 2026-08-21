@@ -45,7 +45,7 @@ doc: |
   The third is the PARTY path (`0x003CAC5C`, `param_2 = 0x01387F58`), which
   that scan's search window did not cover; it is documented in its own
   section below. All three sites' arguments are decoded field-by-field in
-  the docs below (`max_players`, `caller_arg_1c`, `flag_27`,
+  the docs below (`max_players`, `caller_arg_1c`, `is_party`,
   `room_flags_e8`).
 
   THE INTERFACE TAKES A SEVENTH ARGUMENT THIS IMPLEMENTATION IGNORES. Both
@@ -62,7 +62,7 @@ doc: |
   `0xad5b78` during a real party join). Register state at entry: `r3` (this)
   `= 0x337238A0` (matches `*(0x014DB270)`, the same ND Session Manager
   singleton the two static sites use), `r4` (room) `= 0x01387F58` (the PARTY
-  object), `r5` (max_players) `= 8`, `r6` (`flag_27` source) `= 1`, `r7`
+  object), `r5` (max_players) `= 8`, `r6` (`is_party` source) `= 1`, `r7`
   (`caller_arg_1c` source) `= 0xFFFFFFFF`, `r8` (`room_flags_e8` gate)
   `= 0`, `r9` (the discarded 7th argument) `= 0`. `LR = 0x003CAC60`, the
   return address, pins the call site exactly - this is a THIRD dispatch the
@@ -88,8 +88,8 @@ doc: |
   counting).
 
   This also resolves the two field gaps the two static sites left open:
-  **`flag_27`'s live `0x04`** comes from here - `r6=1` at this site, and
-  `flag_27 = 4 iff param_4 != 0` (see that field's own doc), so `1 != 0`
+  **`is_party`'s live `0x04`** comes from here - `r6=1` at this site, and
+  `is_party = 4 iff param_4 != 0` (see that field's own doc), so `1 != 0`
   produces the wire `4`. **`caller_arg_1c`'s live `0xffff`** is confirmed
   again here too (`r7 = 0xFFFFFFFF`, same as both static sites - this is
   evidently a constant across every known call site, not path-specific).
@@ -634,10 +634,65 @@ seq:
     doc: "Offset 30:32. NEVER WRITTEN - uninitialised stack. Live values `00 0a` and `00 00`. server/session_manager.py USED to read max_players from here, which was a bug (see doc, correction 3); since 2026-08-16 it reads offset 0x24, and since 2026-08-20 it clamps that value to 1..8 on ingestion."
   - id: value_20
     type: u2
-    doc: "Offset 32:34. A float converted to int via fctiwz. Live-constant 1000 (0x03e8)."
+    doc: |
+      Offset 32:34. A float converted to int via fctiwz. Live-constant 1000
+      (0x03e8).
+
+      SOURCE STRUCTURALLY RESOLVED 2026-08-21 (static). Both this field and
+      `value_22` come from the same tiny getter, `0x00acb6bc` (`lfs
+      f0,72(r3)`/`stfs f0,0(r4)`, `lfs f0,76(r3)`/`stfs f0,0(r5)`, `blr` -
+      it just copies two floats verbatim out of some object's `+0x48`/
+      `+0x4c`). `scan_bl.py acb6bc` finds every call site; the RoomCreate
+      sender's own call (`0x00ad5c68`-`0x00ad5c70`) resolves `r3` through
+      `*(anchor-32748)` -> global `0x01441194` -> `*(0x01441194+4)` ->
+      **`0x013835c0` = `g_70`/NetInfo**, the same per-client
+      matchmaking-singleton object this project has mapped extensively
+      elsewhere (`+0x6c` counted-match latch, `+0x80` userdata,
+      `+0xb0:0xc4` attr_tail target - see `protos/0x136_room_search.ksy`).
+      So `value_20`/`value_22` are `g_70+0x48`/`g_70+0x4c` - a per-CLIENT
+      persistent pair, not anything room- or search-derived. Independently
+      corroborated live, not just statically: a memory write-breakpoint hit
+      caught the same night for an unrelated field (`room_field_0c`)
+      incidentally dumped register `r24 = 0x1441194` with its own memory
+      preview showing `*(0x1441194+4) = 0x013835c0` - the exact same
+      pointer chain, confirmed from a real running process.
+
+      `protos/0x135_find_match.ksy`'s `value_pair_14` uses the IDENTICAL
+      chain at its own sender (`0x00ad6cf4`-`0x00ad6d00`, same anchor slot,
+      same `0x01441194`/`g_70` resolution) - so all three wire fields are
+      one and the same per-client value, echoed onto both message types.
+      This is why it reads live-constant across every capture: it's not
+      "coincidentally always 1000 on both messages", it's structurally the
+      SAME read of the SAME object both times.
+
+      SEMANTIC CONTENT NOT CONFIRMED - stopped here deliberately rather
+      than guess. A different, unrelated function (`FUN_00352de8`, the
+      presence/status telemetry line builder documented in
+      `protos/0x11_heartbeat_line.ksy` as "NOT the heartbeat line") reads
+      this SAME `g_70+0x48`/`+0x4c` pair via the same getter
+      (`0x003531d4`) immediately after computing a fresh float from an
+      integer input via a scale-then-offset formula (`fcfid`->`fmul`-
+      >`fadds`, i.e. `raw*scale+offset`, the shape of a fixed-point ->
+      real-unit conversion) and gates a branch on whether the pair still
+      equals a threshold constant - suggestive of "has this drifted from a
+      default/unset sentinel yet", consistent with either a matchmaking
+      skill/rating pair sitting at an unused default, or a location/
+      coordinate pair (the same function also references the `"GetLocation"`
+      string and this project's `location_server.py` stub, which always
+      replies `0.000000 0.000000`). The two candidates were NOT
+      distinguished - the format string this function builds has no
+      float specifier that would settle it either way, and the threshold
+      constant's own value wasn't read. Left unrenamed on purpose: this is
+      a real, confirmed structural finding (identity of the source) without
+      a confirmed semantic one, and this project's standard is not to
+      rename past what's actually settled. A live write-breakpoint on
+      `g_70+0x48` (address varies by session - resolve via the same
+      `*(0x1441194+4)` chain live) during a deliberate action expected to
+      move a rating OR a location would settle it in one hit; not attempted
+      this pass (static-only).
   - id: value_22
     type: u2
-    doc: "Offset 34:36. Second float converted to int. Live-constant 1000 (0x03e8)."
+    doc: "Offset 34:36. Second float converted to int. Live-constant 1000 (0x03e8) - see value_20's doc for the full source trace; this is g_70+0x4c, the second half of the same pair."
   - id: max_players
     type: u2
     doc: "Offset 36:38. Max players / room capacity - the sender's `param_3` (`r5`). NOT A HARDCODED CONSTANT (resolved 2026-08-20): the `\"GATHER\"` call site passes `FUN_0039f218()` (@0x3b7f6c), which is `FUN_00349360()->+0x18` - a field of the CURRENT GAME-MODE DESCRIPTOR - and the `\"Host\"` call site passes `FUN_003a3dc8()` (@0x35d40c). That is why the value is live-constant 8 without being a literal anywhere. `sth r23,180(r1)`, and the SAME r23 is written to `room_obj+0x1f8` at 0x00ad5f80 - the field `_opd_FUN_00ad33d8`'s `if (room_obj+0x1f8 == 0) trap` assert reads and the field Member's (0x131) offset 24 overwrites. Live-constant 8 across every capture. This is the field a server should echo into Member's capacity slot."
@@ -654,12 +709,12 @@ seq:
       the matchmade lobby never sends a 0x13a request, so this (and 0x130's
       equivalent) is the ONLY card supplier on the find-match path. See
       research/notes/2026-08-17-member-data-blob-rank-and-0x142-hostrank.md.
-  - id: flag_27
+  - id: is_party
     type: u1
     doc: |
-      Offset 39:40. 0 normally, 4 on one conditional branch
-      (`stb r0,183(r1)` @ 0x00ad5cbc) - `4` iff the sender's `param_4` (`r6`)
-      is nonzero. Live values 0x00 and 0x04.
+      Offset 39:40 (was `flag_27` - renamed 2026-08-21). 0 normally, 4 on one
+      conditional branch (`stb r0,183(r1)` @ 0x00ad5cbc) - `4` iff the
+      sender's `param_4` (`r6`) is nonzero. Live values 0x00 and 0x04.
 
       2026-08-20 (static): both then-known "Host"/"GATHER" call sites pass
       `li r6,0` (@0x35d424 and @0x3b7fac), so both produce `0x00`.
@@ -668,6 +723,23 @@ seq:
       (see the doc-level caller note) passes `r6=1`, which produces the live
       `0x04` - this is the source of every `0x04` frame. All three known call
       sites are now accounted for.
+
+      RENAMED 2026-08-21: this crosses the project's usual "don't rename on
+      an inferred semantic" bar because the caller set isn't a sample - the
+      doc-level caller note above states plainly that THREE call sites is
+      the EXHAUSTIVE set reaching this sender (found via a `bctrl`-pattern
+      scan of the whole binary plus one live-caught third site), not an
+      open-ended "observed so far". Against that closed set the split is
+      clean: the one PARTY call site passes nonzero, both non-party call
+      sites ("Host", "GATHER") pass zero - 3-for-3 of every known caller,
+      not 1-for-1. That's different in kind from `value_20`/`value_22`/
+      `flag_27`-neighbors left alone the same night, where the caller set
+      itself isn't exhaustively known or the value's own producer is
+      unresolved. Still genuinely a correlation, not a confirmed source
+      read (nobody traced WHERE param_4's value is decided upstream of
+      these three call sites, only that it's a compile-time constant at
+      each) - if a fourth call site is ever found reaching this sender, the
+      name may need revisiting.
   - id: room_name
     size: 128
     doc: "Offset 40:168. NUL-terminated room name, produced by `_opd_FUN_00e45b10(r1+184, room_obj+0x18)` @ 0x00ad5f74 - i.e. a plain strcpy of `room_obj+0x18`. Format is `<npid>.<unix-timestamp>` (e.g. `comradesean.1786863559`), built by the 0x143 sender's own sprintf-like call. room_obj+0x18 is the SAME 128-byte region 0x143 sends and 0x144 strcpy's into on receipt - see protos/0x143_set_room_data_block.ksy."

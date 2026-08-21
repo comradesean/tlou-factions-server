@@ -439,9 +439,21 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     15 above. See `protos/0x13e_set_host_flag.ksy`.
 42. **`value_20` / `value_22` / `value_pair_14`** - PRODUCER RESOLVED
     2026-08-20: `bl 0xacb6bc` @`0xad5c70`, a three-instruction getter reading
-    floats off a config object at `+0x48`/`+0x4C`. A float-derived pair,
-    live-constant 1000/1000. Reads as a default rating pair; disabled in every
-    capture.
+    floats off a config object at `+0x48`/`+0x4C`. OBJECT IDENTITY RESOLVED
+    2026-08-21 (static, corroborated by an incidental live register dump):
+    that object is `g_70`/NetInfo (`0x013835c0`), the same per-client
+    matchmaking singleton this project has mapped extensively elsewhere -
+    reached via `*(anchor-32748)` -> `0x01441194` -> `*(+4)` -> `g_70`, the
+    identical chain at both the RoomCreate and FindMatch senders. So all
+    three wire fields are the SAME `g_70+0x48`/`g_70+0x4c` value, echoed
+    onto two message types - not independently-derived-but-coincidentally-
+    equal. Semantic content still open: a different function
+    (`FUN_00352de8`, the presence-telemetry line builder) reads the same
+    pair right after a scale+offset float conversion and gates a branch on
+    it, suggestively shaped like either a rating-vs-default check or a
+    location/coordinate check (that function also touches `"GetLocation"`)
+    - not distinguished this pass. See `protos/0x12f_room_create.ksy`'s
+    `value_20` doc for the full trace.
 43. **`search_window_lo` / `search_window_hi`** - SOLVED 2026-08-20 (not just
     corrected). The value is the game's own matchmaking "rank value" - a
     career kill/death ratio x100, summed over both game modes, from two
@@ -467,12 +479,16 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     same `0xffff` as the "Host" site). So this is a per-call-path constant
     token, not a runtime quantity, and it happens to be the same constant on
     two of the three known sites.
-45. **`flag_27`** - FULLY RESOLVED 2026-08-20: `4` iff the sender's own
-    `param_4` (`r6`) `!= 0`, else `0`, against the same `FUN_00ad5b78`
-    prologue. The two game-room sites found in item 44 pass `li r6,0`
-    (yielding `0x00`); the party site found via the live breakpoint passes
-    `r6=1`, yielding the live `0x04`. All three known dispatch sites are now
-    accounted for. See
+45. **`is_party`** (was `flag_27`, renamed 2026-08-21 - see below) - FULLY
+    RESOLVED 2026-08-20: `4` iff the sender's own `param_4` (`r6`) `!= 0`,
+    else `0`, against the same `FUN_00ad5b78` prologue. The two game-room
+    sites found in item 44 pass `li r6,0` (yielding `0x00`); the party site
+    found via the live breakpoint passes `r6=1`, yielding the live `0x04`.
+    All three known dispatch sites are now accounted for - and that set is
+    exhaustive (not an open sample; see `protos/0x12f_room_create.ksy`'s
+    doc-level caller note), so the clean 3-for-3 party/non-party split was
+    judged confident enough to rename 2026-08-21, unlike other
+    still-hedged fields from the same file. See
     `research/notes/2026-08-20-followup-open-items.md` §1.
 46. **`member_slot_ec`** (`0x131`/`0x132` entry) - genuinely read off the wire
     into `member_slot+0xEC`; write-only, no consumer. STRENGTHENED 2026-08-19:
