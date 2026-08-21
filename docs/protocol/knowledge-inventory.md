@@ -471,12 +471,32 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     `g_70+0xb0:0xc4` attr_tail-target range. This reframes the leading
     candidate toward a NETWORK/MATCHMAKING CONFIG TABLE parameter (a
     timeout or threshold - `1000` fits that far more naturally than a
-    rating or a coordinate) over the two candidates named above, though
-    still not proven - no field name recovered. See
+    rating or a coordinate) over the two candidates named above.
+
+    SETTER CAUGHT LIVE, same session: `CIA=0x00acb6b0`
+    (`stfs f2,76(r3)`/`stfs f1,72(r3)`, the getter's sibling setter),
+    called from `LR=0x00356bc0` which loads ONE anchor-relative float
+    literal into `f1`, duplicates it into `f2` (`fmr`), then calls the
+    setter with `r3=g_70` - both halves of the pair set from the SAME
+    hardcoded constant, not computed. The literal itself, read directly
+    from the image: `0x0126843c` = `44 7a 00 00` = exactly `1000.0`. The
+    hit's own thread context: **`PPU[...] Thread (NetInit)`** - the
+    client's dedicated network-init thread (the same one whose
+    `"NetInit Done"` TTY line follows its connects to this project's own
+    servers) - independent support for the network-config reading over
+    both a rating (normally set at profile load) and a location (meaningless
+    before NetInit finishes connecting). CLOSING STATE: a `g_70` network-
+    config default, hardcoded to `1000.0`, stamped into both halves once
+    during NetInit, never observed to change afterward. The exact
+    parameter it configures (timeout in ms vs. a threshold vs. something
+    else) was not recovered - no string or named cross-reference settled
+    it, and the containing function's own identity wasn't pinned down
+    (no prologue found scanning back several KB - likely a large
+    jump-table-driven init routine). See
     `protos/0x12f_room_create.ksy`'s `value_20` doc for the full trace,
     including the retracted SPU-DMA theory the initial negative result
-    prompted (retracted the same night once the constructor's write was
-    actually caught).
+    prompted (retracted the same night once the constructor's zero-write
+    was caught, before the 1000.0 setter above was found).
 43. **`search_window_lo` / `search_window_hi`** - SOLVED 2026-08-20 (not just
     corrected). The value is the game's own matchmaking "rank value" - a
     career kill/death ratio x100, summed over both game modes, from two

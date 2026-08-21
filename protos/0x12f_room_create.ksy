@@ -747,17 +747,61 @@ seq:
       named parameter pairs, of which `+0x48`/`+0x4c` is one) than either
       a player rating or a player location. `1000` as a round default fits
       a timeout/threshold far more naturally than a skill rating or a
-      world coordinate. Still not proven - no field NAME was recovered,
-      and the earlier telemetry-function evidence (scale+offset compute,
-      threshold compare, proximity to a `"GetLocation"` string) isn't
-      explained away by this, just outweighed by more specific evidence.
-      STOPPING HERE for this pass: real, cumulative progress (source
-      object identified, one full write traced instruction-by-instruction,
-      construction-time value pinned, strong new structural context), but
-      the exact `0.0`->`1000.0` setter remains uncaught. A clean re-arm of
-      the same write breakpoint from a fresh boot (confirming BPM stays
-      enabled after the first hit) is the one thing that would fully close
-      this; not done this pass.
+      world coordinate.
+
+      THE SETTER - CAUGHT LIVE 2026-08-21, same session, second attempt
+      (re-armed from a fresh Connecting-screen pass). `CIA=0x00acb6b0`:
+
+        acb6b0: stfs f2,76(r3)
+        acb6b4: stfs f1,72(r3)
+        acb6b8: blr
+
+      A three-instruction setter (sibling of the `0xacb6bc` getter this
+      doc already traces - the two sit back to back in the image), called
+      from `LR=0x00356bc0`:
+
+        356bb0: lfs f1,-31204(r30)   ; f1 = a single anchor-relative
+                                        FLOAT LITERAL
+        356bb4: fmr f2,f1             ; f2 = f1 (same value, duplicated)
+        356bb8: mr r3,r31              ; r3 = g_70 (matches this hit's
+                                          r3=0x013835c0)
+        356bbc: bl 0xacb6b0             ; g_70+0x48 = g_70+0x4c = f1
+
+      The literal itself was read directly out of the image at its
+      resolved live address (`r30`'s live value this hit, `0x0126fe20`,
+      minus `31204` = `0x0126843c`): **`44 7a 00 00` = exactly `1000.0`**.
+      So this is not computed, inferred, or copied from anywhere else -
+      it is a single hardcoded float constant, deliberately duplicated
+      into both halves of the pair by one call.
+
+      THREAD CONTEXT (live, from the breakpoint hit itself): this fired on
+      **`PPU[...] Thread (NetInit)`** - the client's dedicated
+      network-initialization thread, the same one whose `"NetInit Done"`
+      TTY line follows its connects to this project's own
+      ticket/session/location/voice servers (see `server/logs`,
+      `RPCS3.log`/`TTY.log` from tonight's captures). This is strong
+      independent support for the network-config reading over BOTH
+      earlier candidates: a skill rating would ordinarily be set during
+      profile/account load, and a live position value has no meaning
+      before NetInit has even finished connecting - an explicit network-
+      parameter default being set during network bring-up is exactly
+      where you would expect one.
+
+      CLOSING STATE: this field is a `g_70`/NetInfo network-config
+      default, explicitly hardcoded to `1000.0` and stamped into BOTH
+      halves of the pair once during `NetInit`, then never observed to
+      change afterward (every capture all project long, across both
+      builds, reads `1000`/`1000`). What SPECIFIC parameter it configures
+      (a timeout in ms, a distance/range threshold, something else) is
+      NOT recovered - the containing function's own identity wasn't
+      pinned down (no prologue found scanning back several KB, consistent
+      with a large jump-table-driven init routine rather than a small
+      free-standing function) and no string or named cross-reference
+      settled it. Left unrenamed: the CATEGORY (network-init config
+      default) is now well-supported by three independent lines of
+      evidence (setter mechanism, literal-constant source, NetInit thread
+      context), but the EXACT semantic still isn't, and this project's
+      standard is not to rename past what's actually settled.
   - id: value_22
     type: u2
     doc: "Offset 34:36. Second float converted to int. Live-constant 1000 (0x03e8) - see value_20's doc for the full source trace; this is g_70+0x4c, the second half of the same pair."
