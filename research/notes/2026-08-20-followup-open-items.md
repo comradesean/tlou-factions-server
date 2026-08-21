@@ -300,10 +300,33 @@ mode transition (e.g. entering matchmaking fresh from the main menu) would
 settle that distinction, but the phase-level reading above is solid on
 current evidence.
 
-Value `0` remains unconfirmed live (the writers at `0x35ef90`/`0x33c37c` were
-not hit this pass) - most likely an idle/default/no-session-role state given
-it's also what construction (`0x3ac368`) sets, but that is inference, not a
-live-observed correlation like the other two values now have.
+### Value `0`, live-confirmed 2026-08-20 (breakpoint at the writer `0x35ef90`)
+
+Hit on `comradesean`'s client at the moment of confirming "Leave
+Matchmaking" (clicked, then confirmed "Yes" on the follow-up prompt).
+Matches the inference exactly: **`field_0x358 == 0` is the idle/no-active-
+role state**, entered when leaving/cancelling matchmaking - the same value
+construction (`0x3ac368`) sets, now confirmed as a real reset transition and
+not just a static default.
+
+### All three values closed
+
+    0  idle / no active role       - live: "Leave Matchmaking" -> Yes
+    1  post-match results / mode-resolution phase
+                                    - live: survivor-count update; post-match
+                                      mission selection
+    2  "Host" (party-creation state)
+                                    - static: FUN_0035D59C, immediately after
+                                      the "Host" RoomCreate state, gated on a
+                                      party predicate
+
+Every value now has at least one live correlation. `kind=3`'s RAW-vs-ENCODED
+selector (`field_0x358 == 2`) reads correctly in light of this: the RAW 0/1
+encoding is used specifically in the "Host" state, and the ENCODED 3-or-0
+form is used in both other states (idle and post-match) - i.e. RAW is
+reserved for the one state where becoming/ceasing host is the actual
+operation being performed, and ENCODED is the general-purpose form used
+everywhere else.
 
 ### The runtime table, read live - structure confirmed, names still open
 

@@ -386,17 +386,15 @@ the reason each item stalled.
   filter inside `FUN_0039b720` performs the self-exclusion is still
   unpinned - low-priority, the effect is proven three independent ways.
 - **Names for `netsession->field_0x358`'s three values** (the `0x13e` kind=3
-  encoding selector) - MOSTLY RESOLVED 2026-08-20 (live). `2` was already
-  identified statically (the `"Host"` party-creation state installs it).
-  `1` is now live-confirmed via two breakpoint hits at its writer
-  (`0x3b5908`, both accounts): the post-match results/mode-resolution phase
-  (survivor-count update on one hit, post-match mission selection on the
-  other). `0` remains unconfirmed live (its writers, `0x35ef90`/`0x33c37c`,
-  were not hit) - inferred as an idle/default state by analogy with
-  construction, not yet observed directly. Low value either way for a
-  server - `0x13f`'s handler ANDs the flag byte with 1, so both encodings
-  arrive at the same boolean regardless. See
-  `research/notes/2026-08-20-followup-open-items.md` §2.
+  encoding selector) - FULLY RESOLVED 2026-08-20, all three live-confirmed.
+  `0` = idle/no active role (breakpoint hit at "Leave Matchmaking" -> Yes).
+  `1` = post-match results/mode-resolution phase (breakpoint hits during a
+  survivor-count update and after post-match mission selection, both
+  accounts). `2` = "Host" party-creation state (static, `FUN_0035D59C`
+  immediately after the `"Host"` RoomCreate state). `kind=3`'s RAW-vs-ENCODED
+  split now reads cleanly in light of this: RAW is reserved for the `"Host"`
+  state specifically, ENCODED is the general form used in both other states.
+  See `research/notes/2026-08-20-followup-open-items.md` §2.
 
 ### Blocked on a rare or never-reproduced live condition
 

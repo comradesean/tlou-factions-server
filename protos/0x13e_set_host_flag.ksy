@@ -142,10 +142,20 @@ seq:
       entry from the main menu) is not distinguished by these two hits alone,
       but the phase-level reading is solid.
 
-      VALUE `0` remains unconfirmed live - the writers at `0x35ef90`/
-      `0x33c37c` were not hit in the same session. Most likely an idle/
-      default/no-role state, matching what construction (`0x3ac368`) also
-      sets, but that is inference, not a live correlation.
+      VALUE `0`, LIVE-CONFIRMED 2026-08-20 (breakpoint at the writer
+      `0x35ef90`). Hit at the moment of confirming "Leave Matchmaking".
+      Matches the inference exactly: **`field_0x358 == 0` is the idle/
+      no-active-role state**, entered on leaving/cancelling matchmaking -
+      the same value construction (`0x3ac368`) sets, now confirmed as a
+      real reset transition.
+
+      ALL THREE VALUES NOW HAVE A LIVE CORRELATION:
+      `0` idle (Leave Matchmaking); `1` post-match results/mode-resolution
+      phase (survivor-count update, post-match mission selection); `2`
+      "Host" (party-creation state). Reading kind=3's RAW-vs-ENCODED
+      selector in this light: RAW (plain 0/1) is reserved for the one state
+      where becoming/ceasing host is the actual operation (`2`), and ENCODED
+      (3-or-0) is the general-purpose form used in both other states.
 
       See `research/notes/2026-08-20-followup-open-items.md` section 2 for
       the full trace.

@@ -359,7 +359,11 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     `netsession->field_0x358 == 2` - so RAW is used in exactly one
     net-session state (the one the `"Host"` state installs) and ENCODED in
     every other, which is why RAW appears in only 2 of 72 live `kind=3`
-    frames. Names for the enum's three values are still open. `kind` itself is RESOLVED
+    frames. THE ENUM'S THREE VALUES ARE NOW ALL LIVE-CONFIRMED (2026-08-20,
+    breakpoints at each writer): `0` = idle/no active role (fires on "Leave
+    Matchmaking" -> Yes), `1` = post-match results/mode-resolution phase
+    (survivor-count update, post-match mission selection), `2` = the
+    `"Host"` party-creation state. `kind` itself is RESOLVED
     2026-08-19: `kind=3` is a generic host-flag claim/release on either the
     party or game-room object; `kind=4` is a set-then-clear pair tied to the
     game room's active-match lifecycle. Additionally (2026-08-20): for a
