@@ -569,6 +569,22 @@ per-entry ownership recovered via XOR of `member_id` against header
 `+0x0c`/`+0x0e` -> joiner sends `RoomJoin` (`0x130`) -> server pushes a fresh
 2-member roster plus `OwnerMemberChanged` (`0x13d`).
 
+**Room capacity is enforced at `RoomJoin`, not just at search-listing time.**
+The retail ceiling is 8 players in every mode, for party rooms (`0x01387f58`)
+and game rooms (`0x01383bd8` and the per-build equivalents) alike; both carry
+the same capacity field at `RoomCreate` offset `0x24` (live-constant 8), which
+`session_manager.py` clamps to 1..8 on ingestion rather than trusting the wire
+value — the same number is advertised back in `Member` wire offset 24, where a
+zero trips a compiled-in client assert. The `0x136` search-result filter that
+hides a full room from searchers is advisory only: it does not cover the
+party-invite/direct-join path, and two searchers can both see the same last
+free slot. The authoritative gate is in the `0x130` handler, taken together
+with the joiner's `member_id` allocation under one lock. There is no
+server→client "room full" message anywhere in the 28-entry `NetMatchmaking`
+table, so a refused join is logged and answered with silence — exactly what the
+"no matching room" case already does, and the joiner falls through its own join
+timeout.
+
 **Kick:** client sends `Kickout` (`0x137`) with `target_member_id@4`,
 `requester_member_id@6`, `room_id@8`; server sends `Kickedout` (`0x138`) to
 the TARGET's own connection only, plus `MemberLeft` (`0x134`) to every other

@@ -701,6 +701,31 @@ def build_room_joined(npid, name, room_id, id_gate=0, map_id=b"\x00\x00\x00\x00"
 MEMBER_ID = 1
 JOINER_MEMBER_ID = 2
 
+# Retail lobby ceiling: 8 players in every game mode, for the party staging
+# room (0x01387f58) and the game room (0x01383bd8) alike - they are the same
+# room object type on the wire and carry the same capacity field, RoomCreate
+# offset 0x24, live-constant 8 in both cases.
+RETAIL_MAX_PLAYERS = 8
+
+
+def clamp_max_players(value):
+    """Bound a wire-supplied room capacity to 1..RETAIL_MAX_PLAYERS.
+
+    The capacity arrives verbatim from RoomCreate offset 0x24 and is both
+    advertised to clients (Member wire offset 24 -> room_obj+0x1f8, where a
+    zero trips a compiled-in assert) and used as the join gate. A malformed or
+    hostile value therefore either crashes a client or creates a room the
+    server admits an unbounded number of members into, so it is clamped on
+    ingestion rather than trusted.
+    """
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return RETAIL_MAX_PLAYERS
+    if value <= 0:
+        return RETAIL_MAX_PLAYERS
+    return min(value, RETAIL_MAX_PLAYERS)
+
 
 def build_member(members, room_id, max_players, owner_ref_id, local_ref_id, team=None,
                  room_ptr=ROOM_PTR, populate_self_npid=False, blobs=None):
@@ -1675,7 +1700,12 @@ def handle(conn, addr, log_lock, log):
                 # And offset 8 is the client's OWN room-object pointer -
                 # echo that instead of the hardcoded debugger-recovered
                 # ROOM_PTR, which only ever matched this one machine's boot.
-                max_players = struct.unpack(">H", chunk[0x24:0x26])[0] or 8
+                # Clamped to 1..8 (clamp_max_players): the retail ceiling is 8
+                # for every mode, and this value is both advertised to clients
+                # and used as the RoomJoin admission gate, so it cannot be
+                # taken verbatim from the wire.
+                max_players = clamp_max_players(
+                    struct.unpack(">H", chunk[0x24:0x26])[0])
                 room_ptr = struct.unpack(">I", chunk[8:12])[0]
                 # 8-byte room identity echoed into Member wire 16:24 and the
                 # RoomJoined id-gate. ALWAYS server-minted (2026-08-19) - see
@@ -2041,6 +2071,8 @@ def handle(conn, addr, log_lock, log):
                 join_room_ptr = struct.unpack(">I", chunk[8:12])[0]
                 target_room_id = chunk[0x10:0x18]
                 host = None
+                # Set to (current_members, capacity) when the room is full.
+                join_refused = None
                 with rooms_lock:
                     # The party room_id is a shared static value
                     # (0000000001387f58) across ALL clients, so several entries
@@ -2077,11 +2109,47 @@ def handle(conn, addr, log_lock, log):
                     # client sent; on the find-match path it is the synthesized
                     # unique public id, which both clients must agree on.
                     target_room_id = host["room_id"]
+                    # CAPACITY GATE. The 0x136 search-result filter only hides
+                    # a full room from searchers; it is advisory and does not
+                    # cover the party-invite/direct-join path, nor two
+                    # searchers who both saw one free slot. This is the
+                    # authoritative check, taken with the member_id allocation
+                    # under a single rooms_lock so concurrent joins cannot both
+                    # pass it and overfill the room.
+                    with rooms_lock:
+                        capacity = clamp_max_players(
+                            host.get("max_players", RETAIL_MAX_PLAYERS))
+                        if len(host["members"]) >= capacity:
+                            join_refused = (len(host["members"]), capacity)
+                        else:
+                            # Allocate a UNIQUE, never-reused member_id for this
+                            # joiner (host=1, then 2, 3, 4, ...). A fixed
+                            # JOINER_MEMBER_ID=2 collided on the 3rd participant
+                            # and tore the whole session down - see
+                            # research/notes/2026-08-18-jip-roster-collision.md.
+                            new_mid = host.get("next_member_id", JOINER_MEMBER_ID)
+                            host["next_member_id"] = new_mid + 1
+                            host.setdefault(
+                                "room_ptrs",
+                                {MEMBER_ID: host["room_ptr"]})[new_mid] = join_room_ptr
                 if host is None:
                     emit(f"   parsed opcode={opcode:#x} (RoomJoin, "
                          f"room_ptr={join_room_ptr:#x}, "
                          f"target room_id={target_room_id.hex()}) - NO matching "
                          f"room found on another connection, no reply sent")
+                elif join_refused is not None:
+                    # Declined, no reply - the same shape as the "no matching
+                    # room" case above. The protocol has no server->client
+                    # "room full" message (the 28-entry NetMatchmaking table
+                    # carries no rejection opcode), and inventing one is not an
+                    # option; a joiner that receives no Member for the room it
+                    # asked to join falls back through its own join timeout,
+                    # which is the same path a vanished room produces.
+                    emit(f"   parsed opcode={opcode:#x} (RoomJoin, "
+                         f"room_ptr={join_room_ptr:#x}, "
+                         f"target room_id={target_room_id.hex()}) - room is FULL "
+                         f"({join_refused[0]}/{join_refused[1]} members), join "
+                         f"from {own_npid!r} DECLINED, no reply sent")
                 else:
                     # Same roster discipline as everywhere else: per-recipient,
                     # own entry FIRST, self npid populated (the local member
@@ -2090,15 +2158,8 @@ def handle(conn, addr, log_lock, log):
                     # host via 0x13f (explicit 0 for the joiner in case a
                     # stale 1 survives from an earlier hosted room - only
                     # RoomCreate's own sender clears it client-side).
-                    # Allocate a UNIQUE, never-reused member_id for this joiner
-                    # (host=1, then 2, 3, 4, ...). A fixed JOINER_MEMBER_ID=2
-                    # collided on the 3rd participant and tore the whole session
-                    # down - see research/notes/2026-08-18-jip-roster-collision.md.
-                    with rooms_lock:
-                        new_mid = host.get("next_member_id", JOINER_MEMBER_ID)
-                        host["next_member_id"] = new_mid + 1
-                        host.setdefault("room_ptrs",
-                                        {MEMBER_ID: host["room_ptr"]})[new_mid] = join_room_ptr
+                    # new_mid was allocated by the capacity gate above, under
+                    # the same lock that admitted this joiner.
                     joiner_entry = (new_mid, own_npid)
                     # ---- HARVEST THIS JOINER'S 32-BYTE MEMBER BLOB (keyed by the
                     # newly-allocated member_id) ---- wire[0x0c]=len, wire[0x18:]=blob
