@@ -278,6 +278,33 @@ three-valued net-session role/mode, `2` is the value the `"Host"` state
 installs, and the `0x13e` kind=3 sender uses the raw 0/1 encoding in that state
 and the 3-or-0 encoding otherwise.
 
+### Value `1`, live-confirmed 2026-08-20 (breakpoint at the writer `0x3b5908`)
+
+Two independent hits, both accounts, both in the same broad phase: on
+`comradesean`, the write fired during the post-match results screen's
+survivor-count update; on `mgnomad2`, it fired slightly later in the same
+overall flow, after picking a new mission from the post-match menu (not
+during the survivor-count update itself). Both are the results-screen ->
+next-step handoff, not simultaneous frames of the same instant - consistent
+with `field_0x358` marking a PHASE (a state the game is in for a stretch of
+time) rather than a single-frame event, and consistent with the
+already-documented reader corroboration: `0x0039F314`/`0x0039F398` only take
+the "we have a game-mode descriptor" branch when this field equals `1`,
+which is exactly what resolving "what mission comes next" needs. Reading:
+**`field_0x358 == 1` marks the post-match results/mode-resolution phase** -
+the stretch between a match ending and a new mode descriptor being resolved
+for whatever comes next (menu, new mission, requeue). Not yet distinguished
+from a possibly narrower reading (e.g. specifically "post-match", vs. more
+generally "any mode-descriptor-pending state") - a hit during a NON-post-match
+mode transition (e.g. entering matchmaking fresh from the main menu) would
+settle that distinction, but the phase-level reading above is solid on
+current evidence.
+
+Value `0` remains unconfirmed live (the writers at `0x35ef90`/`0x33c37c` were
+not hit this pass) - most likely an idle/default/no-session-role state given
+it's also what construction (`0x3ac368`) sets, but that is inference, not a
+live-observed correlation like the other two values now have.
+
 ### The runtime table, read live - structure confirmed, names still open
 
 A live read of `0x013859A8` (RPCS3 memory viewer, 2026-08-20) gives:

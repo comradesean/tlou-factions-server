@@ -121,14 +121,34 @@ seq:
       `0x003C05B4` uses it directly as an index into a 12-byte-stride runtime
       table, bounding the enum to a handful of values.
 
-      READING, at the confidence it deserves: `field_0x358` is a three-valued
-      net-session role/mode, `2` is the value the `"Host"` state installs, and
-      kind=3 uses the raw 0/1 encoding in that state and the 3-or-0 encoding
-      otherwise. STILL OPEN: authoritative names for the three values. The
-      runtime table at `0x013859A8` that would give them lives in `.bss` and
-      is empty on disc, so this needs a live breakpoint, not more static
-      tracing. Not a problem for a server: `0x13f`'s handler ANDs the byte
-      with 1, so both encodings arrive as the same boolean.
+      READING: `field_0x358` is a three-valued net-session role/mode, `2` is
+      the value the `"Host"` state installs, and kind=3 uses the raw 0/1
+      encoding in that state and the 3-or-0 encoding otherwise. Not a problem
+      for a server either way: `0x13f`'s handler ANDs the byte with 1, so
+      both encodings arrive as the same boolean.
+
+      VALUE `1`, LIVE-CONFIRMED 2026-08-20 (breakpoint at the writer
+      `0x3b5908`, two independent hits, both accounts). Both landed in the
+      same broad phase: on one account during the post-match results
+      screen's survivor-count update, on the other slightly later in the
+      same flow, after picking a new mission from the post-match menu.
+      Matches the reader corroboration above (`0x0039F314`/`0x0039F398`'s
+      "game-mode descriptor" branch) exactly - resolving what mission comes
+      next needs a mode descriptor. Reading: **`field_0x358 == 1` marks the
+      post-match results/mode-resolution phase**, the stretch between a
+      match ending and a new mode descriptor being resolved for whatever
+      comes next. Whether this is specifically "post-match" or more broadly
+      "any pending mode-descriptor resolution" (e.g. also fresh matchmaking
+      entry from the main menu) is not distinguished by these two hits alone,
+      but the phase-level reading is solid.
+
+      VALUE `0` remains unconfirmed live - the writers at `0x35ef90`/
+      `0x33c37c` were not hit in the same session. Most likely an idle/
+      default/no-role state, matching what construction (`0x3ac368`) also
+      sets, but that is inference, not a live correlation.
+
+      See `research/notes/2026-08-20-followup-open-items.md` section 2 for
+      the full trace.
   - id: kind
     type: u1
     doc: |
