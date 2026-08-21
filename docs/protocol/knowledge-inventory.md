@@ -28,6 +28,12 @@ presence for party rooms and gates the friends-list "Join Party" row - a
 side effect neither this file nor `proto-map.md` previously documented. An
 AUDIT the same day found one of the second pass's own claims wrong: see
 `0x13e`'s `flag` field entry below and `protos/0x13e_set_host_flag.ksy`.
+A FOURTH 2026-08-20 pass
+(`research/notes/2026-08-20-followup-open-items.md`) resolved
+`FUN_00ad5b78`'s caller (two vtable-`+0x10` dispatch sites), resolved
+`0x13e` kind=3's encoding selector (`netsession->field_0x358 == 2`),
+re-derived `0x142 HostRank`'s per-entry value as a packed bitfield rather
+than a rank, and closed `capability_flag` bit 1 as consumed by nothing.
 
 The bar for **Tier 1** is the project's reserved standard applied to a whole
 message or field: a NAME, a DEFINITION (what the bytes are), and a game or
@@ -262,11 +268,22 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     client-side, and what a real backend does with either notification remains
     permanently unrecoverable from the client alone. See
     `protos/0x140_set_room_flags.ksy`.
-37. **`0x142` HostRank `entries`** - per-player values from the player object's
-    `vtable[0]` getter. Live: constant `0x0002` on unranked accounts. Proven NOT
-    to be `member_data.rank_value`. Encoding needs a ranked capture.
-    RECONFIRMED 2026-08-20 across all 241 captured frames (3 more than the
-    previous pass): every one still ends in `0x0002`. Still blocked.
+37. **`0x142` HostRank `entries`** - STRUCTURE RESOLVED 2026-08-20, and the
+    previous entry here was wrong about what blocks it. The `vtable[0]` getter
+    is `FUN_003CD6C8`, slot 0 of the player vtable `0x01224438` (installed
+    into all 8 player slots at `0x39c4ac`), and it returns a PACKED BITFIELD,
+    not a rank:
+    `entry = (b & 0xFFF) + (0x800 if a && (b & 0xFFF) else 0) + (c << 12)`
+    with `b = player+0x1A8`, `a = player+0x1B0`, `c = player+0x1AC`, all three
+    written by `FUN_0039F75C`, and `b`'s main source being `member_slot+0xE8`
+    = the `0x131 Member` entry's own `member_id` off the wire. So a ranked
+    account was never the blocker. Also newly proven: the same getter runs as
+    a nonzero filter earlier in the loop, so an entry can never legitimately
+    be 0; and the corpus is not actually constant - one frame carries
+    `0x0002, 0x0003`. STILL OPEN: which input yields the live `0x0002`, given
+    that the host is `member_id` 1 here and no frame reports 1. Still proven
+    NOT to be `member_data.rank_value`. See `protos/0x142_host_rank.ksy` and
+    `research/notes/2026-08-20-followup-open-items.md` §3.
 38. **`member_data.rank_tier`** - **DC PATH RESOLVED 2026-08-20, and it is
     INERT.** The DC00 directory record is `{key_hash, type_hash, value_ptr}`,
     not `{value_ptr, key_hash, type_hash}`; the 2026-08-19 "193-entry array
@@ -295,7 +312,18 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     (Plaza/Beach); bit 1 is required by no map descriptor in either bundle,
     which is why the live 01.11 value is `0x0d` not `0x0f`. Retail marketing
     names for the packs are not asserted, only what the shipped table
-    requires. See `research/notes/2026-08-20-tier2-followup.md` §1.
+    requires. BIT 1 CLOSED OUTRIGHT by a later pass the same day: the second
+    gate site does NOT read a different table - its descriptor comes from
+    `FUN_003A3E94`, which resolves a `*net-games*` row (hash `0x3B9A067D`,
+    stride 112) to a `*net-maps*` row (hash `0x0DEC97A4`, stride 76) and tests
+    the same `+0x14` column. And the AND-reduce `FUN_00ad2b14` has exactly
+    five call sites in the binary: those two gates, two wire arguments (the
+    RoomJoin and RoomCreate builders - the RoomCreate one is discarded
+    unread), and one whole-value equality test against a room-search
+    candidate's advertised mask at `0x003B6C08`. Of the 13 callers of the card
+    getter `FUN_00ad2650`, only the reduce reads offset 8. So nothing consumes
+    bit 1 at all. See `research/notes/2026-08-20-tier2-followup.md` §1 and
+    `research/notes/2026-08-20-followup-open-items.md` §4.
 40. **`member_data.card_stat_2` / `card_stat_3`** - TYPE CORRECTED 2026-08-20:
     `P+0x654..0x65B` is not a numeric stat pair, it is an 8-byte NUL-terminated
     ASCII string (`strcmp`/`strcpy` on the same buffer, `0xe459bc`/`0xe45b10`,
@@ -317,7 +345,13 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     selected by a vtable+0x18 call's result - a RAW path (0 or 1, param_3
     verbatim) and an ENCODED path (3 if param_3 != 0, else 0). So on
     `kind=3`, any nonzero value (1 or 3) means "become/claim host" and 0
-    means "cease" - not residue to be ignored. `kind` itself is RESOLVED
+    means "cease" - not residue to be ignored. THE SELECTOR IS RESOLVED
+    2026-08-20: the call is `FUN_003abe4c` (vtable `0x01224178 + 0x18`) on
+    `*(u32*)0x01441198`, a nine-instruction getter returning
+    `netsession->field_0x358 == 2` - so RAW is used in exactly one
+    net-session state (the one the `"Host"` state installs) and ENCODED in
+    every other, which is why RAW appears in only 2 of 72 live `kind=3`
+    frames. Names for the enum's three values are still open. `kind` itself is RESOLVED
     2026-08-19: `kind=3` is a generic host-flag claim/release on either the
     party or game-room object; `kind=4` is a set-then-clear pair tied to the
     game room's active-match lifecycle. Additionally (2026-08-20): for a
@@ -342,14 +376,25 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     01.00-sender frames are `(0,0)`); the ratio is computed only in the 01.11
     EBOOT, cited for that reason only. Numerically verified against both
     stored profiles. See `research/notes/2026-08-20-tier2-followup.md` §6.
-44. **`caller_arg_1c`** - PRODUCER RESOLVED 2026-08-20: the sender's own
-    `param_5` (`r7`), verbatim, against `FUN_00ad5b78`'s prologue. Live
-    `0xffff` and `0x0000` are the values that argument actually carried; the
-    function's OWN caller (reached via `bctrl` through vtable slot `+0x10`,
-    invisible to a static branch scan) is not traced.
-45. **`flag_27`** - PRODUCER RESOLVED 2026-08-20: `4` iff the sender's own
+44. **`caller_arg_1c`** - FULLY RESOLVED 2026-08-20: the sender's own
+    `param_5` (`r7`), verbatim, against `FUN_00ad5b78`'s prologue. THE CALLER
+    IS ALSO RESOLVED: the `bctrl` goes through vtable `0x01243B38 + 0x10` on
+    the ND Session Manager singleton `*(0x014DB270)`, dispatched from
+    `0x0035D440` (the `"Host"` game-room state, `li r7,-1` = the live
+    `0xffff`), `0x003B7FB0` (the `"GATHER"` game-room state, `extsw r7,r26` =
+    the live `0x0000`), and - live-confirmed via an RPCS3 breakpoint during a
+    real party join, `LR=0x003CAC60` - `0x003CAC5C` inside `FUN_003CA9D0`
+    (the 9-state room state machine), the PARTY path, `r7=0xFFFFFFFF` (the
+    same `0xffff` as the "Host" site). So this is a per-call-path constant
+    token, not a runtime quantity, and it happens to be the same constant on
+    two of the three known sites.
+45. **`flag_27`** - FULLY RESOLVED 2026-08-20: `4` iff the sender's own
     `param_4` (`r6`) `!= 0`, else `0`, against the same `FUN_00ad5b78`
-    prologue. The caller (same untraced `bctrl`, see item 44) is still open.
+    prologue. The two game-room sites found in item 44 pass `li r6,0`
+    (yielding `0x00`); the party site found via the live breakpoint passes
+    `r6=1`, yielding the live `0x04`. All three known dispatch sites are now
+    accounted for. See
+    `research/notes/2026-08-20-followup-open-items.md` §1.
 46. **`member_slot_ec`** (`0x131`/`0x132` entry) - genuinely read off the wire
     into `member_slot+0xEC`; write-only, no consumer. STRENGTHENED 2026-08-19:
     independently re-verified across the WHOLE binary (not just the original

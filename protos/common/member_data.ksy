@@ -86,6 +86,49 @@ seq:
       intends to advertise DLC ownership. See
       research/notes/2026-08-20-tier2-followup.md section 1.
 
+      BIT 1 CLOSED 2026-08-20 - not merely "unused by any map", but unused by
+      anything (research/notes/2026-08-20-followup-open-items.md section 4).
+      Two checks, both by enumeration rather than by inference:
+
+      (a) THE SECOND GATE SITE READS THE SAME TABLE. `0x0035AD84` was the
+      standing hypothesis for "a different table pointer" that bit 1 might
+      gate. It is not. Its descriptor comes from `bl 0x3a3e94` @`0x35aafc`,
+      and `FUN_003A3E94` looks up the DC global `*net-games*`
+      (crc32_mpeg2 hash `0x3B9A067D`, `bl 0x9fa9b8` @`0x3a3eb4`), indexes it
+      by `*(s16*)(gamemgr+0x4980)` at stride 112 (`mulli r9,r3,112`
+      @`0x3a3ee8`), takes that row's `+0x04` map-name hash, then looks up
+      `*net-maps*` (hash `0x0DEC97A4`, `bl 0x9fa9f4` @`0x3a3f08`) and linearly
+      searches it at stride 76 for the row whose `+0x00` matches
+      (`0x3a3f40`-`0x3a3f54`). So it tests the SAME `*net-maps*` `+0x14`
+      column as `0x003A25B4`. (`0x0035AB24` performs a third AND against that
+      same column, using the raw local entitlement register
+      `*(u32*)(0x01459260+0xC)` rather than the party-wide reduce.)
+
+      (b) EVERY CONSUMER OF THE REDUCE IS ACCOUNTED FOR. `FUN_00ad2b14` has
+      exactly five call sites: `0x0035AD78` and `0x003A25A8` (the two bit-AND
+      gates above, both on `*net-maps*` `+0x14`); `0x003B61F0` and
+      `0x003B7F7C`, which pass the mask as an argument to the RoomJoin
+      (vtable `+0x14`) and RoomCreate (vtable `+0x10`) builders - the
+      RoomCreate one is DROPPED, since `FUN_00ad5b78` never reads `r9`; and
+      `0x003B6BFC`, which does `lwz r0,48(r29); cmpw cr7,r3,r0; bne ->reject`
+      @`0x3b6c04`-`0x3b6c0c`, a whole-value EQUALITY test against a
+      room-search candidate's own advertised mask at `+0x30`. Separately, of
+      the 13 call sites of the card getter `FUN_00ad2650`, only `0xad2b6c`
+      (the reduce itself) reads offset 8 from the returned pointer, and the
+      player object's mirror of the card (`player+0x3C8`, so the flag at
+      `player+0x3D0`) has no reader in the player translation unit.
+
+      So bit 1 can influence behaviour only through the whole-mask equality at
+      `0x003B6C08`, which compares the entire value and never a bit. The live
+      01.11 value `0x0d` (bits 0, 2, 3) is exactly the set of meaningful bits.
+
+      ALSO WORTH RECORDING: the reduce's identity is `0xFFFFFFFF`
+      (`li r28,-1` @`0xad2b44`), so an EMPTY room reduces to all-bits-set, not
+      to 0; and both gate sites short-circuit a zero required mask
+      (`lwz r0,20(r29); cmpwi cr7,r0,0; beq skip` @`0x3a2598`-`0x3a25a0`), so
+      on 01.00 - where all 8 `*net-maps*` rows have `+0x14 == 0` - the
+      capability gate never fires at all.
+
       Was 0 in all
       47 captures (both test accounts had no MP DLC), which is why the old u16
       `team` read as a clean 0/1/2. Confidence: high (mechanism); bit-level

@@ -334,22 +334,29 @@ minor and both needing a capture rather than more static analysis:
 
 ## Remaining items after the 2026-08-20 tier-2/audit pass, categorized by blocker
 
-The tractable items from that pass (`FUN_00ad5b78`'s caller, `0x13e` kind=3's
-vtable+0x18 selector, `0x142`'s per-u16 encoding, `capability_flag` bit 1) were
-assigned to a follow-up agent the same day - see `research/notes/` for whichever
-dated note it produces. Everything below is what's left, sorted by WHY it's
-stuck rather than left as an undifferentiated pile, so revisiting this list
-doesn't require re-deriving the reason each item stalled.
+The four tractable items from that pass were worked the same day; results in
+`research/notes/2026-08-20-followup-open-items.md`. Outcomes:
+
+- **`FUN_00ad5b78`'s caller - RESOLVED.** Two vtable-`+0x10` dispatch sites
+  found (`0x0035D440` in the `"Host"` state, `0x003B7FB0` in the `"GATHER"`
+  state), all seven arguments named, and `caller_arg_1c` / `max_players` /
+  `room_flags_e8`'s OR-gate resolved as a consequence. Residual gap below.
+- **`0x13e` kind=3's vtable+0x18 selector - RESOLVED.** It is
+  `*(u32*)(netsession + 0x358) == 2`, via `FUN_003abe4c` on vtable
+  `0x01224178`. The enum's value names are partial; details in
+  `protos/0x13e_set_host_flag.ksy`.
+- **`0x142`'s per-u16 encoding - STRUCTURE RESOLVED, and the old framing was
+  wrong.** The value is a packed bitfield, not a rank, so it was never blocked
+  on a ranked account. Residual gap below.
+- **`capability_flag` bit 1 - CLOSED.** Nothing consumes it. See
+  `protos/common/member_data.ksy`.
+
+Everything below is what's left, sorted by WHY it's stuck rather than left as
+an undifferentiated pile, so revisiting this list doesn't require re-deriving
+the reason each item stalled.
 
 ### Blocked on a live resource this project doesn't have
 
-- **`0x142 HostRank`'s per-entry numeric encoding.** The collection mechanism
-  is fully known (one u16 per local player from `FUN_0039b720`); every
-  captured value is the same live-constant `0x0002` because every account
-  observed so far is unranked (RECONFIRMED 2026-08-20, 241/241 frames still
-  `0x0002`). UNBLOCK: a ranked account, so the field varies at all. No amount
-  of further static tracing can substitute - there's nothing to decode from a
-  constant.
 - **`0x136 attr_tail`'s interior meaning.** Mechanism resolved at instruction
   granularity (producer, both copy sites, exhaustive no-reader scan); the
   bytes themselves are opaque without a reference implementation. UNBLOCK: a
@@ -357,10 +364,38 @@ doesn't require re-deriving the reason each item stalled.
   above for the full capture plan, already written and ready to execute the
   moment PS4 access exists.
 
+### Residual gaps left by the 2026-08-20 follow-up pass
+
+- **Where the PARTY's `0x12f RoomCreate` is sent from.** Both located
+  vtable-`+0x10` dispatch sites hardcode the game-room object `0x01383BD8`,
+  yet a live breakpoint previously caught `FUN_00ad5b78` entered with
+  `room_obj = 0x01387F58` (the party). `flag_27`'s live `0x04` values point at
+  the same missing site - both known sites pass `li r6,0`. UNBLOCK, static:
+  widen the dispatch scan; the one used required the slot load, the
+  `lwz r0,0(rS)`, and the `mtctr` to sit inside one 40-instruction window with
+  no intervening `bctrl`, so a site that spills the slot pointer would evade
+  it. UNBLOCK, live: breakpoint `0x00ad5b78` during party creation and read
+  `LR`.
+- **Which input produces `0x142`'s live `0x0002`.** The getter's arithmetic
+  and all three of its input fields' writers are proven
+  (`protos/0x142_host_rank.ksy`), but this server assigns `MEMBER_ID = 1` to
+  the host and no captured frame ever reports `1`, so the mapping from the
+  observed value onto a specific input is unreconciled. UNBLOCK, static:
+  determine which of `FUN_0039b720`'s seven filters excludes member 1
+  (`*(u32*)(player+0x1AC) != 1` @`0x39b818` is the obvious suspect), or find a
+  third writer of `player+0x1A8`. UNBLOCK, live: breakpoint `0x003CD6C8` and
+  read `player+0x1A8`/`+0x1AC`/`+0x1B0` directly - one breakpoint settles it.
+- **Names for `netsession->field_0x358`'s three values** (the `0x13e` kind=3
+  encoding selector). The selector itself is resolved; only the enum's
+  labels are open. The runtime table at `0x013859A8` that would name them
+  lives in `.bss` and is empty on disc, so this needs a live read, not more
+  static tracing. Low value - `0x13f`'s handler ANDs the flag byte with 1, so
+  both encodings arrive at the same boolean regardless.
+
 ### Blocked on a rare or never-reproduced live condition
 
 - **"Host quit for cheating" match teardown.** Reported once, rare, trigger
-  unknown. Unlike the two items above, NO static lead has been attempted yet
+  unknown. Unlike the items above, NO static lead has been attempted yet
   (no string/caller search has been run against the EBOOT for whatever
   message or code path produces this) - it's not proven statically
   unrecoverable, just unstarted. UNBLOCK (partial, doesn't need reproduction):

@@ -22,6 +22,77 @@ doc: |
   research/notes/2026-08-16-sessmgr-dispatch-audit-and-unsent-opcodes.md
   section 4 for the full table and the raw instruction evidence.
 
+  THE SENDER'S OWN CALLERS - RESOLVED 2026-08-20 (static; see
+  research/notes/2026-08-20-followup-open-items.md section 1). `FUN_00ad5b78`
+  is reached only through a `bctrl` on vtable slot `+0x10`, invisible to a
+  direct-`bl` scan. Resolved by locating the function's `.opd` descriptor
+  (`0x012E9C40`, the unique occurrence of `0x00AD5B78` in the image) and then
+  the unique occurrence of THAT address, `0x01243B48` = vtable base
+  `0x01243B38` + 0x10 - the same base whose `+0x20`/`+0x34` are `0x13e`'s two
+  builders, which self-checks the identification. That vtable belongs to the
+  ND Session Manager (`ndlib/net/net-session-manager-nd.cpp`), installed by
+  the constructor `FUN_00ad84cc` (`stw r0,0(r3)` @0xad8500) whose instance is
+  stored into the global `0x014DB270` (`stw r28,0(r9)` @0x3562cc). A sibling
+  LAN implementation shares the interface at vtable `0x01243AE8`
+  (`+0x10` = `FUN_00ad512c`).
+
+  TWO call sites dispatch through that slot, both passing
+  `param_2 = 0x01383BD8` (the GAME ROOM object):
+    - `0x0035D440`, in `FUN_0035D1FC` - the state that logs `"Host"`.
+    - `0x003B7FB0`, in `FUN_003B7D70` - the state that logs
+      `"****** GATHER ******"`.
+  Their arguments are decoded field-by-field in the docs below
+  (`max_players`, `caller_arg_1c`, `flag_27`, `room_flags_e8`).
+
+  THE INTERFACE TAKES A SEVENTH ARGUMENT THIS IMPLEMENTATION IGNORES. Both
+  call sites set `r9` before the `bctrl`; at the GATHER site it is the
+  party-wide capability AND-reduce `FUN_00ad2b14(0x01387F58)` (see
+  common/member_data.ksy's `capability_flag`). `FUN_00ad5b78` never reads
+  `r9` - its first write is `clrldi r9,r11,32` @0xad5be4 - and neither does
+  the LAN sibling. So the lobby-common capability mask is computed at
+  RoomCreate time and then DISCARDED on this path; it never reaches the wire.
+  The sibling RoomJoin builder (vtable `+0x14`, `FUN_00ad6c70`) is called with
+  the same 7-argument shape at `0x003B6230`.
+
+  THE PARTY'S ROOMCREATE - RESOLVED 2026-08-20, LIVE (RPCS3 breakpoint at
+  `0xad5b78` during a real party join). Register state at entry: `r3` (this)
+  `= 0x337238A0` (matches `*(0x014DB270)`, the same ND Session Manager
+  singleton the two static sites use), `r4` (room) `= 0x01387F58` (the PARTY
+  object), `r5` (max_players) `= 8`, `r6` (`flag_27` source) `= 1`, `r7`
+  (`caller_arg_1c` source) `= 0xFFFFFFFF`, `r8` (`room_flags_e8` gate)
+  `= 0`, `r9` (the discarded 7th argument) `= 0`. `LR = 0x003CAC60`, the
+  return address, pins the call site exactly - this is a THIRD dispatch the
+  static `bctrl`-pattern scan's search window did not cover, not a reachable-
+  by-the-two-known-sites case.
+
+  The call site is `0x003CAC5C` (`bctrl` at `ld r2,40(r1)` immediately after
+  @`0x3cac60`, matching `r5=0xE8`=232=this message's own declared size held
+  live in the return-site register dump - independent confirmation this is
+  really the RoomCreate call), inside **`FUN_003CA9D0`** - the SAME 9-state
+  room-state-machine function `protos/0x13f_host_flag_updated.ksy` and
+  `docs/protocol/proto-map.md` already cite as gating a block on
+  `room_obj+0x19f4`. It dispatches via a `bctr` jump table at `0x003CAA9C`
+  (9 entries, offsets relative to the table base `0x003CAA9C`); the call is
+  in the block reached by table entry 1 (offset `0xE4`, landing at
+  `0x003CAB84`), specifically its `party_obj+0x1A50 == 0` branch
+  (`ld r28,6736(r31); cmpdi cr7,r28,0; beq -> 0x3cac00` @`0x3cabb0`-
+  `0x3cabb4`) - i.e. this fires when the party object has not yet had a room
+  created for it. That branch is only reached when the counted-match latch
+  is clear (`bl 0x3abf68` @`0x3cab8c`, the already-documented `g_70[0x6C]`
+  "this match counts" accessor - see `research/notes/2026-08-17-match-counts-
+  latch.md`; `bne -> 0x3cb130` skips the whole block if a match is currently
+  counting).
+
+  This also resolves the two field gaps the two static sites left open:
+  **`flag_27`'s live `0x04`** comes from here - `r6=1` at this site, and
+  `flag_27 = 4 iff param_4 != 0` (see that field's own doc), so `1 != 0`
+  produces the wire `4`. **`caller_arg_1c`'s live `0xffff`** is confirmed
+  again here too (`r7 = 0xFFFFFFFF`, same as both static sites - this is
+  evidently a constant across every known call site, not path-specific).
+  `room_flags_e8`'s OR-gate is off here (`r8=0`), consistent with both other
+  sites. Full trace: `research/notes/2026-08-20-followup-open-items.md`
+  section 1 update.
+
   THREE CORRECTIONS to the previous version of this file, all high
   confidence:
 
@@ -148,7 +219,23 @@ seq:
       it never fired in either sample. It must come from the raw
       `*(u32*)(room_obj+0xe8)` value itself differing by context (build,
       session state, or room-object memory layout at read time), not from
-      conditional logic in this sender. STILL OPEN: what sets that raw
+      conditional logic in this sender.
+
+      GATE SOURCE RESOLVED STATICALLY 2026-08-20 (see
+      research/notes/2026-08-20-followup-open-items.md section 1). `param_6`
+      is hardcoded `li r8,0` at the `"Host"` call site (@0x35d434), so the OR
+      can NEVER fire on that path; at the `"GATHER"` call site it is
+      `clrldi r8,r31,63` @0x3b7fa8, where `r31` is `1` iff
+      `FUN_003a1f5c() != 0` AND
+      `*(u32*)(0x01459260+0xC) == *(u32*)(candidate+0x8C)`
+      (@0x3b7f3c-0x3b7f54). `0x01459260+0xC` is the same local
+      entitlement/caps register that common/member_data.ksy names as
+      `capability_flag`'s producer, so the `0x40000000` bit means "the local
+      content set matches this candidate's" - it needs a specific candidate to
+      compare against, which is consistent with both live samples reading
+      false.
+
+      STILL OPEN: what sets that raw
       value, and whether the OR ever fires under some untested condition
       (e.g. a private match specifically, which was attempted live but the
       breakpoint hit was inconclusive - see room_object_tail's doc in
@@ -163,7 +250,17 @@ seq:
     doc: "Offset 26:28. Always 0 (`sth r24,170(r1)`)."
   - id: caller_arg_1c
     type: u2
-    doc: "Offset 28:30. A caller-supplied argument (`sth r27,172(r1)` @ 0x00ad5c60, before r27 is reset to 0). Live values `ff ff` and `00 00`."
+    doc: |
+      Offset 28:30. A caller-supplied argument (`sth r27,172(r1)` @ 0x00ad5c60,
+      before r27 is reset to 0) - the sender's `param_5` (`r7`) verbatim.
+
+      SOURCE RESOLVED 2026-08-20 from the two now-known call sites (see the
+      doc-level caller note): the `"Host"` site hardcodes `li r7,-1`
+      @0x35d430, which is the live `ff ff`; the `"GATHER"` site passes
+      `extsw r7,r26` @0x3b7fa4, which is the live `00 00`. So this is a
+      per-call-path constant token, not a runtime quantity - which is exactly
+      why only two distinct values have ever been observed. A server can
+      ignore it.
   - id: pad_1e
     size: 2
     doc: "Offset 30:32. NEVER WRITTEN - uninitialised stack. server/session_manager.py reads max_players from here; that is a bug (see doc, correction 3). Live values `00 0a` and `00 00`."
@@ -175,7 +272,7 @@ seq:
     doc: "Offset 34:36. Second float converted to int. Live-constant 1000 (0x03e8)."
   - id: max_players
     type: u2
-    doc: "Offset 36:38. Max players / room capacity. `sth r23,180(r1)`, and the SAME r23 is written to `room_obj+0x1f8` at 0x00ad5f80 - the field `_opd_FUN_00ad33d8`'s `if (room_obj+0x1f8 == 0) trap` assert reads and the field Member's (0x131) offset 24 overwrites. Live-constant 8 across every capture. This is the field a server should echo into Member's capacity slot."
+    doc: "Offset 36:38. Max players / room capacity - the sender's `param_3` (`r5`). NOT A HARDCODED CONSTANT (resolved 2026-08-20): the `\"GATHER\"` call site passes `FUN_0039f218()` (@0x3b7f6c), which is `FUN_00349360()->+0x18` - a field of the CURRENT GAME-MODE DESCRIPTOR - and the `\"Host\"` call site passes `FUN_003a3dc8()` (@0x35d40c). That is why the value is live-constant 8 without being a literal anywhere. `sth r23,180(r1)`, and the SAME r23 is written to `room_obj+0x1f8` at 0x00ad5f80 - the field `_opd_FUN_00ad33d8`'s `if (room_obj+0x1f8 == 0) trap` assert reads and the field Member's (0x131) offset 24 overwrites. Live-constant 8 across every capture. This is the field a server should echo into Member's capacity slot."
   - id: member_data_length
     type: u1
     doc: |
@@ -191,7 +288,18 @@ seq:
       research/notes/2026-08-17-member-data-blob-rank-and-0x142-hostrank.md.
   - id: flag_27
     type: u1
-    doc: "Offset 39:40. 0 normally, 4 on one conditional branch (`stb r0,183(r1)` @ 0x00ad5cbc). Live values 0x00 and 0x04."
+    doc: |
+      Offset 39:40. 0 normally, 4 on one conditional branch
+      (`stb r0,183(r1)` @ 0x00ad5cbc) - `4` iff the sender's `param_4` (`r6`)
+      is nonzero. Live values 0x00 and 0x04.
+
+      2026-08-20 (static): both then-known "Host"/"GATHER" call sites pass
+      `li r6,0` (@0x35d424 and @0x3b7fac), so both produce `0x00`.
+
+      2026-08-20 (live, later same day): the party's RoomCreate call site
+      (see the doc-level caller note) passes `r6=1`, which produces the live
+      `0x04` - this is the source of every `0x04` frame. All three known call
+      sites are now accounted for.
   - id: room_name
     size: 128
     doc: "Offset 40:168. NUL-terminated room name, produced by `_opd_FUN_00e45b10(r1+184, room_obj+0x18)` @ 0x00ad5f74 - i.e. a plain strcpy of `room_obj+0x18`. Format is `<npid>.<unix-timestamp>` (e.g. `comradesean.1786863559`), built by the 0x143 sender's own sprintf-like call. room_obj+0x18 is the SAME 128-byte region 0x143 sends and 0x144 strcpy's into on receipt - see protos/0x143_set_room_data_block.ksy."

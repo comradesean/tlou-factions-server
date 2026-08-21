@@ -71,8 +71,64 @@ seq:
       reason: both non-boolean values (3 and, on kind=3 only, 1) are live
       writes, not left-over bytes.
 
-      OPEN: what the vtable+0x18 call (`ad6b74`-`ad6b8c`) tests to select
-      between the two encodings - not yet traced.
+      SELECTOR RESOLVED 2026-08-20 (static; see
+      research/notes/2026-08-20-followup-open-items.md section 2). The object
+      the vtable+0x18 call goes through is `*(u32*)0x01441198`
+      (`lwz r9,-32748(r30)` @`0xad6b54` -> literal-pool slot `0x012975D4`,
+      contents `0x01441194`; then `lwz r9,4(r9)` @`0xad6b68`). That is the
+      SAME object `FUN_00ad5b78` reads `value_20`/`value_22` out of via
+      `FUN_00acb6bc` (which is just
+      `out1 = this->f32@+0x48; out2 = this->f32@+0x4C`), and its class is
+      built by `FUN_003ac2e8`: base ctor `FUN_00acb6d0` installs the
+      all-pure-virtual vtable `0x01243A18`, then `stw r9,0(r29)` @`0x3ac31c`
+      overwrites it with the derived vtable **`0x01224178`**, and
+      `+0x48`/`+0x4C` are zeroed at `0x3ac38c`/`0x3ac390` - the very floats
+      `FUN_00acb6bc` reads back, which cross-checks the identification.
+
+      `0x01224178 + 0x18` is `FUN_003abe4c`, a nine-instruction pure getter:
+
+          3abe4c  lwz   r0,856(r3)   ; *(u32*)(this + 0x358)
+          3abe50  xori  r0,r0,2
+          3abe54  srawi r9,r0,31
+          3abe58  xor   r3,r9,r0
+          3abe5c  subf  r3,r9,r3     ; abs(x ^ 2)
+          3abe60  addi  r3,r3,-1
+          3abe64  srwi  r3,r3,31     ; -> 1 iff x == 2
+          3abe6c  blr
+
+      So the encoding is chosen by a single equality:
+
+          netsession->field_0x358 == 2  ->  RAW      (param_3 verbatim, 0/1)
+          netsession->field_0x358 != 2  ->  ENCODED  (param_3 ? 3 : 0)
+
+      That accounts for the live distribution above: `(3,3) x35` and
+      `(0,3) x35` are the ENCODED path and `(1,3) x2` the RAW path - RAW is
+      rare because `field_0x358 == 2` is a rare state.
+
+      WHAT `field_0x358` IS - partially pinned. It is a small enum, only ever
+      assigned the literals 0, 1 and 2 on instances of this class (restricting
+      a literal-pool-tracked scan to the static instance `0x013835C0`): `0` at
+      `0x3ac368` (construction), `0x35ef90`, `0x33c37c`; `1` at `0x3b5908`,
+      `0x3b5b04`, `0x3bf3f4`; `2` at `0x35bf88`, `0x35d5c0`, `0x35f174`. The
+      clearest writer is `FUN_0035D59C`, the small function immediately after
+      `FUN_0035D1FC` (the state that logs `"Host"` and issues the
+      `0x12f RoomCreate` - see protos/0x12f_room_create.ksy's caller note): it
+      sets the field to 2 and broadcasts the same value as net-event 272
+      (`li r3,272`, `bl 0x3c9d20` @`0x35d5dc`). Readers agree it is a
+      role/mode selector rather than a counter: `0x0039F314` and `0x0039F398`
+      take their "a game-mode descriptor applies" branch only when it equals
+      1; `0x003A41D0` SKIPS the `*net-games*` lookup when it equals 2;
+      `0x003C05B4` uses it directly as an index into a 12-byte-stride runtime
+      table, bounding the enum to a handful of values.
+
+      READING, at the confidence it deserves: `field_0x358` is a three-valued
+      net-session role/mode, `2` is the value the `"Host"` state installs, and
+      kind=3 uses the raw 0/1 encoding in that state and the 3-or-0 encoding
+      otherwise. STILL OPEN: authoritative names for the three values. The
+      runtime table at `0x013859A8` that would give them lives in `.bss` and
+      is empty on disc, so this needs a live breakpoint, not more static
+      tracing. Not a problem for a server: `0x13f`'s handler ANDs the byte
+      with 1, so both encodings arrive as the same boolean.
   - id: kind
     type: u1
     doc: |
