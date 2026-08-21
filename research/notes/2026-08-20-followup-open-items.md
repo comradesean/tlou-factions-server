@@ -276,9 +276,48 @@ handful of values.
 Reading, stated at the confidence it deserves: `field_0x358` is a
 three-valued net-session role/mode, `2` is the value the `"Host"` state
 installs, and the `0x13e` kind=3 sender uses the raw 0/1 encoding in that state
-and the 3-or-0 encoding otherwise. Naming the three values definitively would
-need either the runtime table at `0x013859A8` (`.bss`, empty on disc) or a live
-breakpoint - neither available here.
+and the 3-or-0 encoding otherwise.
+
+### The runtime table, read live - structure confirmed, names still open
+
+A live read of `0x013859A8` (RPCS3 memory viewer, 2026-08-20) gives:
+
+    013859a8: bdb14168 b530fe7b 022b777d
+    013859b4: 04333f76 b530fe7b 022b777d
+    013859c0: 00d93d9d 7e2c2757 a7304dd3
+    013859cc: 00000001 013885c0 01388740
+
+This confirms the 12-byte stride `0x003C05B4` was already known to use, and
+bounds the table to exactly **3 entries** - matching the enum's confirmed
+0/1/2 range exactly, since word 0 of the fourth "entry" (`0x00000001`) is not
+hash-shaped, and the two words after it (`0x013885c0`, `0x01388740`) are
+plain heap pointers into this project's already-familiar `0x0138xxxx` object
+region - i.e. a *different* structure (a count + two pointers) begins right
+after the table, not a fourth table row. So the table is `0x013859A8`
+through `0x013859CB`, no more.
+
+Two of the three fields repeat verbatim between entry 0 and entry 1
+(`b530fe7b`, `022b777d`) while only the first word differs (`bdb14168` vs
+`04333f76`) - consistent with a `{name_hash, category_hash, icon_hash}`-
+shaped record where states 0 and 1 share a category/icon and differ only by
+name, the same general shape this project's other DC-backed catalogs use
+(e.g. `*net-maps*`, `*net-stats*`).
+
+All six distinct words look like `crc32_mpeg2` hashes (this project's
+standard DC hash) but did NOT resolve against `research/tools/dc_hash_crack.py`,
+tried twice with a widening corpus: first `bin.psarc` + `paks.txt` alone (no
+match), then broadened to `bin.psarc` + `pak23.psarc` + `actor34.psarc` +
+`paks.txt` + `pak23.txt` + `banks.txt` + both `*-audio-precache.txt` manifests
+(50,676 unique candidate tokens) - still no match on any of the six values.
+Either these hashes are keyed from a source string this project's known disc
+archives don't contain as plaintext (the .dci corpus only covers DC-compiled
+modules; a UI/debug-label string not compiled through DC would never appear
+in it), or they hash something other than a plain symbol name. Naming the
+three states therefore still needs a live breakpoint on one of `field_0x358`'s
+three writer sites with the game in each state, or a wider hash-crack source
+(the 01.11 disc's own `build/main`, if its `.dci`/manifest files are ever
+found - the 01.11 install checked for this project so far only has the
+patch's promo/DLC content, not a full `build/main`).
 
 ## 3. `0x142 HostRank`'s per-u16 encoding - STRUCTURE RESOLVED, semantics still open
 
@@ -398,6 +437,40 @@ systematically excludes member 1; or the `param_5 != 0` counter branch is the
 live one and the `+0x800` marker is suppressed some other way; or `b` picks up
 a different write. **Stated plainly: the arithmetic and the writers are proven,
 the mapping from the live `0x0002` onto a specific input is not.**
+
+### Live follow-up, 2026-08-20: the counter-branch candidate is ruled out
+
+A breakpoint at `FUN_0039F75C`'s entry (`0x39f75c`) was hit five times across
+a solo game, two find-match sessions, and post-loadout, on both
+`comradesean`'s and `mgnomad2`'s clients independently. **`r7` (`param_5`)
+was `0` in every single hit.** Re-reading the disassembly at `0x39fa28`-
+`0x39fa70` confirms `r7`/`param_5` is exactly what selects the branch: `0`
+takes the `member_slot+0xE8` path (`lwz r0,232(r26)` @`0x39fa28`,
+`stw r0,424(r31)` @`0x39fa34`) and skips the counter block entirely
+(`beq cr7,0x39fb24` @`0x39fa70`); the store is unconditional first and the
+counter block, if reached, would overwrite it afterward. Since `param_5` was
+never nonzero in any live sample, **the "counter branch is live" candidate
+explanation is ruled out** - `member_slot+0xE8` is confirmed as the actual
+source of `b` in every tested scenario (solo, find-match, and post-loadout
+alike).
+
+This also incidentally confirmed the per-member loop shape live: the
+find-match session hit this breakpoint twice in a row from the same caller
+(`LR=0x3b29e8`), once with `r5` pointing at `mgnomad2`'s member slot and once
+at `comradesean`'s - one call per room member, as the note above already
+inferred from the static enumeration call (`FUN_00ad2768`).
+
+Remaining candidates: (1) one of `FUN_0039b720`'s filters at `0x39b818`
+excludes member 1 from the `0x142` array entirely, or (3) `member_slot+0xE8`
+does not actually hold `1` for the HOST's own slot the way it holds a real
+member_id for a remote member's slot - e.g. if the local player's own roster
+entry is populated through a different path than the `0x131`-receive-arm
+chain traced above. Distinguishing these needs either confirming/refuting a
+hit at `0x39b818`, or a direct memory read of `*(u32*)(member_slot+0xE8)` for
+the host's own slot at the moment `FUN_0039F75C` runs for it (the slot
+pointer is `r5`/`r26` at entry, and its first bytes are readably the
+player's own NpId text - `r5` itself identifies which player is being
+processed on any given hit).
 
 One genuinely new constraint that IS proven and is useful to a server: the same
 `vtable[0]` getter is called earlier in the same loop as a **boolean filter**
