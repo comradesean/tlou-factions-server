@@ -512,6 +512,13 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     discipline as this project's earlier retracted `net1.bin` lead for a
     different field.
 
+    NOT THE CLIENT VERSION EITHER, RULED OUT 2026-08-21: compared byte for
+    byte against the `01.11` EBOOT (statically, both files). The setter,
+    its entire containing function, the anchor chain, and the literal
+    constant's own bytes are ALL identical between `01.00` and `01.11` -
+    a real version-dependent value would have differed between builds;
+    this one is unchanged in every respect.
+
     The exact parameter this configures (timeout in ms vs. a threshold
     vs. something else) still was not recovered. See
     `protos/0x12f_room_create.ksy`'s `value_20` doc for the full trace,

@@ -838,6 +838,23 @@ seq:
       earlier retracted `net1.bin` lead for a different field: a common
       round number matching by coincidence is not evidence.
 
+      "IS IT ACTUALLY THE CLIENT VERSION?" - CHECKED AND RULED OUT
+      2026-08-21. Since the write happens during network/session-manager
+      bring-up, it's a fair question whether `1000.0` is a build/protocol
+      version marker rather than a config value - if so, it should differ
+      between `01.00` and `01.11`. Directly compared, byte for byte, in
+      both builds' EBOOTs: the setter (`0x00acb6b0`), its ENTIRE
+      containing/caller function (`0x003557a8`, the Session Manager
+      singleton constructor - every instruction of its prologue and the
+      `lfs f1,-31204(r30)` load site are byte-identical), the anchor chain
+      (`r2=0x01305870` -> `*(r2-31188)` -> `r30=0x0126fe20` -> constant
+      addr `0x0126843c`), and the constant's own bytes (`44 7a 00 00`)
+      are ALL identical between the two builds - resolved statically
+      against both EBOOT files directly, no live session needed for this
+      check. A real version-dependent value would have differed between
+      `01.00` and `01.11`; this one does not, in any respect. Ruled out
+      cleanly, not just unconfirmed.
+
       CLOSING STATE: this field is a `g_70`/NetInfo network-config
       default, explicitly hardcoded to `1000.0` and stamped into BOTH
       halves of the pair once - inside the SAME function that constructs
@@ -846,12 +863,14 @@ seq:
       reads `1000`/`1000`). What SPECIFIC parameter it configures (a
       timeout in ms, a distance/range threshold, something else) is NOT
       recovered - no string, named DC cross-reference, or net1.bin value
-      match settled it. Left unrenamed: the CATEGORY (session/matchmaking
-      subsystem init-time config default) is now well-supported by FOUR
-      independent lines of evidence (setter mechanism, literal-constant
-      source, NetInit thread context, and now the containing function's
-      identity), but the EXACT semantic still isn't, and this project's
-      standard is not to rename past what's actually settled.
+      match settled it, and it is confirmed NOT a version marker. Left
+      unrenamed: the CATEGORY (session/matchmaking subsystem init-time
+      config default) is now well-supported by FOUR independent lines of
+      evidence (setter mechanism, literal-constant source, NetInit thread
+      context, and the containing function's identity) plus one ruled-out
+      alternative (version), but the EXACT semantic still isn't settled,
+      and this project's standard is not to rename past what's actually
+      settled.
   - id: value_22
     type: u2
     doc: "Offset 34:36. Second float converted to int. Live-constant 1000 (0x03e8) - see value_20's doc for the full source trace; this is g_70+0x4c, the second half of the same pair."
