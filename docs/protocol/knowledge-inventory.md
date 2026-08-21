@@ -452,8 +452,31 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     pair right after a scale+offset float conversion and gates a branch on
     it, suggestively shaped like either a rating-vs-default check or a
     location/coordinate check (that function also touches `"GetLocation"`)
-    - not distinguished this pass. See `protos/0x12f_room_create.ksy`'s
-    `value_20` doc for the full trace.
+    - not distinguished this pass.
+
+    FURTHER TRACED 2026-08-21 (live write breakpoint): `g_70+0x48`/`+0x4c`
+    is zeroed at game-boot construction time (`g_70`'s own constructor,
+    `0x003ac2e8`, `stw r11,72(r29)`/`stw r11,76(r29)` with `r11=0` -
+    matches known sibling field `g_70+0x80`/userdata zeroed a few
+    instructions earlier, confirming the constructor's identity), not
+    `1000.0` as seen on every wire capture - something else sets it to
+    `1000.0` before the Connecting screen, not yet caught (the same
+    breakpoint didn't fire a second time; likely needs BPM manually
+    re-armed post-hit, or the real setter is a bulk struct/table copy
+    rather than a scalar store). A live memory read during the Connecting
+    screen found real structural context: an identically-shaped SECOND
+    paired-float default (`-2.0`/`-2.0`) a few dozen bytes away, and the
+    literal string `"t1.final.prod\0"` (this project's own S3 hostname
+    prefix) 0x80 bytes further in, 4 bytes past the already-documented
+    `g_70+0xb0:0xc4` attr_tail-target range. This reframes the leading
+    candidate toward a NETWORK/MATCHMAKING CONFIG TABLE parameter (a
+    timeout or threshold - `1000` fits that far more naturally than a
+    rating or a coordinate) over the two candidates named above, though
+    still not proven - no field name recovered. See
+    `protos/0x12f_room_create.ksy`'s `value_20` doc for the full trace,
+    including the retracted SPU-DMA theory the initial negative result
+    prompted (retracted the same night once the constructor's write was
+    actually caught).
 43. **`search_window_lo` / `search_window_hi`** - SOLVED 2026-08-20 (not just
     corrected). The value is the game's own matchmaking "rank value" - a
     career kill/death ratio x100, summed over both game modes, from two

@@ -685,11 +685,79 @@ seq:
       constant's own value wasn't read. Left unrenamed on purpose: this is
       a real, confirmed structural finding (identity of the source) without
       a confirmed semantic one, and this project's standard is not to
-      rename past what's actually settled. A live write-breakpoint on
-      `g_70+0x48` (address varies by session - resolve via the same
-      `*(0x1441194+4)` chain live) during a deliberate action expected to
-      move a rating OR a location would settle it in one hit; not attempted
-      this pass (static-only).
+      rename past what's actually settled.
+
+      LIVE WRITE-BREAKPOINT ATTEMPTED 2026-08-21, NEGATIVE RESULT (same
+      night, same session as the successful `room_field_0c` write-
+      breakpoint on the exact same tool). `g_70+0x48` at this session's
+      resolved address (`0x01383608`) was watched across a memory WRITE
+      breakpoint through: extended time sitting in the main menu (during
+      which a memory READ breakpoint at the same address confirmed it is
+      read constantly, every ~5s, matching the heartbeat cadence and
+      correlating in time with real `get-location` queries landing in
+      `location_server.log`), hosting a private match, and a Find Match
+      search. Not once did the write breakpoint fire. The breakpoint tool
+      itself is trusted - the SAME session's `room_field_0c` write
+      breakpoint fired cleanly and repeatedly at a different address using
+      the identical setup.
+
+      SPU-DMA THEORY RETRACTED, SAME NIGHT: a follow-up pass found the
+      write breakpoint DOES fire on this exact address after all, at the
+      very start of game load - `CIA=0x003ac310` (immediately after `bl
+      0xacb6d0` inside a large constructor at `0x003ac2e8` that zeroes
+      dozens of `g_70` fields sequentially, `+0x50`/`+0x54`/`+0x58`/`+0x68`/
+      `+0x80`/... - `g_70+0x80` matches this project's already-documented
+      userdata field, confirming this constructor's identity). The actual
+      stores are `0x3ac38c: stw r11,72(r29)` / `0x3ac390: stw r11,76(r29)`
+      with `r11=0` - i.e. `g_70+0x48`/`+0x4c` starts at **zero**, not
+      `1000.0`, at construction. So this field is ordinary PPU-writable
+      after all, ruling out an SPU-DMA blind spot for THIS specific write -
+      the earlier negative result was simply "not yet constructed" (the
+      breakpoint was armed only after gameplay was already past this
+      point in every attempt up to then), not evidence of anything hidden
+      from the tool.
+
+      Something ELSE, not yet caught, writes `0.0` -> `1000.0` between this
+      constructor and the multiplayer Connecting screen - a live memory
+      read (not a caught breakpoint - the breakpoint did not fire a second
+      time; either it needed BPM manually re-armed after the first hit, or
+      the actual write is a bulk struct/table copy rather than a discrete
+      `stw` this address-scoped breakpoint would catch) during the
+      Connecting screen confirmed the transition already happened by then:
+      `g_70+0x48:+0x148` read as (relative offsets):
+
+        +0x00/+0x04  44 7a 00 00 / 44 7a 00 00   (1000.0 / 1000.0 - our pair)
+        +0x0c        81 1c 9d c5                  (hash-shaped, cf. this
+                                                    project's crc32_mpeg2
+                                                    DC key hashes)
+        +0x20/+0x24  c0 00 00 00 / c0 00 00 00   (-2.0 / -2.0 - a SECOND
+                                                    identically-shaped
+                                                    paired-float default)
+        +0x80        "t1.final.prod\0"            (the exact S3 hostname
+                                                    prefix from tonight's
+                                                    http_gateway.log; sits 4
+                                                    bytes past this project's
+                                                    already-documented
+                                                    `g_70+0xb0:0xc4`
+                                                    attr_tail-target range)
+
+      REFRAMED: a hostname literal and a second matching paired-float
+      default sitting a few dozen bytes away make this read much more like
+      a NETWORK/MATCHMAKING CONFIG TABLE living inside `g_70` (several
+      named parameter pairs, of which `+0x48`/`+0x4c` is one) than either
+      a player rating or a player location. `1000` as a round default fits
+      a timeout/threshold far more naturally than a skill rating or a
+      world coordinate. Still not proven - no field NAME was recovered,
+      and the earlier telemetry-function evidence (scale+offset compute,
+      threshold compare, proximity to a `"GetLocation"` string) isn't
+      explained away by this, just outweighed by more specific evidence.
+      STOPPING HERE for this pass: real, cumulative progress (source
+      object identified, one full write traced instruction-by-instruction,
+      construction-time value pinned, strong new structural context), but
+      the exact `0.0`->`1000.0` setter remains uncaught. A clean re-arm of
+      the same write breakpoint from a fresh boot (confirming BPM stays
+      enabled after the first hit) is the one thing that would fully close
+      this; not done this pass.
   - id: value_22
     type: u2
     doc: "Offset 34:36. Second float converted to int. Live-constant 1000 (0x03e8) - see value_20's doc for the full source trace; this is g_70+0x4c, the second half of the same pair."

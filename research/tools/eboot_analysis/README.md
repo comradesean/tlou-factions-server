@@ -114,6 +114,28 @@ i.e. the call site) - `CIA` -> `objdump --start-address=<CIA-a bit>
 same technique on the caller pins the code path. `fnstart.py <LR>` gets the
 containing function's entry point in one step.
 
+**A theoretical blind spot worth knowing, NOT yet confirmed in this
+project** (retracted 2026-08-21 - see below): a memory WRITE breakpoint
+that never fires is not automatically proof nothing writes that address.
+PS3's Cell architecture lets an SPU core write to main memory via DMA,
+which does not execute a PPU store instruction, so RPCS3's PPU-side
+`HAS_MEMORY_BREAKPOINTS` in principle cannot see it. This project
+initially suspected exactly this for `protos/0x12f_room_create.ksy`'s
+`value_20` field after a write breakpoint sat silent through extended
+live testing - but a follow-up pass caught the SAME address's write
+cleanly (a plain PPU `stw`, at game-boot construction time), retracting
+the SPU-DMA read for that specific case. The likelier everyday cause of
+"armed breakpoint, no hit" turned out to be much more mundane: the
+breakpoint was armed only AFTER the interesting write had already
+happened (this address is set once, very early, then just read
+repeatedly) - "never observed" is not "never written" for a one-shot
+init value, no exotic explanation needed. Keep the SPU-DMA possibility
+in mind for a value that's read frequently by PPU code but never once
+caught writing under a confirmed-working breakpoint tried across a wide
+range of game states INCLUDING points before and after the value first
+appears - but reach for the boring explanation (missed the one-time
+write, or BPM needs re-enabling after a hit) first.
+
 ## Bonus: the game logs to `sys_tty`, and RPCS3 records it
 
 TLOU writes its own diagnostics (`Post/Get/Send Message %x, size %i`, assert
