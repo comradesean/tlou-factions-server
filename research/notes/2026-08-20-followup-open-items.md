@@ -319,7 +319,7 @@ three writer sites with the game in each state, or a wider hash-crack source
 found - the 01.11 install checked for this project so far only has the
 patch's promo/DLC content, not a full `build/main`).
 
-## 3. `0x142 HostRank`'s per-u16 encoding - STRUCTURE RESOLVED, semantics still open
+## 3. `0x142 HostRank`'s per-u16 encoding - FULLY RESOLVED, 2026-08-20 (live, later same day)
 
 This is the item that changed the most. The existing documentation describes
 the value as "that player's `vtable[0]` getter return... a per-player rank".
@@ -482,6 +482,60 @@ Also recovered while tracing (useful for `0x131`): the player slot mirrors the
 member slot as `player+0x3C0 = slot+0xF0`, `player+0x3C4 = slot+0xE4`,
 `player+0x3C8..0x3E7 = the 32-byte member_data card`; and `slot+0xE4` is a
 per-room monotonic counter allocated at `0xad371c` from `room+0x19E8`.
+
+### The full resolution: `0x142` reports OTHER members' ids, never the sender's own
+
+Five live breakpoint hits at `FUN_0039F75C`'s entry (solo game, two
+find-match sessions, post-loadout, both accounts) all showed `param_5=0`
+(`r7`), which the disassembly confirms always takes the `member_slot+0xE8`
+write path and never the counter path (see the "Live follow-up" subsection
+above) - so `b = member_slot+0xE8` is proven correct in every tested case,
+including two direct memory reads: a HOST's slot (as copied on the joiner's
+own client) read `1`, and a player's own self-slot read its own `member_id`
+(`2`) correctly. Both matched the expected `member_id` exactly.
+
+And yet **no live `0x142` frame has ever reported `1`**, including several
+sent in the same session as those confirmed-correct memory reads. The
+resolution came from correlating `server/logs/wire.jsonl` (per-connection
+wire capture) against `server/logs/session_manager.log` (which records the
+server's own room-registry `member_id` for each connection) for two
+independent, real matches with SWAPPED host/joiner roles:
+
+* Room `5000000601383bd8`: server registry confirms connection 2
+  (`mgnomad2`) is `member_id=1` (host) - a `0x13a` from the SAME connection,
+  seconds after its `0x142`, is logged `"SetPartyData from member_id=1"`.
+  That connection's own `0x142` (`...00010060...0002`) reports entry `2` -
+  `comradesean`'s (the joiner's) id, not its own.
+* Room `5000001b01383bd8`: server registry confirms `comradesean`'s
+  RoomCreate got `member_id=1` (host) and `mgnomad2`'s later RoomJoin got
+  `member_id=2`. `comradesean`'s own `0x142` from this room ALSO reports
+  entry `2` - again the joiner's id, not the host's own `1`.
+* The historical 3-member room `012723d801383bd8` (`comradesean` host,
+  `member_id=1`, throughout its history in the log) produced the one
+  `count=2` frame on record, entries `[2, 3]` - both OTHER members present at
+  the time, again excluding the host's own `1`.
+
+Three independent matches, two of them with the host role on opposite
+accounts, all agree: **the host's own `0x142` lists every OTHER room
+member's `member_id`, and structurally never its own.** This is not a
+coincidence of a 2-player test pool - it explains every observed count too:
+`count=0` in every custom/solo-host frame (no other members exist to list),
+`count=1`/entry`=2` in every 2-player find-match frame (exactly one other
+member, always the server's first-assigned joiner id), `count=2`/entries
+`[2,3]` in the one 3-member capture. The exclusion must happen inside
+`FUN_0039b720`'s own filter chain (the seven-filter loop this note already
+partially traced), not in the write path this pass fully vindicated - which
+filter specifically drops the local/self player was not pinned down this
+pass, but its EFFECT is now proven beyond the reasonable doubt a live,
+role-swapped, multi-match correlation provides.
+
+Given this, the message's own name - `HostRank` - reads correctly at face
+value for the first time: it is the host reporting the OTHER participants
+present, not a self-report. Whatever the wire integer actually MEANS
+(still an open, lower-priority question - `member_id` is what has been
+proven to reach the wire, but whether the retail UI/backend then treats
+that id as a literal "rank" of some kind is undetermined) is now a separate
+question from "whose id is this", which is fully closed.
 
 ## 4. `capability_flag` bit 1 - RESOLVED as unused, by enumeration
 

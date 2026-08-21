@@ -345,9 +345,12 @@ The four tractable items from that pass were worked the same day; results in
   `*(u32*)(netsession + 0x358) == 2`, via `FUN_003abe4c` on vtable
   `0x01224178`. The enum's value names are partial; details in
   `protos/0x13e_set_host_flag.ksy`.
-- **`0x142`'s per-u16 encoding - STRUCTURE RESOLVED, and the old framing was
-  wrong.** The value is a packed bitfield, not a rank, so it was never blocked
-  on a ranked account. Residual gap below.
+- **`0x142`'s per-u16 encoding - FULLY RESOLVED (live).** The value is a
+  packed bitfield mechanically, but reduces to a plain `member_id` in every
+  real send. It's the host reporting every OTHER room member's id, never its
+  own - which is also why `1` never appeared on the wire. See
+  `protos/0x142_host_rank.ksy` and
+  `research/notes/2026-08-20-followup-open-items.md` §3.
 - **`capability_flag` bit 1 - CLOSED.** Nothing consumes it. See
   `protos/common/member_data.ksy`.
 
@@ -366,25 +369,22 @@ the reason each item stalled.
 
 ### Residual gaps left by the 2026-08-20 follow-up pass
 
-- **Where the PARTY's `0x12f RoomCreate` is sent from.** Both located
-  vtable-`+0x10` dispatch sites hardcode the game-room object `0x01383BD8`,
-  yet a live breakpoint previously caught `FUN_00ad5b78` entered with
-  `room_obj = 0x01387F58` (the party). `flag_27`'s live `0x04` values point at
-  the same missing site - both known sites pass `li r6,0`. UNBLOCK, static:
-  widen the dispatch scan; the one used required the slot load, the
-  `lwz r0,0(rS)`, and the `mtctr` to sit inside one 40-instruction window with
-  no intervening `bctrl`, so a site that spills the slot pointer would evade
-  it. UNBLOCK, live: breakpoint `0x00ad5b78` during party creation and read
-  `LR`.
-- **Which input produces `0x142`'s live `0x0002`.** The getter's arithmetic
-  and all three of its input fields' writers are proven
-  (`protos/0x142_host_rank.ksy`), but this server assigns `MEMBER_ID = 1` to
-  the host and no captured frame ever reports `1`, so the mapping from the
-  observed value onto a specific input is unreconciled. UNBLOCK, static:
-  determine which of `FUN_0039b720`'s seven filters excludes member 1
-  (`*(u32*)(player+0x1AC) != 1` @`0x39b818` is the obvious suspect), or find a
-  third writer of `player+0x1A8`. UNBLOCK, live: breakpoint `0x003CD6C8` and
-  read `player+0x1A8`/`+0x1AC`/`+0x1B0` directly - one breakpoint settles it.
+- **Where the PARTY's `0x12f RoomCreate` is sent from - RESOLVED (live).** A
+  breakpoint at `FUN_00ad5b78` during a real party join caught it: the call
+  is at `0x003CAC5C`, inside `FUN_003CA9D0` (the 9-state room state machine),
+  the `party_obj+0x1A50 == 0` branch of its jump table. This also resolved
+  `flag_27`'s live `0x04` (the party site passes `r6=1`). See
+  `protos/0x12f_room_create.ksy` and
+  `research/notes/2026-08-20-followup-open-items.md` §1.
+- **Which input produces `0x142`'s live `0x0002` - RESOLVED (live).** Not a
+  mapping-onto-an-input problem after all: the write path is proven correct
+  (five live breakpoints, both accounts), and the value that reaches the
+  wire IS the correct `member_id` - just never the SENDER's own. `0x142` is
+  the host listing every other room member's id. See
+  `protos/0x142_host_rank.ksy` and
+  `research/notes/2026-08-20-followup-open-items.md` §3. Which specific
+  filter inside `FUN_0039b720` performs the self-exclusion is still
+  unpinned - low-priority, the effect is proven three independent ways.
 - **Names for `netsession->field_0x358`'s three values** (the `0x13e` kind=3
   encoding selector). The selector itself is resolved; only the enum's
   labels are open. The runtime table at `0x013859A8` that would name them

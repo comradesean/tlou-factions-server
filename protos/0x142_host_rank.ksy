@@ -25,33 +25,40 @@ doc: |
   `sth r3,0(r9)` @ 0x39b934). The per-entry VALUE is the player vtable[0]
   getter's return.
 
-  THE PER-ENTRY VALUE IS NOT A RANK - CORRECTED 2026-08-20. Earlier passes
-  described the entry as "that player's rank" and the encoding as blocked on
-  a ranked account, because the producing `vtable[0]` getter had never been
-  located. It has now been located and read, and it returns a PACKED
-  BITFIELD (a 12-bit field with a conditional marker in bit 11, plus a 4-bit
-  tag in the top nibble), not a scalar. See the `entries` field doc below for
-  the full derivation and research/notes/2026-08-20-followup-open-items.md
-  section 3 for the trace. The MESSAGE name is untouched by this - `HostRank`
-  was established by the shifted declared-name table matching by exact size
-  across 4 messages plus 3 semantic corroborations, and then hand-confirmed
-  live; only the reading of what the trailing u16s CONTAIN changes.
+  THE PER-ENTRY VALUE IS NOT A RANK - CORRECTED 2026-08-20, then FULLY
+  RESOLVED live later the same day. Earlier passes described the entry as
+  "that player's rank" and the encoding as blocked on a ranked account,
+  because the producing `vtable[0]` getter had never been located. It has
+  now been located, read, and live-verified end to end: mechanically it IS a
+  packed bitfield (12-bit field, a conditional marker in bit 11, a 4-bit tag
+  in the top nibble - see the `entries` field doc below), but in every real
+  send observed the marker/tag inputs are zero, so the value on the wire
+  reduces to exactly the OTHER room member's `member_id` - never a rank, and
+  never the sender's own id. `HostRank` is the host reporting who ELSE is in
+  the room, not a self-report. See
+  research/notes/2026-08-20-followup-open-items.md section 3 for the full
+  live correlation (three independent matches, swapped host/joiner roles).
+  The MESSAGE name is untouched by any of this - `HostRank` was established
+  by the shifted declared-name table matching by exact size across 4
+  messages plus 3 semantic corroborations, and then hand-confirmed live.
 
   LIVE ENTRY DATA RE-COUNTED 2026-08-20 over server/logs/wire.jsonl (187
   0x142 frames): the "always 0x0002" reading needs one refinement that turns
   out to matter. Exactly one frame carries count=2, and its two entries are
   `0x0002, 0x0003` - CONSECUTIVE (raw frame
   `0000014200020060012723d801383bd800020003`). Every single-entry frame reads
-  `0x0002`, across ten distinct connections. So the value is not a global
-  constant; with two qualifying players it is two adjacent small integers,
-  which is the signature of a small per-member sequential quantity and is
-  hard to reconcile with "rank". This is independent evidence for the
-  bitfield reading below.
+  `0x0002`, across ten distinct connections. EXPLAINED 2026-08-20 (later live
+  pass): the sender is always the room's host, `2` is always this server's
+  first-assigned joiner id, and the sequential-looking `[2,3]` pair in the
+  3-member frame is that same room's two OTHER members - not a coincidence
+  of "rank," but the direct, exhaustive list of everyone besides the sender.
 
   LIVE ENTRY DATA (2026-08-18, 148 frames): the find-match path sends count=1
   with a single entry 0x0002 in 138/138 frames; the custom-game path sends
-  count=0 (empty list) in 27/27 frames. The count difference follows the
-  player-array state filter at send time rather than the room type as such.
+  count=0 (empty list) in 27/27 frames. EXPLAINED 2026-08-20: this was never
+  about find-match vs. custom-game as such - it's simply whether any OTHER
+  member is present to report (a custom/solo game has none; a 2-player
+  find-match match has exactly one).
   RETRACTED 2026-08-20: the rest of this paragraph used to read "every
   sampled account is unranked, so 0x0002 is the unranked value; a ranked
   account remains the capture needed to pin the encoding." That framing rests
@@ -157,15 +164,40 @@ seq:
           0x131 entry.member_id -> local+0x38 -> slot+0xE8
                                 -> player+0x1A8 -> low 12 bits of this u16
 
-      STILL OPEN, stated plainly: which input produces the live `0x0002`.
-      This server assigns `MEMBER_ID = 1` to the host and every captured
-      `0x131` contains an entry with `member_id == 1`, yet no `0x142` frame
-      ever reports `1`. Candidates not distinguished here: one of
-      `FUN_0039b720`'s seven filters (notably
-      `*(u32*)(player+0x1AC) != 1` @`0x39b818`) systematically excludes that
-      member; or the `param_5 != 0` counter branch is the live one; or `b`
-      picks up a write this pass did not find. The arithmetic and the writers
-      are proven; the mapping onto the observed constant is not.
+      FULLY RESOLVED 2026-08-20 (live, later same day). Five live breakpoints
+      at `FUN_0039F75C`'s entry (solo game, two find-match sessions,
+      post-loadout, both accounts) all showed `param_5=0`, confirming
+      `b = member_slot+0xE8` in every real case (never the counter branch),
+      and two direct memory reads confirmed that value is exactly the
+      correct `member_id` in both directions - a host's slot as copied on a
+      remote client, and a player's own self-slot. So the write path and the
+      arithmetic are fully vindicated: `entry` genuinely equals a real
+      `member_id` on every observed send.
+
+      The "why is `1` never on the wire" question is answered by what
+      `0x142` actually REPORTS, not by anything wrong with the write path:
+      correlating `server/logs/wire.jsonl` against `server/logs/
+      session_manager.log`'s own room-registry `member_id` for two
+      independent real matches with SWAPPED host/joiner roles (`mgnomad2`
+      host in one, `comradesean` host in the other) shows the HOST's own
+      `0x142` reports the OTHER member's id both times - never its own `1`.
+      A third, historical 3-member capture (`count=2`, entries `[2,3]`, host
+      `member_id=1` throughout that room's log history) reports both OTHER
+      members, again excluding the host's own id. **`0x142` lists every
+      OTHER room member's `member_id`; it structurally never includes the
+      sender's own.** That is also why the name reads correctly at face
+      value for the first time - `HostRank` is the host reporting who else
+      is present, not a self-report - and it explains every previously-odd
+      count: `0` when solo (nothing else to report), `1` in every 2-player
+      match (exactly one other member), `2` in the one 3-member capture.
+
+      Which filter inside `FUN_0039b720`'s seven-filter loop performs the
+      self-exclusion was not pinned down this pass (the EFFECT is proven by
+      three independent, role-swapped live matches; the specific instruction
+      doing it is not) - a lower-priority remaining detail, since the
+      practical question (whose id is this) is closed. See
+      `research/notes/2026-08-20-followup-open-items.md` section 3 for the
+      full correlation.
 
       ONE HARD CONSTRAINT THAT IS PROVEN, and useful if a server ever parses
       this: the SAME `vtable[0]` getter is invoked earlier in the same loop as

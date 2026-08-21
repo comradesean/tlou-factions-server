@@ -268,21 +268,29 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     client-side, and what a real backend does with either notification remains
     permanently unrecoverable from the client alone. See
     `protos/0x140_set_room_flags.ksy`.
-37. **`0x142` HostRank `entries`** - STRUCTURE RESOLVED 2026-08-20, and the
-    previous entry here was wrong about what blocks it. The `vtable[0]` getter
-    is `FUN_003CD6C8`, slot 0 of the player vtable `0x01224438` (installed
-    into all 8 player slots at `0x39c4ac`), and it returns a PACKED BITFIELD,
-    not a rank:
+37. **`0x142` HostRank `entries`** - FULLY RESOLVED 2026-08-20 (live, later
+    same day). The `vtable[0]` getter is `FUN_003CD6C8`, slot 0 of the player
+    vtable `0x01224438` (installed into all 8 player slots at `0x39c4ac`),
+    returning a PACKED BITFIELD:
     `entry = (b & 0xFFF) + (0x800 if a && (b & 0xFFF) else 0) + (c << 12)`
     with `b = player+0x1A8`, `a = player+0x1B0`, `c = player+0x1AC`, all three
-    written by `FUN_0039F75C`, and `b`'s main source being `member_slot+0xE8`
-    = the `0x131 Member` entry's own `member_id` off the wire. So a ranked
-    account was never the blocker. Also newly proven: the same getter runs as
-    a nonzero filter earlier in the loop, so an entry can never legitimately
-    be 0; and the corpus is not actually constant - one frame carries
-    `0x0002, 0x0003`. STILL OPEN: which input yields the live `0x0002`, given
-    that the host is `member_id` 1 here and no frame reports 1. Still proven
-    NOT to be `member_data.rank_value`. See `protos/0x142_host_rank.ksy` and
+    written by `FUN_0039F75C`, `b`'s live source being `member_slot+0xE8` =
+    the `0x131 Member` entry's own `member_id`. Five live breakpoints (solo,
+    find-match x2, post-loadout, both accounts) confirmed `a=c=0` in every
+    real send, so `entry` reduces to a plain `member_id` in practice - never
+    a rank, never blocked on a ranked account. THE "WHY NEVER `1`" QUESTION
+    IS ANSWERED: correlating `wire.jsonl` against `session_manager.log`'s own
+    room-registry `member_id`, across two live matches with SWAPPED
+    host/joiner roles plus one historical 3-member capture (`[2,3]`), shows
+    the host's own `0x142` lists every OTHER member's id and structurally
+    never its own - `HostRank` reports who else is present, not a
+    self-report, which also explains every previously-odd count (0 solo, 1
+    in a 2-player match, 2 in the 3-member capture). Which specific filter in
+    `FUN_0039b720`'s seven-filter loop performs the self-exclusion is
+    unpinned (the effect is proven three independent ways, the exact
+    instruction is not) - low priority now that whose id reaches the wire is
+    settled. Still proven NOT to be `member_data.rank_value`. See
+    `protos/0x142_host_rank.ksy` and
     `research/notes/2026-08-20-followup-open-items.md` §3.
 38. **`member_data.rank_tier`** - **DC PATH RESOLVED 2026-08-20, and it is
     INERT.** The DC00 directory record is `{key_hash, type_hash, value_ptr}`,
@@ -508,11 +516,11 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     string enters the message. That is now a curiosity rather than a
     blocker, since every table pairs its hash with a plaintext name or a
     StringId. Also still open: a handful of unexplained bytes.
-54. **`0x142` numeric encoding for a ranked account** - needs a ranked
-    capture. RE-CHECKED 2026-08-20 against all 241 live captured `0x142`
-    frames (238 on the previous pass): every one still ends in the
-    unranked-account constant `0x0002` - the test accounts have not earned a
-    rank change. Still blocked.
+54. **`0x142` numeric encoding** - CLOSED 2026-08-20 (see item 37 above). Not
+    blocked on a ranked account after all: the constant `0x0002` is the
+    server's own first-assigned joiner `member_id`, not an unranked-account
+    value - `0x142` reports OTHER room members' ids, and in every 2-player
+    test session there is exactly one other member, always `member_id=2`.
 55. **Intermittent "Host quit for cheating"** teardown - rare, unexplained, no
     packet correlated with it yet. RECHECKED 2026-08-20: the string appears
     nowhere in `server/logs/`. Needs a live reproduction, not static analysis.
