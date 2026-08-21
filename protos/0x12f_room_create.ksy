@@ -855,22 +855,110 @@ seq:
       `01.00` and `01.11`; this one does not, in any respect. Ruled out
       cleanly, not just unconfirmed.
 
+      WHAT IT'S USED FOR - TRACED 2026-08-21, all 5 call sites to the
+      `0xacb6bc` getter (`scan_bl.py acb6bc`). Two are the already-known
+      wire senders (RoomCreate/FindMatch). The other three, resolved by
+      pinning each call's own `r30` anchor and reading the resulting
+      global slot directly out of the image:
+
+      SITE `0x003531d4` (`FUN_00352de8`, the heartbeat/telemetry-line
+      builder) - CONFIRMS `g_70` is the source here (`r29 =
+      *(r30-32616)` resolves to `0x013835c0`). Full surrounding logic:
+
+        lbz r0,24(r29); cmpwi cr7,r0,0; bne -> skip     ; skip unless a
+                                                            companion flag
+                                                            (g_70+24) is 0
+        [call getter -> f0=g_70+0x48, f0b=g_70+0x4c into r1+128/r1+132]
+        lfs f13,-31204(r30)                              ; f13 = 1000.0
+                                                            (SAME literal
+                                                            the setter
+                                                            uses - this
+                                                            function's own
+                                                            r30 resolves
+                                                            through the
+                                                            identical
+                                                            `-31188(r2)`
+                                                            chain, verified
+                                                            by reading
+                                                            0x0126843c
+                                                            directly)
+        fcmpu cr7,f0,f13; bne -> skip                     ; skip unless
+                                                             value_20==1000.0
+        fcmpu cr7,f0b,f13; bne -> skip                    ; skip unless
+                                                             value_22==1000.0
+        [only reached if BOTH still equal the default AND the flag is
+        clear:] read a timestamp object, call a tick-counter function
+        twice (`0xa235f0`, converted via the same `fcfid->fmul(scale)`
+        idiom seen everywhere else in this build), compare elapsed time
+        against a threshold, and - only if enough time has passed - make
+        one call (`0xe58a8c`, carrying a SEPARATE integer literal `1000`
+        among its args) and update the timestamp object for next time.
+
+      This is a "HAS THIS EVER RUN BEFORE" one-shot gate: `1000.0`/
+      `1000.0` being STILL PRESENT is read as "never yet touched", and
+      while that holds (plus the companion flag), the function performs a
+      time-cooldown-gated setup/telemetry call. No path back to the
+      `0xacb6b0` setter was found reachable from here, so this branch does
+      NOT appear to be what clears the sentinel in practice - consistent
+      with the empirical fact that `value_20`/`value_22` have NEVER been
+      observed to move away from `1000.0` in any live capture this project
+      has taken, on either build. Whether this gate has ever actually
+      fired live was not determined this pass (would need a fresh-boot
+      breakpoint on `0xe58a8c` or the timestamp read).
+
+      SITE `0x0035d30c` (inside `FUN_0035D1FC`) - CORRECTED, this is a
+      FALSE LEAD from an earlier pass's assumption. Resolving this call's
+      OWN registers directly: the getter's SOURCE here (`r3=r28`) is NOT
+      `g_70` - the destination pointers (`r4`/`r5`) resolve to
+      `0x01383bd0` (`room_obj - 8`, via `r29 = *(r30-32404)`), a
+      completely different object pair. This call site does not touch
+      `g_70+0x48`/`+0x4c` at all - it's the SAME shared getter utility
+      reused on unrelated data elsewhere in the same function. Removed
+      from this field's consumer list.
+
+      SITE `0x003b4c4c` (inside `FUN_003B7D70`, this project's
+      already-documented `"GATHER"` matchmaking state) - CONFIRMS `g_70`
+      is the source (`r3 = *(r30-32708)` resolves to `0x013835c0`,
+      resolved via this function's own `r30` prologue chain). The two
+      floats are read into stack scratch (`r1+112`/`r1+116`) and then
+      **never read again** - traced forward through the rest of the
+      function (`grep`'d every subsequent `,112(r1)`/`,116(r1)` reference
+      in a wide window past the call): the only later hits at that stack
+      offset are a `std`/`lfd` DOUBLE-word pair for an unrelated
+      int-to-double temp, the compiler simply reusing the same stack slot
+      later for something else. A genuine dead read - `g_70+0x48`/`+0x4c`
+      is fetched here and discarded.
+
+      EXHAUSTIVE NON-GETTER-READER SCAN: NOT COMPLETED this pass (the
+      whole-binary disassembly needed is too large for a single quick
+      pass) - stated plainly rather than silently skipped. What WAS
+      checked: no other call site reaches `0xacb6bc`/`0xacb6b0` beyond the
+      5 already known (`scan_bl.py` is exhaustive for direct `bl`
+      references to those two addresses specifically). An INLINED direct
+      `lfs`/`stfs` at `+0x48`/`+0x4c` off a `g_70`-resolved register,
+      bypassing the getter/setter entirely, has not been ruled out.
+
       CLOSING STATE: this field is a `g_70`/NetInfo network-config
       default, explicitly hardcoded to `1000.0` and stamped into BOTH
       halves of the pair once - inside the SAME function that constructs
       the Session Manager singleton - then never observed to change
       afterward (every capture all project long, across both builds,
-      reads `1000`/`1000`). What SPECIFIC parameter it configures (a
-      timeout in ms, a distance/range threshold, something else) is NOT
+      reads `1000`/`1000`). ITS ACTUAL USE, now traced: a one-shot
+      "has this ever been touched" sentinel, consumed by exactly ONE real
+      reader (the heartbeat/telemetry function's cooldown-gated setup
+      call) plus one dead read (`"GATHER"`) and one false-lead call site
+      now corrected out. What SPECIFIC parameter it configures (a timeout
+      in ms, a distance/range threshold, something else) is still NOT
       recovered - no string, named DC cross-reference, or net1.bin value
       match settled it, and it is confirmed NOT a version marker. Left
-      unrenamed: the CATEGORY (session/matchmaking subsystem init-time
-      config default) is now well-supported by FOUR independent lines of
-      evidence (setter mechanism, literal-constant source, NetInit thread
-      context, and the containing function's identity) plus one ruled-out
-      alternative (version), but the EXACT semantic still isn't settled,
-      and this project's standard is not to rename past what's actually
-      settled.
+      unrenamed: the CATEGORY (a one-shot init sentinel/config default in
+      the session/matchmaking subsystem) is now well-supported by FIVE
+      independent lines of evidence (setter mechanism, literal-constant
+      source, NetInit thread context, containing function identity, and
+      now the sentinel-consumer trace) plus two ruled-out alternatives
+      (version, SPU-DMA writer), but the EXACT semantic still isn't
+      settled, and this project's standard is not to rename past what's
+      actually settled.
   - id: value_22
     type: u2
     doc: "Offset 34:36. Second float converted to int. Live-constant 1000 (0x03e8) - see value_20's doc for the full source trace; this is g_70+0x4c, the second half of the same pair."

@@ -519,6 +519,24 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     a real version-dependent value would have differed between builds;
     this one is unchanged in every respect.
 
+    ACTUAL USE TRACED 2026-08-21 (all 5 call sites to the getter): it's a
+    one-shot "has this ever been touched" sentinel. `FUN_00352de8` (the
+    heartbeat builder) checks whether both halves STILL equal `1000.0`
+    (the identical literal, confirmed via its own independently-resolved
+    `r30` chain) plus a companion flag (`g_70+24`) before running a
+    time-cooldown-gated setup/telemetry call - no path back to the setter
+    was found from there, consistent with the value never once moving off
+    `1000.0` in any live capture this project has taken. The `"GATHER"`
+    state (`FUN_003B7D70`) also reads it but the result is a proven DEAD
+    READ - written to stack scratch and never loaded again before that
+    slot is reused for something else. A THIRD call site
+    (`0x0035d30c`) that an earlier pass assumed touched `g_70` was
+    CORRECTED - it actually reads/writes a completely different object
+    pair (`room_obj-8`), not `g_70` at all. An exhaustive scan for an
+    INLINED reader bypassing the getter/setter entirely was not completed
+    (binary too large for one pass) - noted as incomplete, not silently
+    skipped.
+
     The exact parameter this configures (timeout in ms vs. a threshold
     vs. something else) still was not recovered. See
     `protos/0x12f_room_create.ksy`'s `value_20` doc for the full trace,
