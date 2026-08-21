@@ -247,9 +247,64 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     were indistinguishable on that build and the field was misread three times.
     Id `3` is Survivors on 01.00 but Supply Raid/DLC on 01.11 - **ids are not
     comparable across builds**. Non-matchmaking lobbies use the same space:
-    `0x58` party, `0x63` private (Supply Raid, Survivors), `0x5a` private
-    (Interrogation). Implemented: the `0x136` list is filtered on the SEARCHER's
-    playlist and the client's build, exact match, never on the host's room field.
+    `0x58` party (consistent). `0x5a` and `0x63` both recur repeatedly on
+    private-match GAME room creates - CORRECTED 2026-08-21 (re-checked
+    against the full `session_manager.log`/`wire.jsonl`, not the earlier
+    note's small sample): the SAME private lobby (same room object, same
+    host) was re-created eight times in eight minutes and `field_0c`
+    alternated `0x5a`/`0x63` (`5a,5a,63,63,5a,63,63,63`) with UNRESOLVED
+    correlation - cross-referencing each create's own
+    `member_data.recent_level_0` shows real map/mode changes DID happen in
+    between (this was not an idle no-op sequence), yet four consecutive
+    same-mode (Survivors) private matches still split 1x `0x5a` / 3x `0x63`,
+    so it tracks neither mode cleanly nor reads as pure state-independent
+    residue either - genuinely unresolved, not closed in either direction.
+    That earlier sample was 01.11; a MUCH larger deliberate 01.00 sweep
+    (2026-08-21, 24 clean private-match creates across every map in both
+    Supply Raid and Survivors, some maps reloaded 2-4x) found the SAME
+    shape of result on a different build with different values (`0x13`/
+    `0x09` on 01.00, not `0x5a`/`0x63`): 15/9 split, no clean correlation to
+    map, mode, loadout-screen visits, streak position, or a preceding
+    search.
+
+    RESOLVED 2026-08-21, LIVE (RPCS3 memory write-breakpoint at
+    `room_obj+0xc`, PPU Interpreter mode required - the default LLVM
+    recompiler does not enforce memory breakpoints at all). The
+    private-match value IS genuinely random: drawn from a small
+    heap-allocated 2-entry table (`{0x09,0x13}` this session) via a
+    lazily-seeded LCG PRNG (`x = x*1664525 + ~1013904223`, textbook
+    "Numerical Recipes" constants), gated behind a flag global that also
+    explains the earlier "streaky but not periodic" shape (gate false =
+    value holds from the previous room; gate true = re-rolled). The exact
+    write site: `CIA=0x00ad0c9c` (`stw r4,12(r3)`, a tiny generic
+    field-setter reused for unrelated fields elsewhere - NOT bespoke to
+    this slot), `LR=0x0035d3f4` inside `FUN_0035D1FC`, the same function
+    that owns this file's already-documented `"Host"` RoomCreate call.
+    The specific values `0x09`/`0x13` don't trace to anything named in
+    `net1.bin` - a byte-exact match found there initially looked
+    promising but turned out coincidental on closer check (the "marker"
+    hash tying it to a live register dump recurs thousands of times
+    across unrelated bulk data). Practical upshot: cosmetic client-side
+    placeholder, safe for a server to ignore. SEPARATELY, SAME SESSION:
+    the matchmaking-side "host stamps the playlist" claim - flagged below
+    as never instruction-verified - IS now verified, caught live twice at
+    a different call site (`CIA=0x00ad0c9c` again, `LR=0x0035b07c`,
+    inside `FUN_0035ADB4`): Supply Raid Find Match wrote `field_0c=2`,
+    Survivors Find Match wrote `field_0c=3` - both real 01.00 ids,
+    mode-correct both times. Full register dumps, disassembly, and the
+    retracted net1.bin lead are in `protos/0x12f_room_create.ksy`'s
+    `room_field_0c` doc - see also `docs/OPEN-QUESTIONS.md`.
+
+    PRE-RESOLUTION METHOD NOTE (kept for the record): Step A (static
+    write-scan across the whole 01.00 EBOOT) was RUN 2026-08-21: three
+    independent search strategies, no writer to `room_obj+0x0c` found by
+    any of them - a genuine negative result (the method was cross-checked
+    as sound; static idioms simply didn't cover this binary's actual
+    addressing pattern for this write). Superseded by the live
+    breakpoint above. Implemented: the
+    `0x136` list is filtered on
+    the SEARCHER's playlist and the client's build, exact match, never on the
+    host's room field.
 
 35. **`room_flags_e8` / `room_flags_10`** - `*(u32*)(obj+0xE8)` conditionally
     OR'd with `0x40000000`. GATE RESOLVED for `room_flags_e8` 2026-08-19: live
@@ -287,11 +342,16 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     the host's own `0x142` lists every OTHER member's id and structurally
     never its own - `HostRank` reports who else is present, not a
     self-report, which also explains every previously-odd count (0 solo, 1
-    in a 2-player match, 2 in the 3-member capture). Which specific filter in
-    `FUN_0039b720`'s seven-filter loop performs the self-exclusion is
-    unpinned (the effect is proven three independent ways, the exact
-    instruction is not) - low priority now that whose id reaches the wire is
-    settled. Still proven NOT to be `member_data.rank_value`. See
+    in a 2-player match, 2 in the 3-member capture). WHICH FILTER PERFORMS
+    THE SELF-EXCLUSION IS NOW RESOLVED 2026-08-21 (static): filter 1 of
+    `FUN_0039b720`'s seven-filter loop (`0x39b7a8`-`0x39b7d0`), which calls
+    `player->vtable[0xC]` (`FUN_003CDCB8`) and skips the candidate if it
+    returns nonzero - an OBJECT-IDENTITY check against either local-player
+    slot (`FUN_0039a380(0x0137D700, 0|1)`), not a `member_id` comparison.
+    The other six filters' byte offsets and skip polarity are recorded too;
+    one of them (`player+0x1AC == 1`) is provably dead code since every
+    real caller of `FUN_0039F75C` passes 0 for that field. Still proven NOT
+    to be `member_data.rank_value`. See
     `protos/0x142_host_rank.ksy` and
     `research/notes/2026-08-20-followup-open-items.md` §3.
 38. **`member_data.rank_tier`** - **DC PATH RESOLVED 2026-08-20, and it is

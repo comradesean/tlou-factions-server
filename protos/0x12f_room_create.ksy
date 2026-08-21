@@ -154,6 +154,164 @@ seq:
       room it creates, so the server can advertise a room only to searchers
       wanting that playlist.
 
+      PRIVATE-MATCH VALUE RESOLVED 2026-08-21, LIVE (RPCS3 memory
+      write-breakpoint on `room_obj+0xc` = `0x1383be4`, PPU Interpreter mode
+      required - the default LLVM recompiler does not enforce memory
+      breakpoints at all, which is why the first attempt silently never
+      hit). It IS genuinely random, drawn from a small candidate pool at
+      RoomCreate time - not residue, not a hidden correlate. Full register
+      dump and disassembly at the hit:
+
+        CIA=0x00ad0c9c: `stw r4,12(r3)` - a 3-instruction generic field
+        setter (`obj->+0xc = val; return 0;`). `r3=0x01383bd8` (this
+        session's room object, confirming this write targets the SAME
+        singleton the sender later reads), `r4=0x9` (exactly the private
+        `field_0c` value already known from tonight's sweep).
+
+        LR=0x0035d3f4, return address into `FUN_0035D1FC` - the SAME
+        function that owns this doc's already-documented `"Host"`
+        RoomCreate call site at `0x0035D440`; this write is 0x50 bytes
+        BEFORE that call, in the same function, so it is pinned to the
+        PRIVATE-match `"Host"` path specifically, not a generic/shared
+        setter used elsewhere. The caller code (VMA 0x35d3b8-0x35d3f4):
+
+          lwz r11,0(r29)      ; r11 = candidate_desc->count
+          bl 0xe408d8         ; r3 = rng_next()
+          mr r9,r3
+          mr r3,r26           ; r3 = room_obj (for the call below)
+          divw/mullw/subf     ; r9 = rng_result % count   (classic modulo)
+          slwi r9,r9,2 ; add r9,r28  ; r9 = &candidate_desc->table[idx]
+          lwz r4,0(r9)        ; r4 = table[idx]
+          bl 0xad0c9c         ; room_obj->field_0c = table[idx]
+
+        `r29` (`= 0x4309de6c` live) points to an 8-byte descriptor -
+        `{count:u32, table_ptr:u32}` - read live as `{2, 0x430b062c}`.
+        The table itself, read live at `0x430b062c`: `00 00 00 09  00 00
+        00 13` - i.e. literally `{0x09, 0x13}`, the exact two values this
+        project has captured all session. `0xe408d8` is a lazily-seeded
+        LCG PRNG (`x = x*1664525 + ~1013904223`, the textbook "Numerical
+        Recipes in C" constants - `0x19660D` = 1664525 is the multiply
+        immediate at `0xe408fc`/`0xe40928`).
+
+        This whole random-pick block is itself CONDITIONAL - guarded a
+        few instructions earlier (`0x35d3ac`-`0x35d3b4`) by a flag global
+        (`*(r2-31180)` anchor `-32572`, live address `0x1268714` this
+        session) being nonzero; when false, the block (and this write) is
+        skipped entirely, meaning the private-match room keeps whatever
+        `field_0c` a PRIOR create on the same singleton object left there
+        - which is exactly why some reloads of the identical map came back
+        with the SAME value as the previous round (`field_0c` is only
+        re-randomized on the sessions where this gate is true, otherwise
+        it free-runs as literal object residue from the last randomize).
+        What that gate flag specifically means was not chased further
+        this pass. The 25-round sweep's `AAAAABBAABBBBBAA | ABAAAABA`
+        streaky-but-not-periodic pattern is exactly what you'd expect from
+        a real PRNG occasionally gated off (streaks = gate false, holding
+        the previous roll; flips = gate true, re-rolling) - consistent
+        with theories 1 and 2 below both being partially right, not
+        competing explanations.
+
+        PRACTICAL UPSHOT for a server: this field is NOT meaningful for
+        private matches - it is cosmetic/internal client state, safe to
+        ignore entirely as long as it is never mistaken for a real
+        matchmaking playlist id (see the `NON_MATCHMAKING_PLAYLISTS`->
+        allowlist fix in server/session_manager.py, which already made
+        this assumption independently and correctly).
+
+      WHY IT'S RANDOM AT ALL: two things point at this being incidental,
+      not a deliberate feature. First, `FUN_0035D1FC` runs this EXACT
+      random-pick-from-descriptor-table pattern TWICE in a row for two
+      DIFFERENT fields (a different setter at `0xad3a00` immediately
+      before this one, targeting a different object) - a generic "pick one
+      at random from a small candidate table" utility being reused, not
+      something bespoke for the playlist slot. Second, `0x09`/`0x13` are
+      not real 01.00 matchmaking playlist ids (those are `2`/`3` only,
+      confirmed elsewhere in this doc) - they live in the same
+      "non-matchmaking sentinel" space this doc already documents for
+      `0x58`(party)/`0x5a`/`0x63`(01.11 private), just 01.00's own reserved
+      pair. Put together: a private "Host" never runs a real matchmaking
+      search, so nothing legitimately populates this field. Rather than
+      leave raw uninitialised residue (risking the `(playlist &
+      0xFFFFFF00) == 0` one-byte assert, or confusing anything downstream
+      expecting a valid-shaped id), the client falls back to stamping a
+      harmless placeholder drawn at random from a small reserved pool of
+      known-not-a-real-playlist sentinels. The randomness is a side effect
+      of reusing a generic fallback-fill utility, not a designed feature -
+      which is also exactly why nothing ever correlated with it.
+
+      WHAT `0x09`/`0x13` SPECIFICALLY MEAN: NOT RECOVERED, and a lead that
+      looked promising was chased and retracted the same session. The
+      live descriptor (`r27=0x4309de6c` -> `{count=2,
+      table=0x430b062c={0x09,0x13}}`) is heap state, not a static EBOOT
+      address, so its ultimate source wasn't traced further. A byte-exact
+      `{0x09,0x13}` (and an adjacent `{0x08,0x12}`) WAS found in the
+      decrypted `net1.bin` DC00 bundle at file offset `0x1806c`, initially
+      reported as "confirmed" via a repeating 4-byte value
+      (`1ed2e0a2`) that also appeared next to a live matchmaking-path
+      register dump - RETRACTED on closer check: that 4-byte value
+      recurs literally thousands of times across a huge unrelated stretch
+      of the file (character-customization color/geometry tables,
+      `cc-*`/`mp-*` entries), i.e. it is a common generic type-tag, not a
+      distinctive marker, and neither of `*playlists*`'s own two real
+      sub-lists (tags `2a8027cf`, `ee949ef7`) use it. So the net1.bin
+      match is most likely coincidence, not a real link - decrypt method
+      for reference (works for any served `*.psarc.crypt`):
+      `psarc_crypt.decrypt_crypt_file()` -> `parse_psarc()` -> the single
+      `net1.bin` entry -> `research/tools/dc_dir.py --list/--show`.
+
+      This resolves the "private-match field_0c" open question as far as
+      MECHANISM goes (proven, live, instruction-level) - the specific
+      sentinel values remain cosmetic and unexplained, which does not
+      matter for a server (see practical upshot above).
+
+      THE MATCHMAKING-SIDE WRITE - ALSO RESOLVED 2026-08-21, LIVE, same
+      breakpoint (`0xad0c9c`), a SEPARATE hit during a real Find Match
+      search: `r3=0x01383bd8` (same room object), `r4=2` (Supply Raid's
+      real 01.00 playlist id), `LR=0x0035b07c`, inside `FUN_0035ADB4`
+      (a DIFFERENT function from the private "Host" path). This finally
+      instruction-verifies the "elected host stamps the playlist"
+      claim the correction below flagged as inference-only. Two calls to
+      the same generic setter appear in sequence here (`0x35b024` then
+      `0x35b078`, the caught one) - the second is gated behind the exact
+      same flag global (`*(r2-31180 anchor)-32572`) the private path's
+      re-roll used, and its value is built from fields of a live object
+      (`r26=0x430b23e4`) rather than a fixed literal, i.e. genuinely
+      derived from the current search/mode selection, not hardcoded -
+      consistent with this being the real per-mode playlist lookup. Not
+      pursued further into `FUN_0035ADB4`'s own internals this pass (the
+      night's goal was the private-match mystery, now closed); worth a
+      dedicated follow-up if the exact selection logic (how the mode maps
+      to `2` vs `3`) is ever needed.
+
+      MODE-CORRECTNESS CONFIRMED TWICE, LIVE: a second capture, Survivors
+      -> Find Match, hit the identical site (`CIA=0xad0c9c`,
+      `LR=0x0035b07c`) with `r4=3` - Survivors' real 01.00 playlist id -
+      versus the Supply Raid capture's `r4=2`. Both real ids, both
+      mode-correct, same call site. (`r9` differed between the two
+      captures - count `2` for Supply Raid, `3` for Survivors, both
+      followed by the ubiquitous `1ed2e0a2` tag - but the disassembly
+      traces `r4`'s actual source to `r26`'s own fields, not `r9`, and
+      `1ed2e0a2` is now known to be non-distinctive per the retraction
+      above, so this is most likely unrelated adjacent heap state, not
+      part of the real selection path - noted for completeness, not read
+      into further.)
+
+      CORRECTION 2026-08-21: "the elected host stamps that same id" has
+      never actually had a WRITE instruction located and cited - only the
+      READ site at the bottom of this doc's opening paragraph (`0xad5f30`,
+      shared with every other case of this field, private matches
+      included). The claim was inferred purely from correlation - a
+      matchmaking host's `field_0c` reliably equals a real playlist id - not
+      from finding the store instruction that puts it there. An exhaustive
+      static write-scan for ANY writer to `room_obj+0x0c` across the whole
+      01.00 EBOOT (2026-08-21, three independent search strategies - see
+      the private-match section below for the full method and result) found
+      none, for either the matchmaking or the private case. That doesn't
+      disprove the matchmaking stamp - the field demonstrably DOES change
+      value during a live session, so something writes it - it just means
+      this project has never actually pinned down where, for any code path,
+      not just the private one.
+
       01.11 TABLE - all nine live-confirmed 2026-08-19, each verified on BOTH
       sides (the searcher's 0x135 and the host's 0x12f stamp):
 
@@ -179,11 +337,216 @@ seq:
       (server/session_manager.py CLIENT_BUILDS).
 
       NON-MATCHMAKING LOBBIES use their own ids in the same one-byte space:
-        0x58 (88)  party room (observed on the party object, 2/2)
-        0x5a (90)  seen once on the game object at client start-up
-        0x63 (99)  PRIVATE match - the SAME value for Supply Raid (00:55:23)
-                   and Survivors (01:01:29), so it is not mode-specific
-      A server must never advertise these in the find-match list.
+        0x58 (88)  party room (observed on the party object, consistent)
+        0x5a (90)  seen repeatedly on private-match GAME room creates
+        0x63 (99)  seen repeatedly on private-match GAME room creates
+
+      CORRECTED 2026-08-21 (re-checked directly against
+      server/logs/session_manager.log and server/logs/wire.jsonl, not just
+      the earlier note's small sample): `0x5a` was previously written up as
+      "seen once," and `0x63` as "the same constant across two modes, so not
+      mode-specific." Both undersold what the fuller log shows: the SAME
+      private-match GAME room object (`room_ptr=0x13babd8`, same host
+      `comradesean`) was re-created eight times over eight minutes on
+      2026-08-19, and `field_0c` alternated `0x5a`/`0x63` with no clean
+      pattern (`5a,5a,63,63,5a,63,63,63`).
+
+      FIRST HYPOTHESIS TESTED AND NOT CONFIRMED: that the alternation simply
+      tracks which map/mode was actually being played. Cross-referencing
+      each RoomCreate's own `common/member_data.recent_level_0` (the host's
+      most-recently-played-map ring, same 32-byte blob, offset 10:12) shows
+      real map/mode changes DID happen between these re-creates - this was
+      not an idle "nothing else changed" sequence:
+
+        04:08:40  field_0c=0x5a  recent_level_0=0xffff (unset - first match)
+        04:10:56  field_0c=0x63  recent_level_0=0x0f (Lakeside, Supply Raid)
+        04:12:18  field_0c=0x63  recent_level_0=0x20 (Lakeside, Survivors)
+        04:13:29  field_0c=0x5a  recent_level_0=0x1f (Checkpoint, Survivors)
+        04:14:25  field_0c=0x63  recent_level_0=0x21 (Bill's Town, Survivors)
+        04:15:24  field_0c=0x63  recent_level_0=0x22 (University, Survivors)
+        04:16:15  field_0c=0x63  recent_level_0=0x23 (High School, Survivors)
+
+      So across four consecutive SURVIVORS-mode private matches (Checkpoint,
+      Bill's Town, University, High School - `recent_level_0` 0x1f-0x23),
+      `field_0c` was `0x5a` once (Checkpoint) and `0x63` the other three
+      times. It does not track mode (four same-mode matches, two different
+      field_0c values), and it does not obviously track the specific map
+      either (Checkpoint got 0x5a here, but Checkpoint was also captured
+      under 0x63 in a separate session - see the original 00:55:23/01:01:29
+      pair in git history of this doc). NEITHER "stable per-mode constant"
+      NOR "pure residue independent of game state" is fully supported by
+      this data; the honest status is UNRESOLVED, not closed either way.
+      STILL UNTESTED: whether it correlates with something not yet
+      correlated here - lobby PARTY-SIZE setting, "Parties Allowed / No
+      Parties / DLC"-style option (the matchmaking-only styles proven for
+      playlists 1-13 may have an unlabeled private-lobby analogue), or
+      per-round elapsed/retry state. A server must never advertise any of
+      these values in the find-match list regardless of what they mean.
+
+      FULL 01.00 SWEEP, 2026-08-21 (comradesean + mgnomad2 party, build
+      01.00 throughout, room_ptr constant at `0x1383bd8` the entire
+      session). A deliberate map-by-map, mode-by-mode private-match sweep -
+      every Supply Raid map, twice each, then every Survivors map once
+      (01.00 has no Interrogation - confirmed live tonight, not just
+      inferred). `field_0c` values are `0x13` (19) or `0x09` (9) only, no
+      other value seen this session (the 01.00 space is disjoint from the
+      01.19 `0x5a`/`0x63` pair documented above - a different session,
+      different day, same room object address by chance of reuse, but note
+      the 01.19 run above was on build 01.11, not 01.00 - BUILD SEPARATION
+      applies here too). Full round-by-round record (map id from
+      `member_data.recent_level_0`, independently confirmed correct every
+      round via the continuation model in `protos/common/member_data.ksy`):
+
+        SUPPLY RAID
+        03:07:13  Checkpoint                field_0c=0x13  map=0x0e
+        03:10:52  Lakeside                   field_0c=0x13  map=0x0f
+        03:15:11  Bill's Town                field_0c=0x13  map=0x10
+        03:16:26  University                 field_0c=0x13  map=0x11
+        03:18:14  High School                field_0c=0x13  map=0x12
+        03:20:35  Downtown                   field_0c=0x09  map=0x13
+        03:22:06  The Dam                    field_0c=0x09  map=0x14
+        03:24:24  Checkpoint (reload)        field_0c=0x13  map=0x0e
+        03:25:46  Lakeside (reload)          field_0c=0x13  map=0x0f
+        03:26:41  Bill's Town (reload,       field_0c=0x09  map=0x10
+                   loadout screen visited)
+        03:28:06  Bill's Town (reload,       field_0c=0x09  map=0x10
+                   loadout visited again)
+        03:29:20  Bill's Town (reload,       field_0c=0x09  map=0x10
+                   loadout NOT touched)
+        03:29:57  University (reload)        field_0c=0x09  map=0x11
+        03:30:55  High School (reload)       field_0c=0x09  map=0x12
+        03:31:47  Downtown (reload)          field_0c=0x13  map=0x13
+        03:32:50  The Dam (reload)           field_0c=0x13  map=0x14
+        03:38:51  [Find Match search, cancelled, then Private->The Dam]
+                   field_0c=0x09  map=0x14  - CONFOUNDED, exclude from
+                   pattern analysis: this create also tripped the
+                   NON_MATCHMAKING_PLAYLISTS denylist bug (fixed same
+                   session, see server/session_manager.py) and was
+                   misregistered PUBLIC/matchmade, so its surrounding state
+                   is not comparable to the clean rounds.
+
+        SURVIVORS (same client session, no restart, switched mid-sweep)
+        03:40:52  Checkpoint                 field_0c=0x13  map=(stale
+                   read this round, 0x15 from a pre-load snapshot -
+                   member_data ring not yet settled; field_0c itself is
+                   still a clean direct read, only the map-id cross-check
+                   for THIS round is unreliable)
+        03:47:15  Checkpoint (reload)        field_0c=0x09  map=0x15
+        03:50:39  Lakeside                   field_0c=0x13  map=0x16
+        03:51:36  Bill's Town                field_0c=0x13  map=0x17
+        03:53:21  University                 field_0c=0x13  map=0x18
+        03:54:43  High School                field_0c=0x13  map=0x19
+        03:56:15  Downtown                   field_0c=0x09  map=0x1a
+        03:57:26  The Dam                    field_0c=0x13  map=0x1b
+
+      As a binary string in round order (excluding the confounded round),
+      A=0x13, B=0x09: AAAAABBAABBBBBAA | ABAAAABA
+      (space marks the Supply-Raid/Survivors mode switch). 15 A / 9 B out
+      of 24 clean rounds - not nose-to-tail with either value, not a fixed
+      period, and no clean correlation found yet against: current map,
+      current mode, round count within a streak (Downtown broke the streak
+      at round 6 in BOTH the Supply Raid and Survivors runs, but the
+      following round diverged - Supply Raid stayed 0x09 for round 7, Survivors
+      flipped back to 0x13 - so "6th create in a run" is not the trigger
+      either), loadout-screen visits (ruled out directly: round 12 got the
+      same 0x09 as rounds 10-11 despite NOT visiting the loadout screen),
+      or a preceding Find Match search (ruled out: the search's own
+      playlist id, e.g. 0x02, never appeared - the confounded round still
+      read 0x09, from the SAME `{0x13, 0x09}` pool as every other round,
+      not something new). Wall-clock gaps between creates were checked for
+      a fixed period at each flip point (55s, 141s, 138s, 52s, 92s, 71s,
+      ...) - no consistent modulus found, so a simple fixed-interval timer
+      is not obviously it either, though a more complex time-dependent
+      process isn't ruled out.
+
+      RESOLVED 2026-08-21 - see the write-site trace earlier in this doc
+      (live memory write-breakpoint). The theories below are kept for the
+      record; (1) and (2) both turned out partially right (a real 2-entry
+      RNG-picked pool that only re-rolls when a separate gate flag allows
+      it), (3) is not it (no timer, a PRNG).
+
+      THEORIES, none confirmed [pre-resolution, kept for the record]:
+        1. UNRELATED CODE PATH LEAVES RESIDUE HERE. Since this field is a
+           READ of a persistent room-object slot the private-match create
+           path itself never appears to write (per the mechanism already
+           established below), the value may simply be whatever some
+           OTHER, unrelated system last wrote to that same object offset -
+           a UI screen, a menu transition, an animation/HUD counter, or
+           something in the party-sync path (a second player, mgnomad2,
+           was active in the party for the whole Survivors run and part of
+           the Supply Raid reload run - his own client-side actions were
+           not logged move-by-move, so cannot yet be ruled in or out as a
+           trigger).
+        2. TWO-STATE TOGGLE, not free-running residue. Only ever `0x13` or
+           `0x09` all session (never 0x00, never garbage) argues against
+           classic uninitialized-stack noise (which would be expected to
+           show more variety) and toward a real, intentional two-valued
+           flag somewhere being read - just not one this project has
+           identified the source of yet.
+        3. FRAME/TIMING-DEPENDENT STATE sampled at create-time. Streaks
+           correlate loosely with short real-world gaps between creates,
+           flips more often follow longer gaps - consistent with a
+           slow-moving counter/timer whose value only changes when enough
+           real time or ticks pass, but the wall-clock check above didn't
+           find a clean period, so this is weakly suggestive at best.
+
+      RESEARCH PLAN [SUPERSEDED 2026-08-21 by the live write-breakpoint
+      resolution above - kept for the record, not actionable anymore]:
+        A. STATIC WRITE-SCAN - ATTEMPTED 2026-08-21, NEGATIVE RESULT. Three
+           independent, largely-exhaustive search strategies against the
+           01.00 EBOOT: (1) address-anchored scan - found all 18 literal-
+           pool slots holding the room object's constant address
+           `0x01383bd8`, then 197 load sites across `.text` that reload it,
+           forward-scanned every containing function to its end for a
+           store at displacement 12 off that register - zero hits (the
+           method's soundness was cross-checked: it DID correctly surface 3
+           previously-undocumented plain READS of `+0xc`, so it isn't
+           simply failing to find anything at that offset). (2) parameter-
+           threading scan - since the known reader (`FUN_00ad5b78`)
+           receives `room_obj` as an argument rather than a fresh pool
+           load, grepped for every `st{w,b,h} rX,12(r31)` in the plausible
+           code regions (111 raw hits, 72 unique functions), checked each
+           prologue for the same `mr r31,r3/r4` pattern the reader uses -
+           none matched, all touch unrelated engine objects. (3) one real
+           near-miss (`FUN_00ad33d8`, a 12-slot/384-byte pool constructor
+           that DOES write `+0xc` and also inits `+0xe8`, the room's other
+           documented field) was traced to its 4 call sites; none resolve
+           to this singleton's fixed address - it builds unrelated per-
+           member/candidate-room objects, not this one. CAVEAT, stated
+           plainly by the same investigation: since the value provably
+           changes within one live session on a fixed BSS address, SOME
+           writer must exist during normal operation - a field nothing
+           ever writes cannot change. So this is a "not found by these
+           addressing idioms" result, not proof no writer exists anywhere.
+           Flagged blind spots: indexed stores (`stwx`/`stwux`) this
+           project's tools don't model, or a literal pool reached through a
+           secondary anchor register. NOT SUPERSEDED by a live write-
+           watchpoint yet - RPCS3 does support one (merged March 2025,
+           store-instruction fix April 2025) but only in a self-compiled
+           build with `-DHAS_MEMORY_BREAKPOINTS=ON` (not present in
+           standard downloads, and reportedly 2-3x slower in PPU
+           interpreter mode while enabled) - a custom build was in progress
+           as of this pass. Until/unless that lands, the fallback is manual
+           breakpoint-and-read polling across chosen UI transitions (open
+           mode-select menu, click Find Match, cancel, open private-match
+           menu, hit Create), reading `room_obj+0xc` (`0x01383be4` this
+           session) at each point to bisect WHEN between two known states
+           the value changes, without needing to catch the write itself.
+        B. CONTROLLED-CADENCE LIVE TEST. Re-create the SAME private match
+           repeatedly at a fixed, precise real-world interval (e.g. exactly
+           every 60s), touching nothing else (no menus, no loadout, no
+           party changes) - tests the timing theory (3) directly. If it
+           stays constant or flips with a clean period under this
+           discipline, that is strong evidence either way.
+        C. SOLO REPEAT OF TONIGHT'S SWEEP, no second player in the party -
+           isolates whether mgnomad2's independent client actions (theory
+           1's least-tested branch) are a factor.
+        D. ONE-SCREEN-AT-A-TIME UI BISECTION. Between otherwise-identical
+           re-creates, deliberately visit exactly one menu (loadout,
+           stats, leaderboard, friends list, party-invite) and nothing
+           else, to find which screen (if any) is a trigger - loadout
+           alone is already ruled out, but this project hasn't tried the
+           others in isolation.
 
       RULED OUT, each by live evidence:
         NOT the team - one value (0x13) occurs with team 0, 1 AND 2, the

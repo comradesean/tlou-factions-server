@@ -310,27 +310,91 @@ minor and both needing a capture rather than more static analysis:
 
 ## Unresolved facts
 
-- **Are map ids stable across builds?** NARROWED 2026-08-19: the entire
-  51-id map-id space (all three mode blocks, `0x0e..0x40`) is now solved on
-  01.11, and all seven ids previously observed on 01.00 (`0x0e Checkpoint,
-  0x0f Lakeside, 0x10 Bill's Town, 0x13 Downtown, 0x14 The Dam, 0x15
-  Bookstore, 0x17 Bus Depot`) line up exactly with the 01.11 roster
-  positions - strong evidence for cross-build stability. What's still
-  genuinely unresolved: no map has been loaded ON a 01.00 client and its id
-  read directly THIS session to prove the match rather than infer it from
-  historical captures. See `protos/common/member_data.ksy` for the full
-  solved-space writeup. UNBLOCK: play one known map on a 01.00 client without
-  being booted in between, and read slot 0 of the next member card.
+- **Are map ids stable across builds? - RESOLVED (live) 2026-08-21.** Loaded
+  Checkpoint on a build-01.00 client this session (private match, Supply
+  Raid) and read `member_data.recent_level_0` directly off the wire in the
+  following `0x13a SetPartyData` frame (`03:07:41`): `0x000e` - the exact
+  historical value for Checkpoint/Supply Raid, matching every prior
+  capture. This was the one open piece after the 2026-08-19 01.11 solve
+  (which covered all 51 ids by static/historical-capture inference but
+  never re-read a live 01.00 client this session). See
+  `protos/common/member_data.ksy` for the full solved-space writeup.
 
-- **What distinguishes the private-match `field_0c` values?** `0x63` (99) for
-  Supply Raid and Survivors, `0x5a` (90) for Interrogation. Not a clean
-  per-mode mapping. Playlist ids `4`/`5`, `9`/`10`, `14`/`15` are unused
-  capacity in each mode's five-slot block.
+- **What distinguishes the private-match `field_0c` values?** RESOLVED
+  2026-08-21, LIVE (RPCS3 memory write-breakpoint, PPU Interpreter mode
+  required - the field is genuinely random: private "Host" draws it from a
+  small heap-allocated 2-entry candidate table (`{0x09,0x13}` this session)
+  via a lazily-seeded LCG PRNG, gated by a flag that also explains the
+  earlier "streaky but not periodic" pattern (streaks = gate false, value
+  holds from the previous room; flips = gate true, re-rolled). Mechanism is
+  reused generic code (the same function does an identical random-table-pick
+  for a different, unrelated field immediately before it), not a bespoke
+  "private match category" feature - the specific values `0x09`/`0x13` don't
+  trace to anything named in `net1.bin` (a promising-looking byte-exact match
+  there turned out to be coincidental - see the full writeup). Practically:
+  cosmetic client-side placeholder, safe for a server to ignore entirely.
+  SAME SESSION, SEPARATELY RESOLVED: the long-suspected but never
+  instruction-verified "elected host stamps the real playlist id" claim -
+  caught live twice at a different call site (`FUN_0035ADB4`), mode-correct
+  both times (Supply Raid -> `2`, Survivors -> `3`, 01.00's real ids). Full
+  disassembly, register dumps, and the retracted net1.bin lead are in
+  `protos/0x12f_room_create.ksy`'s `room_field_0c` doc.
 
-- **The VM freezes.** Clients stop with no fatal in the RPCS3 log. Server-side
-  orphaning was a real candidate and has been fixed; if freezes continue at the
-  same rate the hypothesis is dead and it is environmental. UNBLOCK: copy
-  `RPCS3.log` immediately after a freeze, before relaunching.
+  PRE-RESOLUTION HISTORY (kept for the record): CORRECTED
+  2026-08-21, re-checked against the full `server/logs/session_manager.log`
+  and `wire.jsonl` rather than the earlier note's small sample: `0x5a` and
+  `0x63` both recur repeatedly, not "one constant plus a single anomaly."
+  The SAME private lobby (same room object `0x13babd8`, same host) was
+  re-created eight times over eight minutes and `field_0c` alternated
+  `0x5a`/`0x63` (`5a,5a,63,63,5a,63,63,63`). Cross-referenced against each
+  create's own `member_data.recent_level_0` (the host's recently-played-map
+  ring), real map/mode changes DID happen between these creates - it was
+  not an idle no-op sequence - yet four consecutive SAME-MODE (Survivors)
+  private matches still split `0x5a` once / `0x63` three times. So it
+  tracks neither mode cleanly NOR reads as pure state-independent residue -
+  genuinely UNRESOLVED, not closed in either direction. That sample was
+  01.11. A much larger deliberate 01.00 sweep (2026-08-21, comradesean +
+  mgnomad2 party, 24 clean private-match creates across every 01.00 map in
+  both Supply Raid and Survivors, several maps reloaded 2-4x) reproduced the
+  same shape of result with 01.00's own value pair (`0x13`/`0x09`, not
+  `0x5a`/`0x63` - the two builds appear to use disjoint value pairs): a
+  15/9 split with no clean correlation found against map, mode, a
+  loadout-screen visit (directly ruled out - a non-touch round got the same
+  value as touch rounds), streak position (the value broke its streak at
+  the 6th create in both the Supply Raid and Survivors sub-runs, but the
+  7th round then diverged between the two, ruling out "6th create" as the
+  trigger too), or a preceding Find Match search (ruled out - the
+  confounded round below still read from the same `{0x13,0x09}` pool, not
+  the search's own playlist id). Full round-by-round table, three standing
+  theories (unrelated-code-path residue, a real two-state toggle, and a
+  timing/frame-dependent read), and a 4-step research plan are all in
+  `protos/0x12f_room_create.ksy`'s `room_field_0c` doc. STEP A (static
+  write-scan of every store to `room_obj+0x0c` across the whole EBOOT) WAS
+  RUN 2026-08-21 - three independent, largely-exhaustive search strategies,
+  no writer found by any of them (a genuine, cross-checked-sound negative
+  result, not "didn't look hard enough" - it also surfaced that the
+  matchmaking-side "host stamps the playlist" claim was never itself
+  instruction-verified, only inferred). Not conclusive either way, since
+  the field demonstrably changes value live - something must write it.
+  Next: a live RPCS3 memory write-breakpoint (real feature, merged March
+  2025, but needs a self-compiled build with `-DHAS_MEMORY_BREAKPOINTS=ON`
+  - not in standard downloads, and ~2-3x slower in PPU interpreter mode
+  while enabled; a custom build was in progress as of this pass) or manual
+  breakpoint-and-read polling across chosen UI transitions as a fallback.
+  SEPARATELY FOUND
+  during this sweep: a real server bug, now fixed - `session_manager.py`'s
+  `NON_MATCHMAKING_PLAYLISTS` denylist only knew 3 private/party values
+  (`0x58`/`0x5a`/`0x63`, all from the older 01.11-era sample) and so
+  misclassified any private match whose `field_0c` landed outside that list
+  (which, per this sweep, is common) as PUBLIC/matchmade whenever a stale
+  find-match search flag was set - reproduced live 2026-08-21, fixed by
+  switching to an allowlist against the known `MATCHMAKING_PLAYLISTS` set
+  instead of a denylist against private values (see the fix's comment in
+  `server/session_manager.py` for the full reasoning and reproduction).
+  Playlist ids `4`/`5`,
+  `9`/`10`, `14`/`15` remain unused capacity in each mode's five-slot block
+  for MATCHMAKING rooms, which is a separate and still-solid finding from
+  this one.
 
 ## Remaining items after the 2026-08-20 tier-2/audit pass, categorized by blocker
 
@@ -386,8 +450,12 @@ the reason each item stalled.
   the host listing every other room member's id. See
   `protos/0x142_host_rank.ksy` and
   `research/notes/2026-08-20-followup-open-items.md` §3. Which specific
-  filter inside `FUN_0039b720` performs the self-exclusion is still
-  unpinned - low-priority, the effect is proven three independent ways.
+  filter inside `FUN_0039b720` performs the self-exclusion is now
+  RESOLVED 2026-08-21 (static): filter 1 of the seven-filter loop
+  (`0x39b7a8`-`0x39b7d0`), an object-identity check against either
+  local-player slot via `player->vtable[0xC]` (`FUN_003CDCB8` ->
+  `FUN_0039a380(0x0137D700, 0|1)`), not a `member_id` comparison. See
+  `protos/0x142_host_rank.ksy` for the full seven-filter breakdown.
 - **Names for `netsession->field_0x358`'s three values** (the `0x13e` kind=3
   encoding selector) - FULLY RESOLVED 2026-08-20, all three live-confirmed.
   `0` = idle/no active mode descriptor - two breakpoint hits by two different

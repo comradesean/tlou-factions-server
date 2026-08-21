@@ -327,19 +327,22 @@ def playlist_name(playlist, build=None):
         return f"{n} [{b}]"
     return "; ".join(f"{n} [{b}]" for b, n in sorted(hits.items()))
 
-# Playlist ids used by lobbies that must NEVER be advertised in the find-match
-# list, whatever the client was doing beforehand:
-#   88 (0x58) party room (on the party object)
-#   90 (0x5a) PRIVATE match - Interrogation (01:18:20)
-#   99 (0x63) PRIVATE match - Supply Raid (00:55:23) and Survivors (01:01:29)
-# The private value therefore varies by mode, though not in an obvious pattern
-# (two modes share 99 while Interrogation uses 90). Unnamed on purpose - what
-# matters here is only that none of them are ever advertised.
-# This is checked FIRST because the search flag can still be set from a
-# just-abandoned find-match queue; without it a private game created moments
-# after searching inherits that flag and gets advertised to searchers. The
-# equivalent bug was live-observed for the PARTY object at 01:00:50.
-NON_MATCHMAKING_PLAYLISTS = {0x58, 0x5a, 0x63}
+# REMOVED 2026-08-21 (was NON_MATCHMAKING_PLAYLISTS = {0x58, 0x5a, 0x63}, a
+# denylist of "known safe" private/party field_0c values used to override a
+# stale find-match search flag). Live testing 2026-08-21 proved private
+# field_0c also takes 0x09 and 0x13 - a denylist this size can never be
+# complete, and the failure mode was a real privacy leak (a private match
+# advertised PUBLIC/matchmade whenever its field_0c missed the list and a
+# stale search flag was set - reproduced live). Replaced with an allowlist
+# against the field_0c site itself; see that comment in handle_session_conn
+# for the fix and the reproduction.
+#
+# WHY private field_0c is unpredictable - RESOLVED same night, live memory
+# write-breakpoint (see protos/0x12f_room_create.ksy's room_field_0c doc):
+# it's a client-side RNG pick from a small candidate pool, reused generic
+# code with no server-visible meaning - not a bug in our understanding, just
+# an inherently unpredictable client field. The allowlist approach remains
+# correct regardless.
 
 GAME_ROOM_PTRS = set(CLIENT_BUILDS)
 PARTY_ROOM_PTRS = {party for _ver, party in CLIENT_BUILDS.values()}
@@ -1829,15 +1832,38 @@ def handle(conn, addr, log_lock, log):
                 # untrusted. A matchmaking host carries the MODE here (0x02/
                 # 0x03); private and party creates carry build-specific values.
                 room_field_0c = struct.unpack(">I", chunk[0xc:0x10])[0]
-                # A known private/party playlist is NEVER a matchmaking host,
-                # even if a stale search flag is still set from a queue the
-                # client just left. Otherwise: a preceding search, or a known
-                # matchmaking playlist id (01.11 self-hosts BEFORE searching, so
-                # there is no search to key on - see the "public" comment below).
-                is_matchmaking_host = (
-                    room_field_0c not in NON_MATCHMAKING_PLAYLISTS
-                    and (find_match_searching
-                         or room_field_0c in MATCHMAKING_PLAYLISTS))
+                # ALLOWLIST, not denylist (fixed 2026-08-21). This used to be
+                # "matchmaking unless field_0c is one of these 3 known-private
+                # values" (NON_MATCHMAKING_PLAYLISTS = {0x58, 0x5a, 0x63}) plus
+                # a stale-search-flag fallback. Live testing 2026-08-21 (a
+                # deliberate map-by-map private-match sweep, comradesean) proved
+                # PRIVATE field_0c is NOT a small closed set - it was observed
+                # to also take 0x09 and 0x13, varying unpredictably run to run.
+                # RESOLVED 2026-08-21 (live memory write-breakpoint): it's a
+                # genuine client-side RNG pick from a small candidate pool,
+                # not tied to map/mode/loadout/anything server-visible - see
+                # protos/0x12f_room_create.ksy's room_field_0c doc for the full
+                # trace. A denylist of "known safe" values can never be
+                # complete against a field this unpredictable, and the failure
+                # mode was a live privacy leak: a private match whose field_0c
+                # landed on 0x09/0x13 while a stale find-match search flag was
+                # still set got advertised PUBLIC/matchmade to other searchers
+                # (reproduced live 2026-08-21, Supply Raid search -> cancel ->
+                # Private Match -> The Dam, field_0c=0x09, wrongly registered
+                # public). MATCHMAKING_PLAYLISTS, by contrast, IS a small closed
+                # set - every real matchmaking host's field_0c is asserted by
+                # the client itself to be `(playlist & 0xFFFFFF00) == 0` and
+                # maps 1:1 to a known (build, mode, style) triple, unlike the
+                # private/party space. So trust ONLY that positive signal.
+                # TRADEOFF, taken deliberately: this drops find_match_searching
+                # as a fallback trigger, which existed to catch one historical
+                # case (a genuine matchmaking host whose field_0c came back
+                # stale/non-playlist after a search, observed once 2026-08-18
+                # 23:18:49) - that host would now stay unlisted rather than
+                # risk relisting private matches as public, which is the worse
+                # failure direction (a privacy leak vs. a room being briefly
+                # harder to find).
+                is_matchmaking_host = room_field_0c in MATCHMAKING_PLAYLISTS
                 # RoomCreate's own wire offset 0xb0:0xb2 (2 bytes) - CONFIRMED
                 # 2026-08-16 via ~24 live captures spanning every map and both
                 # teams, zero exceptions: 0x0000=unset/spectator, 0x0001=Blue,
@@ -2084,9 +2110,22 @@ def handle(conn, addr, log_lock, log):
                         "build": build_of(room_ptr),
                     }
                 if find_match_searching:
-                    emit(f"   (this RoomCreate follows a find-match search - "
-                         f"room {room_id.hex()} registered as PUBLIC/matchmade; "
-                         f"now discoverable in the 0x136 list to other searchers)")
+                    # FIXED 2026-08-21: this used to unconditionally claim
+                    # "registered as PUBLIC/matchmade" whenever a search flag
+                    # was still set, regardless of the actual is_matchmaking_host
+                    # outcome above - misleading once that outcome can be False
+                    # despite a stale search flag (which is now the common,
+                    # intended case, not a bug to log as if it still happened).
+                    if is_matchmaking_host:
+                        emit(f"   (this RoomCreate follows a find-match search - "
+                             f"room {room_id.hex()} registered as PUBLIC/matchmade; "
+                             f"now discoverable in the 0x136 list to other searchers)")
+                    else:
+                        emit(f"   (this RoomCreate follows a find-match search, "
+                             f"but field_0c={room_field_0c:#x} is not a known "
+                             f"matchmaking playlist - room {room_id.hex()} stays "
+                             f"PRIVATE, not advertised in the 0x136 list; the "
+                             f"stale search flag is being ignored)")
                     find_match_searching = False  # one-shot
             elif opcode == 0x130 and len(chunk) >= 0x18:
                 # RoomJoin - see active_rooms' comment for the wire evidence.

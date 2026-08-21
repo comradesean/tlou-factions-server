@@ -165,16 +165,71 @@ seq:
       host's weighted-random map picker FUN_003a2310 reads them (`lbz r0,0xa(blob+k)`)
       and applies a DC penalty when a candidate map matches - i.e. "don't replay
       a map these players just played". 0xffff = unset.
-      LIVE MAP IDS - THE ID IS PER (MAP, MODE) VARIANT, NOT PER MAP.
-      Established 2026-08-19 and confirmed by out-of-sample PREDICTION: the same
+      CROSS-BUILD STABILITY LIVE-CONFIRMED 2026-08-21: loaded Checkpoint on
+      a build-01.00 client (private match, Supply Raid) and read this field
+      directly off the wire in the following `0x13a SetPartyData` frame -
+      `0x000e`, exactly the historical value. Closes the one remaining gap
+      after the 2026-08-19 01.11 solve below (which covered the full 51-id
+      space but via static/historical-capture inference, not a fresh 01.00
+      read this session). See `docs/OPEN-QUESTIONS.md`.
+
+      BUILD SEPARATION - READ THIS FIRST. Everything in this "LIVE MAP IDS"
+      block through the 51-id table below (mode blocks spaced 0x11 apart)
+      is the 2026-08-19 **01.11** solve - that build has Interrogation as a
+      third mode, which 01.00 does not ship at all (confirmed live
+      2026-08-21), so any entry naming Interrogation is necessarily 01.11.
+      It was never independently re-tested on 01.00 itself; the ONLY 01.00
+      cross-check on record before 2026-08-21 was "these 7 ids line up with
+      01.11's roster," an inference, not a fresh 01.00 read (see the
+      CROSS-BUILD STABILITY note above, which only covered Supply Raid).
+
+      01.00 DOES NOT FOLLOW THE MODE-BLOCK FORMULA - LIVE-CONFIRMED
+      2026-08-21 across every Survivors map on the build's seven-map
+      roster: one source observation (Checkpoint) plus six deliberate
+      out-of-sample predictions made before each load, zero misses. A
+      deliberate build-01.00 test (comradesean + mgnomad2,
+      party, private matches) played Supply Raid Checkpoint through The Dam
+      first (ring correctly read `0x0e`..`0x14`, matching the table below
+      exactly), then switched the SAME client session to SURVIVORS without
+      restarting. The mode-block formula predicts Survivors Checkpoint =
+      `0x1f`; what the ring actually read was `0x15` - i.e. Supply Raid's
+      LAST id (`0x14`, The Dam) plus one, continuing the SAME incrementing
+      sequence with no mode-based jump. Checkpoint's `0x15` was the
+      observation that sparked this hypothesis, not a prediction made in
+      advance; every map after it WAS predicted forward before loading and
+      confirmed, in order:
+        Checkpoint    read 0x15 (source observation, not a prediction)
+        Lakeside      predicted 0x16, read 0x16
+        Bill's Town   predicted 0x17, read 0x17
+        University    predicted 0x18, read 0x18
+        High School   predicted 0x19, read 0x19
+        Downtown      predicted 0x1a, read 0x1a
+        The Dam       predicted 0x1b, read 0x1b
+      So on 01.00, this field appears to be a flat, mode-agnostic "which
+      order did you load levels in this client session" sequence, not a
+      (map, mode) lookup into a per-mode block - the OPPOSITE of the 01.11
+      mechanism below. Not yet established: whether this is genuinely how
+      01.00 works, or an artifact of never resetting the ring between mode
+      switches within one client session (untested: restarting the 01.00
+      client between Supply Raid and Survivors, which would distinguish
+      "01.00 has no mode blocks" from "01.00 has mode blocks but the ring
+      only reflects LOAD ORDER until something resets it"). Full
+      round-by-round data (2026-08-21, `server/logs/session_manager.log`/
+      `wire.jsonl`, 03:07-03:57): see `protos/0x12f_room_create.ksy`'s
+      `room_field_0c` doc, which logs the same 25-round sweep (map ids and
+      `field_0c` side by side) since both fields were read off the same
+      frames.
+
+      THE FOLLOWING IS THE 01.11 MECHANISM ONLY. Established 2026-08-19 and
+      confirmed by out-of-sample PREDICTION on that build: the same
       map loaded under a different game mode yields a DIFFERENT id, and the mode
       blocks are spaced exactly 0x11 (17) apart:
           Survivors     = Supply Raid + 0x11
           Interrogation = Supply Raid + 0x22
-      Confirmed pairs (each loaded and read off the ring head):
+      Confirmed pairs (each loaded and read off the ring head, 01.11):
         Checkpoint   Supply Raid 0x0e   Survivors 0x1f
         Lakeside     Supply Raid 0x0f   Survivors 0x20   Interrogation 0x31
-      The prediction test: after pinning Checkpoint=0x0e (Supply Raid) and
+      The prediction test (01.11): after pinning Checkpoint=0x0e (Supply Raid) and
       Lakeside 0x0f/0x20, "Survivors Checkpoint" was predicted to be 0x1f BEFORE
       loading it; the ring then read [001f,0020]. That is why the earlier
       0x1f/0x31 records - briefly retracted as contradictory - are RIGHT: they

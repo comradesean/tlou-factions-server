@@ -191,13 +191,45 @@ seq:
       count: `0` when solo (nothing else to report), `1` in every 2-player
       match (exactly one other member), `2` in the one 3-member capture.
 
-      Which filter inside `FUN_0039b720`'s seven-filter loop performs the
-      self-exclusion was not pinned down this pass (the EFFECT is proven by
-      three independent, role-swapped live matches; the specific instruction
-      doing it is not) - a lower-priority remaining detail, since the
-      practical question (whose id is this) is closed. See
-      `research/notes/2026-08-20-followup-open-items.md` section 3 for the
-      full correlation.
+      WHICH FILTER PERFORMS SELF-EXCLUSION - RESOLVED 2026-08-21 (static).
+      `FUN_0039b720`'s loop body runs `0x39b7a8`-`0x39b838` per candidate
+      (shared skip target `0x39b850`). Filter 1, the FIRST check in the
+      loop (`0x39b7a8`-`0x39b7d0`), is the self-exclusion: it calls
+      `player->vtable[0xC](player)` (`bctrl` @`0x39b7c0`) and skips the
+      candidate if the return is nonzero (`bne cr7,0x39b850` @`0x39b7d0`).
+      That vtable slot (class vtable `0x01224438`, slot `+0xC`, OPD
+      `0x012BE028`) is `FUN_003CDCB8`:
+
+          3cdce0-3cdce4  r3 = FUN_0039a380(0x0137D700 /*NetGameManager*/, 0)
+          3cdcf0         cmpw cr7, this, r3
+          3cdcfc         beq  -> return 1
+          3cdd00         r3 = FUN_0039a380(0x0137D700, 1)
+          3cdd08-3cdd20  return (this == r3) ? 1 : 0
+
+      `FUN_0039a380(manager, index)` is the local-player accessor keyed by
+      local-player-index 0 or 1 (a splitscreen-shaped API). So filter 1
+      returns true - and drops the candidate - iff the candidate player
+      object's pointer equals either local-player slot's object pointer.
+      It is an OBJECT-IDENTITY comparison against the local player(s), not
+      a `member_id` comparison, but it is mechanically what removes the
+      sender's own entry before the value getter (this field's `entries`
+      producer, above) ever runs on it.
+
+      The other six filters, same loop body, same skip target - offsets and
+      polarity confirmed, semantics not traced further this pass:
+      2) `0x39b7d4`-`0x39b7dc`: `*(u8*)(player+0xA8) == 0` -> skip (an
+      active/valid-style flag). 3) `0x39b7e0`-`0x39b808`: the same
+      `vtable[0]` getter documented above returns 0 -> skip (already
+      recorded below as the "legitimate entry can never be zero"
+      constraint). 4) `0x39b80c`-`0x39b814`: `*(u8*)(player+0x3F4) != 0` ->
+      skip. 5) `0x39b818`-`0x39b820`: `*(u32*)(player+0x1AC) == 1` -> skip -
+      this is the SAME field as this doc's tag nibble `c`; `FUN_0039F75C`'s
+      three known callers all pass `param_4 = 0`, so this filter is
+      provably dead on every real send. 6) `0x39b824`-`0x39b82c`:
+      `*(u8*)(player+0x400) != 0` -> skip. 7) `0x39b830`-`0x39b838`:
+      `*(u8*)(player+0x538) != 0` -> skip.
+      See `research/notes/2026-08-20-followup-open-items.md` section 3 for
+      the live correlation this static finding confirms.
 
       ONE HARD CONSTRAINT THAT IS PROVEN, and useful if a server ever parses
       this: the SAME `vtable[0]` getter is invoked earlier in the same loop as

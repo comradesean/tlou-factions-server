@@ -81,6 +81,39 @@ python3 scan_anchor.py 0129759c
 …which pins the assert inside `_opd_FUN_00ad33d8`, cross-checked against the
 `li r7,0xe3` (= line 227) two instructions away.
 
+## Live memory write-breakpoints (RPCS3) - CONFIRMED WORKING 2026-08-21
+
+For a field that changes value live and a static write-scan (`scan_anchor.py`
++ manual `st{w,b,h} rX,off(rY)` grep) comes up empty, RPCS3 has a real
+memory-breakpoint feature (merged March 2025, store-instruction fix April
+2025) - first used successfully in this project 2026-08-21 to catch the
+`0x12f_room_create.ksy` `room_field_0c` write site after the static scan's
+negative result.
+
+**Two requirements, both easy to miss and both silent-failure if skipped:**
+
+1. **A self-compiled RPCS3 with `-DHAS_MEMORY_BREAKPOINTS=ON`.** Not in
+   standard downloads. Delete the build dir / `CMakeCache.txt` before
+   reconfiguring if you're adding the flag to an existing build tree - CMake
+   caches `option()` values, so re-running cmake on top of a stale cache can
+   silently keep the flag off (symptom: the breakpoint-type dropdown only
+   offers "Execution", no Memory Read/Write).
+2. **PPU Decoder must be set to Interpreter** (Settings -> CPU), not the
+   default LLVM Recompiler. The recompiler JITs native code with no
+   per-store watchpoint checks baked in, so a memory breakpoint set while
+   running under it will simply never fire, with no error. ~2-3x slower
+   while enabled; expected and fine for a one-shot catch.
+
+**Usage**: Debug window -> Breakpoints panel -> right-click -> Add
+Breakpoint (address, type = Memory Write) -> right-click the panel again ->
+**Enable BPM** (Break-on-Memory) - the breakpoint sits inert without this
+even if added correctly. On hit, RPCS3 dumps full GPR/FPR/VR state plus
+`CIA` (the store instruction itself) and `LR` (the caller's return address,
+i.e. the call site) - `CIA` -> `objdump --start-address=<CIA-a bit>
+--stop-address=<CIA+a bit>` identifies the exact instruction, `LR` -> the
+same technique on the caller pins the code path. `fnstart.py <LR>` gets the
+containing function's entry point in one step.
+
 ## Bonus: the game logs to `sys_tty`, and RPCS3 records it
 
 TLOU writes its own diagnostics (`Post/Get/Send Message %x, size %i`, assert
