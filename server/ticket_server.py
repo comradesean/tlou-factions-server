@@ -12,6 +12,7 @@ placeholder, but now wrapped in a real, correctly-tagged encrypted frame the
 client should actually accept, instead of raw unencrypted zero bytes.
 """
 import base64
+import json
 import os
 import socket
 import sqlite3
@@ -33,6 +34,29 @@ CANDIDATE_KEY = bytes.fromhex("78 56 34 12 32 54 76 98 88 ef cd ab ef cd ab 89".
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 7320
 os.makedirs(_LOGS, exist_ok=True)
 LOG_PATH = sys.argv[2] if len(sys.argv) > 2 else os.path.join(_LOGS, "ticket_server.log")
+
+# Structured, append-only record of every single-player-server `stat` line
+# (protos/0x11_stat_line.ksy), one JSON object per line - including lines
+# that DIDN'T parse as a known grammar (kind="malformed", raw line kept in
+# `raw`), so a genuinely new stat_line variant or a client bug is on record
+# even after ticket_server.log's own rotation cap eventually drops the prose
+# entry. This is NOT a general analytics feature - do not copy this pattern
+# for other services (single-player-server specifically, not the whole
+# port - see 2026-08-22 discussion). Its main purpose is feeding this
+# project's own ongoing task-%x research: the trophy-%x grammar is
+# understood, but task-%x's resolved value is still being hash-cracked /
+# gate-correlated against a live 5-slot content-module registry (see
+# research/notes/2026-08-21-task-hash-variation-trace.md and
+# research/notes/2026-08-22-task-x-offset-reconciliation.md for the
+# mechanism, and 0x11_stat_line.ksy's "RUNNING LOG OF LIVE task-%x
+# CAPTURES" section for why every real sample matters); malformed-line
+# capture is a secondary, record-keeping-only reason. A plain JSONL log -
+# not an in-memory dict like PRESENCE/GAMES below - because nothing ever
+# reads this back live; it is a corpus for offline analysis, and
+# PRESENCE/GAMES's own docstrings are explicit that in-memory state here is
+# not meant to survive a restart.
+STAT_EVENTS_PATH = os.path.join(_LOGS, "stat_events.jsonl")
+_stat_events_fp = RotatingLog(STAT_EVENTS_PATH)
 
 # Ceiling on the per-connection log block held in memory until the connection
 # closes. A real handshake (hello + two frames) logs a few kilobytes, and the
@@ -866,19 +890,123 @@ def handle_gamelist(conn, session_token, client_nonce, log_append):
                         "gamelist", build_gamelist_response)
 
 
+# ---------------------------------------------------------------------------
+# single-player-server (2026-08-21)
+# ---------------------------------------------------------------------------
+# LIVE-CONFIRMED 2026-08-21: this service had never once opened a connection in
+# 452 prior captured hellos; it finally spoke during a real campaign session,
+# twice, both trophy-unlock lines:
+#   stat comradesean trophy-2f\n
+#   stat comradesean trophy-2d\n
+# This matches protos/0x11_stat_line.ksy's decompile-derived trophy grammar
+# (`stat %s trophy-%x\n`, FUN_00080268) byte-for-byte - first live confirmation
+# of that grammar. UPDATE 2026-08-21/22: the sibling campaign-save grammar
+# (`stat %s task-%x %s %s\n`) is now ALSO live-confirmed - seven real captures
+# in one continuous campaign session, once a dead upstream
+# `campaign.config.txt.crypt` gate blocking it was found and fixed (see
+# docs/protocol/userdata_and_campaign_config_crypt.md and
+# protos/0x11_stat_line.ksy for the full trace). Both grammars this service
+# speaks are now live-confirmed end to end.
+def log_stat_event(online_id, kind, value, title_code=None, resolution_tag=None,
+                   raw=None):
+    """Append one JSON line to server/logs/stat_events.jsonl for a parsed
+    `stat` command. See STAT_EVENTS_PATH's module-level comment for why this
+    log exists (task-%x research corpus) - it is not general analytics.
+
+    kind is "trophy"/"task" for the two known grammars, or "malformed" for
+    anything single-player-server sent that didn't parse as either - kept in
+    the SAME file (filterable by kind) rather than a separate one, so a real
+    third grammar variant or a client bug shows up in the one place this
+    project already looks, instead of needing a second file nobody remembers
+    to check. `raw` carries the original line text for malformed entries,
+    where online_id/value may not be reliably parseable at all."""
+    record = {
+        "t": datetime.datetime.now().isoformat(),
+        "online_id": online_id,
+        "kind": kind,
+        "value": value,
+        "title_code": title_code,
+        "resolution_tag": resolution_tag,
+        "raw": raw,
+    }
+    _stat_events_fp.write(json.dumps(record) + "\n")
+
+
+def build_stat_response(cmd):
+    """Map one decoded single-player-server line to a reply. Returns (response,
+    note). Fire-and-forget like gamelist/heartbeat - the client does not parse
+    the reply - so this just records what came in (both as a prose log note
+    and, for real `stat` lines, as a structured stat_events.jsonl record - see
+    log_stat_event) and acks in the family shape.
+
+    Grammar (protos/0x11_stat_line.ksy):
+      stat %s trophy-%x\\n              (FUN_00080268)
+      stat %s task-%x %s %s\\n          (FUN_007f1acc: id, title_code, resolution_tag)
+    """
+    tokens = cmd.strip().split(" ")
+    verb = tokens[0] if tokens else ""
+
+    if verb == "stat" and len(tokens) >= 3:
+        online_id = tokens[1]
+        stat_id = tokens[2]
+
+        if stat_id.startswith("trophy-"):
+            log_stat_event(online_id, "trophy", stat_id[len("trophy-"):])
+            return "+0\n", f"stat {online_id!r} {stat_id!r} (extra={tokens[3:]!r})"
+        elif stat_id.startswith("task-") and len(tokens) >= 5:
+            log_stat_event(online_id, "task", stat_id[len("task-"):],
+                            title_code=tokens[3], resolution_tag=tokens[4])
+            return "+0\n", f"stat {online_id!r} {stat_id!r} (extra={tokens[3:]!r})"
+
+        # A `stat <id> <x>` line that's neither a known trophy- nor task- form
+        # (including a task-shaped one with fewer than 5 tokens). NOT the same
+        # as full garbage below - the verb/shape is right, just the specific
+        # stat_id prefix is one this project has never seen. Loud on purpose,
+        # same reasoning as the single-player-server first-contact warning
+        # elsewhere in this file: a real third grammar variant must stand out
+        # in the log, not blend into the same note text as a normal logged
+        # event while silently getting zero stat_events.jsonl entry.
+        log_stat_event(online_id, "malformed", stat_id, raw=cmd)
+        return "+0\n", (f"*** UNRECOGNIZED stat_id PREFIX {stat_id!r} for "
+                        f"{online_id!r} - neither trophy- nor task- (or a "
+                        f"task- line short of 5 tokens); logged to "
+                        f"stat_events.jsonl as kind=malformed. Full line: "
+                        f"{cmd!r}. If this recurs, it may be a new "
+                        f"stat_line grammar - see protos/0x11_stat_line.ksy. ***")
+
+    # Full garbage: not even `stat <id> <x>` shaped (wrong verb, or too few
+    # tokens to have an online_id/stat_id at all) - online_id is unknown, so
+    # this can't carry one, but the raw line itself is still worth keeping
+    # for the record rather than only living in ticket_server.log's
+    # rotation-capped prose block.
+    log_stat_event(None, "malformed", None, raw=cmd)
+    return "+0\n", f"unrecognized stat line {cmd!r} - acked"
+
+
+def handle_single_player(conn, session_token, client_nonce, log_append):
+    """single-player-server post-hello loop. Same encrypted-frame layer and
+    NUL-sentinel / hold-for-client-close discipline as every sibling line
+    service (see handle_line_service). Before this handler existed, a stat
+    line fell through to the ticket path and was answered with a
+    ticket_submit_response blob - the same request/response mismatch class
+    that produced the leaderboard/gamelist Error 9 boot."""
+    handle_line_service(conn, session_token, client_nonce, log_append,
+                        "single-player", build_stat_response)
+
+
 # Service-name -> post-hello handler for the 0x11 sibling LINE services. Names
 # are read verbatim out of the 88-byte hello (bytes 24:88, NUL-terminated).
-# Six services have been observed live; single-player-server has never opened a
-# connection, and ticket-server itself uses the message-C/D handshake below
-# rather than a line protocol, so neither appears here. invite-server is dead
-# code in this build (zero code xrefs across its whole literal pool) and will
-# never connect.
+# Seven services have been observed live; ticket-server itself uses the
+# message-C/D handshake below rather than a line protocol, so it doesn't
+# appear here. invite-server is dead code in this build (zero code xrefs
+# across its whole literal pool) and will never connect.
 LINE_SERVICE_HANDLERS = {
     "leaderboard-server": handle_leaderboard,
     "facebook-server": handle_facebook,
     "heartbeat-server": handle_heartbeat,
     "report-server": handle_report,
     "gamelist-server": handle_gamelist,
+    "single-player-server": handle_single_player,
 }
 
 
@@ -943,13 +1071,10 @@ def handle(conn, addr, log_lock, log):
         # channel and the Facebook flow before each got a real handler. Eight
         # service names exist in the 01.11 EBOOT:
         #     ticket / leaderboard / facebook / heartbeat / report /
-        #     gamelist                                              - handled
-        #     single-player                                         - not
+        #     gamelist / single-player                              - handled
         #     invite                                                - dead code
         # Shout loudly with the decoded payload so an unhandled service cannot
-        # sit unnoticed in a 300MB log. In particular single-player-server has
-        # NEVER been seen to send anything; if it ever does, that line is the
-        # first evidence of its grammar and should not be missed.
+        # sit unnoticed in a 300MB log.
         if service_name != "ticket-server":
             append((f"   *** UNHANDLED SIBLING SERVICE {service_name!r} - no "
                       f"handler, falling through to the ticket path and "
@@ -957,12 +1082,6 @@ def handle(conn, addr, log_lock, log):
                       f"probably NOT what it expects. Decoded request: "
                       f"{plaintext!r}. Add a handler in "
                       f"LINE_SERVICE_HANDLERS. ***\n"))
-            if service_name == "single-player-server":
-                append(("   *** single-player-server HAS SPOKEN FOR THE FIRST "
-                          "TIME. It had never been observed sending anything, so "
-                          "its line grammar was unknown and protos/ has no spec "
-                          "for it. Capture the request above - it is the only "
-                          "evidence of that grammar. ***\n"))
 
         # Message 4: a real encrypted frame, keyed by client_nonce (the client's
         # receive-side counter, confirmed - see decrypt_frame's docstring/the

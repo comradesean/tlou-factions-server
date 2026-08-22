@@ -59,7 +59,7 @@ search of both EBOOTs finds neither string in the older build:
 | `heartbeat-server` | both | yes (2026-08-19) | 314 hellos from 01.00 alone; reply is never parsed |
 | `report-server` | **01.11 only** (`0xeacdc0`) | yes (2026-08-19) | `is-banned <npid>`; see protos/0x11_report_line.ksy |
 | `gamelist-server` | **01.11 only** (`0xeb2690`) | yes (2026-08-19) | `game-add <session-id> <player>...`; write-only, no read verb exists; reply never parsed. See below and `docs/protocol/0x11_gamelist_line.md` |
-| `single-player-server` | both | no | grammar RESOLVED 2026-08-19 via static analysis (`protos/0x11_stat_line.ksy`); still never observed sending anything live (0 of 452 captured hellos) |
+| `single-player-server` | both | yes (2026-08-21) | grammar RESOLVED 2026-08-19 via static analysis, both lines LIVE-CONFIRMED 2026-08-21 (`protos/0x11_stat_line.ksy`) after a long gate-condition chase - see that file for the full trace |
 | `invite-server` | both | no | confirmed dead code, see below |
 
 `ticket_server.py` logs a loud warning for any service that reaches the
@@ -257,8 +257,15 @@ the only `game-` verb in the binary. Full evidence, including the
 
 ## What's still open
 
-- Independent live capture/confirmation for any sibling's post-hello frame
-  (only ticket-server's message C has one so far).
+- Independent live capture/confirmation for any sibling's post-hello frame -
+  UPDATE 2026-08-21: no longer just ticket-server. `single-player-server`'s
+  post-hello frame is now independently live-confirmed too (nine real
+  captures - two trophy lines, seven task lines - all decrypting to the
+  decompile-derived plaintext grammar byte-for-byte; see
+  `protos/0x11_stat_line.ksy`), and `report-server`'s request side has nine
+  live captures of its own (see the per-service section and confidence table
+  below). Still no independent live capture for `heartbeat-server`,
+  `leaderboard-server`, `facebook-server`, or `gamelist-server`'s frame.
 - Full plaintext field layout for the `"+"`-line-based bulk protocols
   (leaderboard batch-fetch, facebook presence/lookup) - structurally
   identified, not byte-mapped.
@@ -274,7 +281,7 @@ the only `game-` verb in the binary. Full evidence, including the
 |---|---|---|
 | `heartbeat-server`, `leaderboard-server`, `facebook-server`, `single-player-server` all use the identical `FUN_00acc424` hello/hello_response (messages A/B) | high | Same function, confirmed via `FindCallersOf` reference enumeration - not re-derived, structurally identical by construction |
 | `invite-server` is dead code in this build | high | Zero code xrefs across the entire `net-invite.cpp` literal pool (name, both command formats, `ASSERT` condition, and the file's own `ASSERT` filename string) via the same mechanical method that found 10/10 real call sites for the others; control check against neighboring live-file table entries confirms the method isn't blind to this table region. See `research/joinparty/2026-08-15-invite-server-dead-code-confirmed.md`. |
-| Post-hello payloads for all five are wrapped in the same encrypted frame as ticket-server's messages C/D | high (structural), unconfirmed (independently, per-service, live) | Same shared `FUN_00acd5f8`/`FUN_00acb6fc`/`FUN_00acd568`/`FUN_00acbb90` functions confirmed via decompile; no sibling-specific live capture exists yet |
+| Post-hello payloads for all five are wrapped in the same encrypted frame as ticket-server's messages C/D | high (structural); LIVE-CONFIRMED for `single-player-server` and `report-server`'s request side as of 2026-08-21, still unconfirmed independently for the rest | Same shared `FUN_00acd5f8`/`FUN_00acb6fc`/`FUN_00acd568`/`FUN_00acbb90` functions confirmed via decompile; `single-player-server` (`protos/0x11_stat_line.ksy`) and `report-server`'s request (`protos/0x11_report_line.ksy`) now have real decrypted live captures, `heartbeat-server`/`leaderboard-server`/`facebook-server`/`gamelist-server` do not yet |
 | Per-service plaintext payload shapes (this doc's per-service section) | medium | Structurally traced via decompile (loop counts, buffer sizes, helper functions used) but format-string contents and exact field boundaries not fully resolved |
 | Per-service IP/port table offsets | medium | Directly visible in decompile; actual port *values* not decoded from `net1.bin` this pass |
 

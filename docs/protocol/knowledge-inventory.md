@@ -7,7 +7,7 @@ found the previous "50 specs / 260 fields" figures undercounted both;
 `0x11_stat_line.ksy`, `common/dc_table.ksy` and `common/text_table.ksy`, all
 added 2026-08-19, were missing from this count and from `proto-map.md`'s
 tables entirely).
-Current as of 2026-08-20. The 2026-08-19 pass covered `0x140`/`0x141`,
+Current as of 2026-08-22. The 2026-08-19 pass covered `0x140`/`0x141`,
 `0x13e`/`0x13f`, `0x136 attr_tail`, `member_slot_ec`,
 `0x12f room_settings_tail`/`0x130 room_object_tail`, `room_flags_e8`,
 `member_data.card_string_0`/`card_string_1`, and `stat_line`'s `task-%x`. The
@@ -34,6 +34,15 @@ A FOURTH 2026-08-20 pass
 `0x13e` kind=3's encoding selector (`netsession->field_0x358 == 2`),
 re-derived `0x142 HostRank`'s per-entry value as a packed bitfield rather
 than a rank, and closed `capability_flag` bit 1 as consumed by nothing.
+A 2026-08-21/22 pass moved `single-player-server`/`stat_line` fully into
+Tier 1 (both grammars live-confirmed after finding and fixing a real
+`campaign.config.txt.crypt` gate chain - see item 31b), closed
+`report_line`'s response grammar (item 31), resolved most of `profile_21`'s
+zero region (item 52), resolved `stat_line`'s 2nd `%s` (item 56), and
+substantially advanced but did not fully close `task-%x`'s specific meaning
+(item 53) - a hash-crack attempt against both large disc archives
+(`pak23.psarc`, `actor34.psarc`) found neither contains any `.dci` content,
+so that avenue is exhausted for now.
 
 The bar for **Tier 1** is the project's reserved standard applied to a whole
 message or field: a NAME, a DEFINITION (what the bytes are), and a game or
@@ -84,7 +93,11 @@ message is now live-verified.
 
 - `0x132` RoomJoined - deliberately never sent; the "must not send" reason rests
   on disassembly plus an unretained 2026-08-15 regression.
-- `single-player-server` hello - 0 of 452 captured sibling hellos.
+
+`single-player-server` hello - RESOLVED 2026-08-21/22, moved out of this list:
+after 0 of 452 captured sibling hellos, both grammars were live-confirmed the
+same night (`protos/0x11_stat_line.ksy`, `research/notes/2026-08-21-stat-line-config-writer-trace.md`)
+- see the Tier 1 entry below.
 
 **Live but unexercised** (the message is observed; the claim is not):
 
@@ -225,7 +238,23 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     `time_played_sec`, `executions`, `deaths`, `rank`.
 30. **`facebook_line`** - the Graph-backed friend/name flow.
 31. **`report_line` request** - `is-banned <online_id>\n`, a player-standing /
-    ban check. Request live-captured 2026-08-18. (Response is Tier 3.)
+    ban check. Request live-captured 2026-08-18. Response grammar RESOLVED
+    2026-08-21 (`research/notes/2026-08-21-report-server-response-grammar.md`,
+    `protos/0x11_report_line.ksy`) - no longer Tier 3.
+31a. **`gamelist_line`** - `game-add <session-id> <player>...`, write-only, no
+    read verb, reply never parsed. Resolved 2026-08-19,
+    `protos/0x11_gamelist_line.ksy`.
+31b. **`stat_line` / `single-player-server`** - both grammars, `stat %s task-%x
+    %s %s\n` (campaign-save) and `stat %s trophy-%x\n` (trophy-unlock),
+    LIVE-CONFIRMED 2026-08-21/22 after 0 of 452 prior captured hellos -
+    seven real campaign-save captures plus two trophy captures, all
+    matching the decompiled grammars byte-for-byte. Getting the campaign-save
+    line to fire at all required finding and fixing a real gate chain (a
+    dead upstream `campaign.config.txt.crypt` dependency this server now
+    serves a working replacement for) - see `protos/0x11_stat_line.ksy` and
+    `docs/protocol/userdata_and_campaign_config_crypt.md` for the full
+    trace. The `task-%x` value's specific meaning is still Tier 2 (see item
+    53) - the LINE PROTOCOL itself is Tier 1.
 
 ### Profile
 
@@ -626,11 +655,18 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
 
 ## TIER 3 - UNKNOWN
 
-50. **`report-server` response grammar** - the request is captured, the reply is
-    not. Deliberately not guessed. Also an implementation risk: our stub answers
-    a ban check with a ticket blob. RECHECKED 2026-08-20: 59 `is-banned`
-    requests in `server/logs/ticket_server.log`, still zero retail replies.
-    Needs a capture.
+50. **`report-server` response grammar** - RESOLVED 2026-08-21, moved to Tier 1
+    (see item 31). No longer Tier 3: the grammar was derived from the binary
+    (`+<ban_index> <name>`, single-pass, fail-open on every branch) and
+    re-verified instruction-by-instruction against a fresh 01.11 objdump -
+    see `research/notes/2026-08-21-report-server-response-grammar.md` and
+    `protos/0x11_report_line.ksy`'s `ban_reply_row` type. This item's earlier
+    "our stub answers a ban check with a ticket blob" implementation-risk
+    note is also stale: `server/ticket_server.py` has had a dedicated
+    `handle_report`/`build_report_response` since 2026-08-19 that replies
+    with an empty body instead. A live retail reply was never captured and
+    is not needed - the fail-open analysis is what makes the empty-body stub
+    provably correct without one.
 51. **`profile_21.game_data` interior** - the 0x5000-byte payload; subsystem
     index ranges only partly claimed. NEW LEAD 2026-08-20: the DC stat registry
     now has a name and a dump - `*net-stats*` (`crc32_mpeg2` `0x921da350`), 40
@@ -650,15 +686,37 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
     `research/notes/2026-08-20-tier2-followup.md` §6. Separately, whether
     `profile.21`'s `record[8 + (statIdx+581)*4]` indexes `*net-stats*` is
     still not established.
-52. **`profile_21` zero region `P+0x1E74..0x5008`** - purpose unknown.
+52. **`profile_21` zero region `P+0x1E74..0x5008`** - MOSTLY RESOLVED 2026-08-21
+    (`research/notes/2026-08-21-profile21-zero-region-walk.md`). Splits into
+    two pieces: `P+0x1E8C..0x5008` (~12.7 KB) is CLOSED, confirmed zero
+    across three real accounts with no accessor reaching it anywhere in the
+    binary. `P+0x1E74..0x1E8B` (24 bytes, six u32 words) is narrowed, not
+    closed - genuinely non-zero on one of three accounts, correlating 1:1
+    with the `milestone_latch_1e2c` "Added Extra Supplies from Promotion!"
+    flag, but no EBOOT writer found in either 01.00 or 01.11 despite an
+    exhaustive trace. A DLC-entitlement hypothesis was tested and NOT
+    supported by static evidence (`research/notes/2026-08-21-promotion-flags-dlc-hypothesis.md`),
+    though a strong circumstantial lead turned up separately: the 01.11
+    disc's own `promo1/` pre-order `.edat` set has exactly six sibling items
+    alongside the already-matched `PROMOEXTRASUPPLY`
+    (`research/notes/2026-08-21-promotion-flags-angles-2-3.md`) - unproven,
+    needs a live write-breakpoint to close.
 53. **DC-blocked set** - all net-stat slots (including the supplies gate;
     `rank_tier`'s own `net-money-info` table is now fully decoded and RESOLVED
     as inert dead code - see item 38, not part of this blocked set anymore),
     `stat_line`'s `task-%x`
-    (mechanism resolved 2026-08-19 - a genuine DC task-definitions table
-    lookup, removed from this list as its own item and folded in here; see
-    the "resolved out of this tier" note below - only the specific task
-    identity remains DC-blocked), and most of the id→asset map (cosmetics,
+    (mechanism resolved 2026-08-19 - NOT a task-definitions table lookup, a
+    UI reward-icon lookup against a dynamic 5-slot content-module registry;
+    LIVE-CONFIRMED 2026-08-21/22 across SEVEN real captures, all different
+    values - the hash-crack attempt on all seven against the widest
+    corpus this project has assembled, including a full pass over both
+    `pak23.psarc` (10.8 GB) and `actor34.psarc` (1.9 GB), found ZERO `.dci`
+    content in either archive and 0/7 cracked; see
+    `research/notes/2026-08-21-task-hash-variation-trace.md` and
+    `research/notes/2026-08-22-task-x-offset-reconciliation.md` for the full
+    mechanism trace - the resolved integer's specific identity remains
+    DC-blocked, the MECHANISM and its live variability are not), and most of
+    the id→asset map (cosmetics,
     character/name pools) - PARTIALLY UNBLOCKED 2026-08-19: `net1.bin`/
     `net10.bin`'s container format is solved (`docs/protocol/dc_table.md`),
     and cosmetic/customization StringIds are now resolvable via
@@ -713,9 +771,14 @@ Well-exercised: `team` (0/1/2), `rank_value` (0/1/2), `recent_level_*`,
 55. **Intermittent "Host quit for cheating"** teardown - rare, unexplained, no
     packet correlated with it yet. RECHECKED 2026-08-20: the string appears
     nowhere in `server/logs/`. Needs a live reproduction, not static analysis.
-56. **`stat_line` task line's 2nd `%s`** - the accessor is pinned (`base+0x2e6c`
-    string field), but `base` resolves to a runtime-allocated object with no
-    file-backed content - needs a live memory read during a campaign autosave.
+56. **`stat_line` task line's 2nd `%s`** - RESOLVED (live) 2026-08-21. The
+    accessor was pinned (`base+0x2e6c` string field) but `base` resolves to a
+    runtime-allocated object with no file-backed content; a live capture
+    (after this project deployed a working `campaign.config.txt.crypt`
+    replacement, see `docs/protocol/userdata_and_campaign_config_crypt.md`)
+    read the value directly off the wire: `BCUS98174`, the title's own PS3
+    product/serial code - a per-title runtime constant, not a save-specific
+    computed value. See `protos/0x11_stat_line.ksy`.
 
 RESOLVED OUT OF THIS TIER since 2026-08-18 and removed from the numbered list
 above (kept here so old cross-references aren't silently broken): `single-

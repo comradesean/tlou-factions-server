@@ -282,14 +282,53 @@ minor and both needing a capture rather than more static analysis:
   and to which host is not established. UNBLOCK: a capture of the client's
   outbound HTTP during a match end, or resolving `0x13ba678` at runtime.
 
-- **`single-player-server`** - has a hello spec, and its line grammar is now
-  RESOLVED via static analysis (2026-08-19, `protos/0x11_stat_line.ksy`):
-  `stat %s task-%x %s %s\n` from the campaign-save path, `stat %s trophy-%x\n`
-  from the trophy-unlock path, both format strings recovered directly from
-  the EBOOT. It has still NEVER been observed sending anything live (0 of 452
-  captured sibling hellos), so the grammar is confirmed by decompile, not by
-  a real frame. `ticket_server.py` still emits a loud first-contact warning
-  if it ever speaks, since that would be the first live confirmation.
+- **`single-player-server`** - RESOLVED, both line grammars now LIVE-CONFIRMED
+  (2026-08-19 static, 2026-08-21 live). `stat %s task-%x %s %s\n`
+  (campaign-save path) and `stat %s trophy-%x\n` (trophy-unlock path), both
+  format strings recovered from the EBOOT and both since observed live
+  byte-for-byte. Has a real handler (`handle_single_player` /
+  `build_stat_response` in `ticket_server.py`).
+
+  The campaign-save line specifically took real work to reach: it was
+  structurally unreachable for most of 2026-08-21, root-caused
+  (`research/notes/2026-08-21-stat-line-config-writer-trace.md`) to
+  `FUN_007f1acc`'s throttle modulus and single-player-server ip/port fields
+  never getting populated by the save-manager singleton's constructor
+  (`FUN_007f149c`), which only runs that population step once, and only if
+  a live HTTP GET+decrypt of `campaign.config.txt.crypt` succeeds -
+  `http_gateway.py`'s upstream S3 bucket for that path is dead, so it was
+  falling back to an empty `200 OK` that can't decrypt (confirmed both by
+  decompile and by a live breakpoint reading the singleton's fields as
+  all-zero at the moment of a real save).
+
+  FIX: the `.crypt` container turned out to already be a solved format -
+  the same one this project cracked for `userdata/<id>.txt.crypt`
+  (`server/lib/userdata_crypt.py`), which explicitly documents
+  `campaign.config.txt.crypt` as a sibling using an identical container
+  with a static, title-wide (not per-session/digest-pinned) Blowfish+HMAC
+  key pair. The real retail plaintext for this file family was already
+  decrypted back on 2026-08-17
+  (`research/notes/2026-08-17-userdata-txt-crypt-format.md`):
+  `queue-server-addr 50.18.47.114` / `queue-server-port 7320` /
+  `interval 10` / `enable 1` (port 7320 matches this project's own
+  ticket_server/single-player-server listener - not a coincidence). Built
+  and deployed a replacement at
+  `server/data/served_content/campaign.config.txt.crypt` with
+  `queue-server-addr=192.168.1.100`, everything else unchanged - HMAC
+  verified OK on decode.
+
+  LIVE-VERIFIED END-TO-END, 2026-08-21, after a fresh RPCS3 boot picked up
+  the new file: `single-player-server` opened a fresh connection and sent
+
+      stat comradesean task-7d9d7acc BCUS98174 HD
+
+  which also closes three previously-open sub-fields in one live capture:
+  `task-%x` resolves to `0x7d9d7acc` (the "general/hud/prize-icon/Default"
+  DC-table id, previously known only structurally), the 2nd `%s` is the
+  title's own product code `BCUS98174` (previously DC/runtime-blocked -
+  turned out to be a per-title constant, not save-specific), and the 3rd
+  `%s` is `"HD"`, matching the predicted two-value enum. See
+  `protos/0x11_stat_line.ksy` for full field-level detail.
 
 - **`invite-server`** - previously investigated and recorded as dead code.
 
@@ -499,23 +538,99 @@ the reason each item stalled.
   for this - card_stat has read as zero in both build eras' captures, so
   there's no known build-specific behavior motivating the extra work yet).
 
+- **`report-server`'s RESPONSE grammar** (distinct from the already-solved
+  `is-banned` REQUEST / `pReportArray` table above). RESOLVED 2026-08-21 -
+  see `research/notes/2026-08-21-report-server-response-grammar.md` and
+  `protos/0x11_report_line.ksy`'s `ban_reply_row` type. Full token grammar
+  traced and re-verified against a fresh 01.11 objdump: `'+' <ban_index
+  decimal> <sep> <name> <ignored tail>`, single-pass (no repeating-row
+  outer loop). Also settles a second open question - whether `report-server`
+  handles any request beyond the ban self-check (the family name suggests
+  "report a player"): NO. An exhaustive scan of all 12 call sites to the
+  shared connect+hello function `0xaf9bb4` in the 01.11 EBOOT shows each
+  passes a distinct service-name string, and only one (`0x36e220`) passes
+  "report-server"; the string's neighborhood in the string table has no
+  second verb literal either. "report" in the name is a naming artifact of
+  the shared backend, not a second client-side grammar. This project's stub
+  was already correctness-safe regardless (an empty body never triggers a
+  ban - see the `pReportArray` entry above); this pass was documentation
+  completeness only, and a live capture is not worth prioritizing since it
+  couldn't add anything beyond the already-separately-tracked
+  `pReportArray` name recovery and `g_net+920` meaning (both still
+  data-compiler-blocked, unaffected by this pass).
+
+- **`profile_21`'s zero region, `P+0x1E74..0x5008`.** WALKED 2026-08-21 - see
+  `research/notes/2026-08-21-profile21-zero-region-walk.md`,
+  `protos/profile_21.ksy`'s `promotion_flags_1e74`/`reserved_1e8c` fields.
+  Mostly CLOSED: `P+0x1E8C..0x5008` (~12668 of the ~13172 bytes) is
+  confirmed zero on three real accounts and has no EBOOT producer of any
+  kind (the record's universal accessor's 436 call sites were exhaustively
+  traced, both static-immediate and dynamic loop-computed forms) - genuinely
+  unused/reserved, no live blocker. The remaining `P+0x1E74..0x1E8B` (24
+  bytes, six flag words) is real, non-zero, per-account data with no EBOOT
+  writer found despite the same exhaustive trace - narrowed to a live
+  RPCS3 memory-write-breakpoint blocker (the note's §5 has the concrete
+  test plan: a fresh/low-progress account, trigger the in-game "Promotion"
+  reward event, watch the buffer for a write). DLC-entitlement hypothesis
+  tested 2026-08-21 against the 01.11 EBOOT (in case the writer existed
+  only in the DLC-aware build and was invisible to a 01.00-only trace) -
+  see `research/notes/2026-08-21-promotion-flags-dlc-hypothesis.md`: NOT
+  supported. 01.11's own record accessor was independently re-derived
+  (`0x3e6adc`, 501 call sites) and shows the identical "nothing reaches
+  P+0x1E74..0x1E8B" result as 01.00; two genuine DLC/entitlement tables
+  found in 01.11 (8 and 4 entries) don't match the six-word count; a
+  `net10.bin` vs `net1.bin` DC-directory diff found 46 new 01.11-only
+  globals with no clean six-row candidate among them. Two angles that pass
+  left open were both chased 2026-08-21 - see
+  `research/notes/2026-08-21-promotion-flags-angles-2-3.md`: the
+  capability/entitlement register was relocated to 01.11 by signature
+  (`0x01502808`, via its two consumers `FUN_0037C85C`/`FUN_0037C95C`) and
+  fully traced - confirmed uninvolved, closing that angle for good; the 46
+  new `net10.bin` keys plus the `*unlock-list*` table's 169-row diff
+  (284->453 rows) were name-cracked against a widened corpus (3/46
+  resolved to new DLC5 skill-upgrade tables, none promotion-related). A
+  strong circumstantial lead turned up outside the hash-crack path: the
+  01.11 install's `build/main/promo1/` directory holds seven genuine PSN
+  pre-order `.edat` entitlements, one of which (`PROMOEXTRASUPPLY`) is
+  unmistakably `milestone_latch_1e2c`'s own grant - leaving exactly six
+  sibling items (`PROMOEARLYBRAWLR`, `PROMOELLIESKIN01`,
+  `PROMOHATSHELMETS`, `PROMOJOELSKIN001`, `PROMOLOADOUTPOIN`,
+  `PROMOSPUPGRADESF`), matching the six-word count exactly - but nothing
+  connects them to this field on the wire, in a cracked hash, or in a
+  table row. **Static analysis is now exhausted for this field.** The live
+  memory-write-breakpoint test remains the only real way to close this -
+  check the call stack does NOT pass through the entitlement register's
+  consumers (per this pass, it shouldn't), and if a live account's
+  inventory is available, check it against the six named PROMO items
+  above. CORROBORATED 2026-08-21: the six-item reading matches the real
+  retail Factions pre-order/promo bonus lineup for these exact items
+  (early Brawler unlock, an Ellie skin, a Joel skin, a hats/helmets
+  cosmetic pack, a loadout-point grant, a supply-pickup upgrade) - real-
+  world confirmation of the SET's identity, raising confidence in the
+  "six per-item grant flags" reading, though it doesn't itself prove the
+  write mechanism; the live breakpoint test above is still what would
+  close that.
+
 ### Genuinely unknown - no static trace attempted, no live blocker identified
 
 These are open because nobody has looked yet, not because looking is known to
 fail. Lower priority than the tractable list above only because nothing
 currently depends on the answer.
 
-- **`profile_21`'s zero region, `P+0x1E74..0x5008`.** Purpose unknown; no
-  static pass has walked this range's producers the way `career_stats` (a
-  smaller unmapped gap in the same file) was walked on 2026-08-20.
-- **`report-server`'s RESPONSE grammar** (distinct from the already-solved
-  `is-banned` REQUEST / `pReportArray` table above). This project's stub is
-  fail-open regardless (an empty body never triggers a ban - see the
-  `pReportArray` entry above), so there's no correctness urgency, only
-  documentation completeness.
 - **`stat_line`'s second `%s`** in the campaign-save line
-  (`stat %s task-%x %s %s\n`). The overall grammar is resolved by decompile
-  (`protos/0x11_stat_line.ksy`); this one parameter within it isn't, and the
-  service has never been observed live to check against (0/452 sibling
-  hellos), so even a resolved format string can't be verified against a real
-  frame yet.
+  (`stat %s task-%x %s %s\n`) - RESOLVED (live) 2026-08-21, moved here from
+  its earlier "zero live samples" status now that the campaign-save line has
+  actually been captured (see the `single-player-server` entry above under
+  "Unhandled sibling services" for the full fix/deploy story that unblocked
+  it). Six task lines plus a seventh 2026-08-22 all read
+  `stat comradesean task-<hash> BCUS98174 HD`: the 2nd `%s` is
+  `BCUS98174`, the title's own PS3 product/serial code (a per-title runtime
+  constant, not save-specific); the 3rd `%s` is `HD`, matching the predicted
+  two-value size/medium enum exactly. Both are now closed. Full field-level
+  detail and live-capture log: `protos/0x11_stat_line.ksy`. What's still
+  open in this line is a DIFFERENT parameter - the `%x` task hash's exact
+  per-save meaning (a HUD-icon-lookup id that varies call to call via a
+  5-slot dynamic content-module registry, not yet correlated against actual
+  chapter transitions) - see `protos/0x11_stat_line.ksy`'s `%x` field doc and
+  `research/notes/2026-08-21-task-hash-variation-trace.md` /
+  `research/notes/2026-08-22-task-x-offset-reconciliation.md`.

@@ -77,6 +77,8 @@ round-tripped sample records**
 | 0x1E4C | wins_mode_a | note §2 `0x3f25f8` team+result==3; 5 / 0 | high |
 | 0x1E50 | wins_mode_b | note §2 `0x3f26b4`; 4 / 0 | high |
 | 0x1E54 | pop_highwater_c | note §3 `0x37e740`; 0 / 0 | med-high |
+| 0x1E74 | promotion_flags_1e74[6] | 2026-08-21 static walk (see below); comradesean all-1 / mgnomad2+gmnomad all-0, correlates with `milestone_latch_1e2c`. DLC-entitlement hypothesis tested 2026-08-21 against the 01.11 EBOOT (`research/notes/2026-08-21-promotion-flags-dlc-hypothesis.md`) - NOT supported: 01.11's independently re-derived accessor (`0x3e6adc`, 501 sites) shows the same "no writer reaches here" result as 01.00 | med (existence, boundaries) / open (semantics, producer) |
+| 0x1E8C | reserved_1e8c | 2026-08-21 static walk (see below); confirmed zero on 3 samples, no EBOOT producer of any kind found | high |
 | 0x066C | survivor_variant_id | `dc_hash_crack.py` vs retail-disc `.dci` corpus: comradesean=`*cc-fl-base*`, mgnomad2=`*cc-hb5-base*` (CORRECTED 2026-08-19 - was wrongly claimed identical across both accounts) | high |
 | 0x0308 | equipped_gesture_id | RENAMED 2026-08-20 from `gated_customization_id` - six controlled live edits pinned this as the equipped gesture (None/Fist Pump/Knuckles/Chest Pound/Blow Smoke/Back Off, plus 5 locked names on record); hash algorithm behind the values not resolved (ruled out: text_table.py StringId, dc_hash_crack.py corpus) | high (location, mechanism) / open (hash algorithm) |
 | 0x1E40 | emblem_location | RENAMED 2026-08-20 from `flag_1e40` - was wrongly documented as a boolean; three controlled live edits confirm a 4-value enum: 0=None, 1=Torso, 2=Helmet, 3=Backpack (human-confirmed last menu option, likely the complete range) | high |
@@ -197,9 +199,66 @@ matches_mode_a + matches_mode_b`, `pop_highwater_a == pop_highwater_menu`,
   `emblem_location` - see the emblem entry above, this is not the same
   field despite the similar address, and it's not a boolean like
   originally documented.)
-- **Everything P+0x1E74 → P+0x5008** (~0x3190 bytes): zero in both samples —
-  reserved space for higher stat indices / more survivors than these accounts
-  have earned.
+- **P+0x1E74 → P+0x5008: WALKED 2026-08-21** (see
+  `research/notes/2026-08-21-profile21-zero-region-walk.md`). The prior
+  "zero in both samples" claim here was wrong for the first 24 bytes and
+  confirmed correct for the rest:
+  - **P+0x1E74..0x1E8B** (`promotion_flags_1e74`, six BE u32 words):
+    genuinely non-zero on one of three real accounts (comradesean: all six
+    = 1; mgnomad2 and a third sample gmnomad: all six = 0), correlating 1:1
+    with `milestone_latch_1e2c` (the "Added Extra Supplies from Promotion!"
+    flag) being set only for that same account. No EBOOT writer or reader
+    was found despite exhaustively tracing the record's universal accessor
+    (`FUN_003cb89c`, all 436 call sites, both static-immediate and dynamic
+    loop-computed offset forms) and directly sweeping the whole binary for
+    the literal byte offsets (all hits there belong to unrelated
+    float-bearing gameplay classes, confirmed false positives). Working
+    theory: a shared "Promotion" reward-grant event, written DC-side with no
+    EBOOT code path - the same pattern already established for
+    `custom_appearance`'s `survivor_variant_id`/`equipped_item_ids` - but not
+    proven on a single data point. Needs a live RPCS3 memory-write-breakpoint
+    test (plan in the note's §5) to close.
+
+    **DLC-entitlement hypothesis tested 2026-08-21, NOT supported** (see
+    `research/notes/2026-08-21-promotion-flags-dlc-hypothesis.md`): the
+    trace above ran only against 01.00, which has no visible DLC awareness
+    unlike 01.11, raising the possibility of a 01.11-only writer invisible
+    to that trace. Re-run against the 01.11 EBOOT with an independently
+    re-derived accessor (`0x3e6adc`, 501 call sites, confirmed by
+    convergence - not assumed at a ported address): same result, zero
+    accessor-derived reads/writes anywhere in `P+0x1E74..0x1E8B`. A search
+    for DLC/entitlement string tables in 01.11 found two genuine ones (an
+    8-entry `-DLCITEMS*` table, a 4-entry `%s-THELASTOFUSDLC0{1..4}`
+    map-pack table) - neither has six entries. A directory diff of 01.11's
+    `net10.bin` DC bundle against 01.00's `net1.bin` found 46 new hash-only
+    globals unique to 01.11, none with a clean six-row shape.
+
+    **Both remaining angles chased 2026-08-21, static analysis now
+    exhausted** (see `research/notes/2026-08-21-promotion-flags-angles-2-3.md`):
+    the capability/entitlement register was relocated to 01.11 by signature
+    (`0x01502808`, via consumers `FUN_0037C85C`/`FUN_0037C95C`) and fully
+    traced - confirmed uninvolved, closing that angle. The 46 new
+    `net10.bin` keys plus the `*unlock-list*` table's 169-row diff
+    (284->453 rows) were name-cracked against a widened corpus: 3/46
+    resolved to new DLC5 skill-upgrade tables, none promotion-related. A
+    strong circumstantial lead turned up outside the hash-crack path
+    instead: the 01.11 install's `build/main/promo1/` directory holds
+    seven genuine PSN pre-order `.edat` entitlements, one of which
+    (`PROMOEXTRASUPPLY`) is unmistakably `milestone_latch_1e2c`'s own
+    grant, leaving exactly six sibling items (`PROMOEARLYBRAWLR`,
+    `PROMOELLIESKIN01`, `PROMOHATSHELMETS`, `PROMOJOELSKIN001`,
+    `PROMOLOADOUTPOIN`, `PROMOSPUPGRADESF`) matching the six-word count
+    exactly - corroborated 2026-08-21 against the real retail Factions
+    pre-order/promo bonus lineup for these exact items, raising confidence
+    in the "six per-item grant flags" reading without proving the write
+    mechanism. Static analysis is now exhausted for this field; the live
+    RPCS3 memory-write-breakpoint test (note's §5) remains the only way to
+    close it for real.
+  - **P+0x1E8C..P+0x5008** (`reserved_1e8c`, ~12668 bytes): CLOSED, high
+    confidence. Confirmed zero on all three real samples, and no EBOOT code
+    path of any addressing idiom used anywhere else in this record ever
+    constructs an address in this span - genuinely unused/reserved, not
+    merely undecoded.
 - **Mode-A vs Mode-B identity:** the `FUN_003a3d40 == 2/== 3` split (which is
   Supply Raid vs Survivors) is not resolved.
 

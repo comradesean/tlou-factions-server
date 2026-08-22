@@ -61,6 +61,44 @@ in the EBOOT); every other key/value in the file is ignored by the retail client
 A minimal file the client accepts is therefore *any* valid container - even an
 empty body - and the current revival stub's empty 200 response is already valid.
 
+For `campaign.config.txt.crypt` specifically, ALL FOUR keys above are actually
+consumed - by `FUN_007f149c` (01.00 VMA `0x007f149c`), the campaign save-manager
+singleton's own constructor (`gamelib/save/saveworker.cpp`). This is the SAME
+object that later sends `single-player-server`'s `stat %s task-%x %s %s\n`
+telemetry line (`protos/0x11_stat_line.ksy`), and this download is a hard
+prerequisite for that line ever sending at all - not just optional config.
+Sequence, confirmed both by decompile and by a live 2026-08-21 RPCS3 breakpoint
+session (full trace: `research/notes/2026-08-21-stat-line-config-writer-trace.md`):
+
+  1. `sceNpManagerGetNpId()` must succeed, or the constructor skips this whole
+     block permanently (it only runs once, at lazy construction - no retry).
+  2. A live HTTP GET+decrypt of `campaign.config.txt.crypt` (default URL
+     `http://t1.campaign.config.s3.amazonaws.com/campaign.config.txt.crypt`)
+     must succeed. `enable`'s value is read for a `"1"`-prefixed toggle check;
+     `interval` becomes the notify throttle's modulus N; `queue-server-addr`/
+     `queue-server-port` become the {ip,port} pair `single-player-server`'s
+     hello handshake (`FUN_00acc424`, same shared connect used by every other
+     0x11 sibling) actually connects to.
+
+The real retail values for this specific file (decrypted 2026-08-17 from a
+genuine campaign2/3 sample, see the CONTAINER section above) point at Naughty
+Dog's own long-dead `50.18.47.114:7320`. This project now serves a replacement
+built the same way as any other file this tool produces, just with the address
+swapped to point at this server's own `ticket_server.py` listener (which
+already handles `single-player-server` as a line service on the same port):
+
+    python3 userdata_crypt.py build server/data/served_content/campaign.config.txt.crypt \
+        queue-server-addr=<this server's LAN address> queue-server-port=7320 \
+        interval=10 enable=1
+
+LIVE-VERIFIED 2026-08-21/22: deployed, and confirmed working end-to-end on the
+next fresh RPCS3 boot - seven real `task-%x` telemetry sends across one
+campaign session, all successfully connecting to and being handled by
+`ticket_server.py`'s `handle_single_player`. `http_gateway.py` always prefers
+a local file over its dead-upstream fallback, so once this file exists at
+`server/data/served_content/campaign.config.txt.crypt` it's served
+automatically - no code change needed beyond having the file present.
+
 Usage:
     # encode key/value pairs -> .txt.crypt
     python3 userdata_crypt.py build out.txt.crypt  key1=val1 key2=val2 ...

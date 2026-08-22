@@ -14,9 +14,10 @@ doc: |
   is wrapped in the shared encrypt-then-MAC 0x33 frame (magic 0x33, pad, BE u16
   plaintext_len, 16-byte tag, ciphertext - see
   docs/protocol/0x11_ticket_server_hello.md and server/lib/ticket_cipher.py).
-  THIS spec models the DECRYPTED PLAINTEXT of the REQUEST; the RESPONSE grammar
-  is documented in prose below (it is a variable-token line, not a fixed
-  struct).
+  THIS spec models the DECRYPTED PLAINTEXT of the REQUEST; the RESPONSE
+  grammar is documented in prose below and, for its one structured case, as
+  the `ban_reply_row` type (it is otherwise a variable-token / often-absent
+  line, not a fixed struct - see "RESPONSE GRAMMAR, FULLY RESOLVED" below).
 
   BUILD SCOPE: report-server is 01.11-ONLY. A byte search of both EBOOTs finds
   neither "report-server" nor "is-banned" anywhere in 01.00; both strings exist
@@ -112,6 +113,67 @@ doc: |
       format-string pointer is 0x1530d90, which is bss/runtime and unreadable
       statically.
 
+  RESPONSE GRAMMAR, FULLY RESOLVED (2026-08-21 re-verification, addresses
+  above re-checked instruction-by-instruction against a fresh objdump of the
+  same 01.11 ELF - every citation above matched byte-for-byte, nothing
+  revised). Two questions remained after the 2026-08-19 pass and are now
+  closed:
+
+  1. "Is there a second report-server request verb (a real player-REPORT,
+     as opposed to the ban SELF-check)?" NO - confirmed by exhaustive search,
+     not by absence of a lead. `research/tools/eboot_analysis/scan_bl.py`
+     against `0xaf9bb4` (the family's shared connect+hello function, the
+     same one every 0x11 sibling server uses) finds exactly 12 call sites in
+     the whole 01.11 text segment. Reading each site's `r6` argument (the
+     service-name string pointer) shows 12 distinct displacements off the
+     per-function `r30` anchor - no two call sites load the same service
+     name, and only ONE (`0x36e220`, displacement `-30712(r30)`, resolving
+     to slot `0x129a3c8`, i.e. the "report-server" string) is report-server's.
+     A second grammar would need a second connect call passing
+     "report-server" as the service name; there isn't one. The three
+     strings adjacent to the "report-server" slot are exactly the three
+     already documented above - "report-server" @0xeacdc0, "is-banned %s\n"
+     @0xeacdd0, "ban response: '%s'\n" @0xeacde0 - and nothing else sits in
+     that neighborhood (`0xeacc00`-`0xeacf00` scanned by hand: sound/analytics
+     strings before it, `NetInit Done`/`!m_rBuffer`/commerce-cpp strings
+     after). CONCLUSION: the "report" in the service name is a naming
+     artifact of the shared backend (the same service that would receive
+     player reports server-side, per the family doc), not a second
+     client-side grammar. This project's client never sends a report; it
+     only ever asks "is-banned <my own online-id>".
+
+  2. "What is the response grammar precisely, token by token?" Already
+     correct in the trace above; the ONLY thing worth adding is that the
+     parser is strictly POSITIONAL and SINGLE-PASS, not a repeating "one row
+     per line" reader like some other family members use for lists: exactly
+     one `strtok_r`/`strtol`/`strtok_r`/`strcmp`-loop sequence runs per
+     reply, there is no outer loop that re-scans the buffer for a second
+     `'+'` line, and any bytes after the second token (including a second
+     "+..." row, were the server to send one) are silently ignored. So the
+     full grammar, modeled as `ban_reply_row` below, is a single optional
+     row, never a list:
+       `'+' <ban_index:[0-9]+> (' '|'\n') <name:[^ \n]+> <anything, ignored>`
+     - `ban_index` is decimal-only (`strtol(..., 10)`); a malformed digit
+       string yields `strtol`'s own default of 0, which is a normal (if
+       inert) *matched* index, not a parse failure - only a genuinely empty
+       token1 (immediately-adjacent delimiters, e.g. "+ x\n") fails via
+       `strtok_r` returning NULL. `name` is compared with plain `strcmp`
+       (case-sensitive, exact match) against each `pReportArray` entry's
+       name field.
+     Nothing in this file is left as an opaque blob: `ban_reply_row` names
+     every byte the client's parser actually inspects (sigil, both tokens);
+     the "anything, ignored" tail is documented as ignored by ACTUAL PARSER
+     BEHAVIOUR (dead past the second `strtok_r`), not left unnamed for lack
+     of a static answer.
+
+  LIVE-CAPTURE VALUE: none identified beyond what's already known. This is
+  documentation completeness only - the fail-open conclusion (empty body
+  never bans) was already correctness-verified on 2026-08-19 and is
+  unaffected by anything found in this pass. A capture could only add the
+  literal `pReportArray` entry strings (data-compiler payload, not in the
+  EBOOT - see TODO(pReportArray) below) or observe a real ban row, neither
+  of which this project needs to deliberately trigger.
+
   SERVER BEHAVIOUR (server/ticket_server.py handle_report / build_report_
   response, implemented 2026-08-19): report-server now has a dedicated handler
   in LINE_SERVICE_HANDLERS and answers "not banned" for every account with an
@@ -144,3 +206,60 @@ seq:
       values "comradesean" and "mgnomad2". Across nine captured frames this is
       always the SENDING console's own account, so the line is a self
       standing-check, never a lookup of a reported opponent.
+types:
+  ban_reply_row:
+    doc: |
+      NOT part of `seq` above - this type models the server->client RESPONSE,
+      which is a SEPARATE plaintext frame the client reads with one bounded
+      256-byte recv (0x36e28c/0x36e290) after sending the request. It is
+      OPTIONAL in the strongest sense: an empty reply, a reply not starting
+      with '+', or any recv <= 0 byte all skip this structure entirely and
+      resolve to "not banned" - see the doc block above ("RESPONSE GRAMMAR,
+      FULLY RESOLVED"). Parse this type only when byte[0] of the reply is
+      0x2b ('+'); otherwise there is nothing to decode.
+
+      Verified 2026-08-21 against the 01.11 ELF (SHA256
+      241e2b1bca43c97431a1aa7acd1b29a20d292bec7263ab8ca318b8a03538e592) with a
+      fresh objdump of 0x36e1fc-0x36e390 - every instruction address below
+      re-checked, none revised from the 2026-08-19 pass.
+
+      Single-pass, non-repeating: the client's tokenizer runs this sequence
+      exactly ONCE per reply (strtok_r, strtol, strtok_r, then a strcmp loop
+      over pReportArray). There is no outer loop for multiple rows, unlike
+      list-shaped replies elsewhere in this family. Any bytes after
+      `name_token` are read into the buffer but never inspected again.
+    seq:
+      - id: sigil
+        contents: [0x2b]
+        doc: "Literal '+', tested at 0x36e2cc (`cmpwi cr7,r0,43`). Anything else -> not banned, parsing stops before this type would apply."
+      - id: ban_index_token
+        type: str
+        terminator: 0x20
+        eos-error: false
+        doc: |
+          ASCII decimal digits, tokenized by `strtok_r(buf+1, " \n")` @
+          0x36e2ec then converted by `strtol(token1, NULL, 10)` @ 0x36e30c
+          (base 10 explicitly - `li r5,10` @ 0x36e300). Modeled here with a
+          space terminator (the common-case layout "+<n> <name>\n"); the
+          real delimiter set is " \n" (@ 0xea7e90) - either byte ends the
+          token, so a reply shaped "+<n>\n<name>" would tokenize identically
+          from the client's perspective, even though that never happens for
+          an is-banned reply.
+          On success this integer is stored to g_net+920 (g_net = 0x13ba5a0)
+          - see the still-unknown note on that field's meaning below. An
+          empty token (delimiters immediately adjacent, e.g. "+ x") makes
+          `strtok_r` return NULL, which aborts the whole match (not
+          modeled as a separate field - see the type-level doc).
+      - id: name_token
+        type: str
+        terminator: 0x0a
+        eos-error: false
+        doc: |
+          The ban-reason name, tokenized by a second `strtok_r(NULL, " \n")`
+          @ 0x36e324 and matched with plain case-sensitive `strcmp` (@
+          0xe778e4) against each `pReportArray[i].name` (entry stride 12
+          bytes, name at entry+8; loop @ 0x36e33c-0x36e384). On the first
+          matching entry, i is stored to g_net+916 (the ban INDEX, default
+          -1 = not banned) alongside the index integer above. The entry
+          NAMES themselves are a data-compiler payload, not present in the
+          EBOOT - see TODO(pReportArray) in the doc block above.

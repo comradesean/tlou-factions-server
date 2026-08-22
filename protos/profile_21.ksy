@@ -60,8 +60,15 @@ types:
   game_data:
     doc: |
       0x5000-byte flat BE-u32 game payload. `pos:` offsets in the instances
-      below are payload-relative (= record P-offset minus 8). Everything past
-      payload 0x1E6C (P+0x1E74) is zero in both real samples - reserved/unearned.
+      below are payload-relative (= record P-offset minus 8). CORRECTED
+      2026-08-21 (see `promotion_flags_1e74` below): this was previously
+      described as "everything past payload 0x1E6C (P+0x1E74) is zero in
+      both real samples - reserved/unearned", but a fresh three-account
+      static walk found that framing wrong - `P+0x1E74..0x1E8B`
+      (`promotion_flags_1e74`, six BE u32 words) is genuinely non-zero for
+      one of three real accounts. Only `P+0x1E8C` onward
+      (`reserved_1e8c`, through P+0x5008) is confirmed zero across all
+      three samples and stays reserved/unearned.
       Only the loadout table (whose struct is decompile-confirmed) is laid out
       sequentially; the known scalars are random-access instances so no
       sub-structure is invented for the dense DC-indexed regions between them.
@@ -351,6 +358,163 @@ types:
         pos: 0x1E4C
         type: u4
         doc: "P+0x1E54. Population high-water (OnMatchEnd). 0 / 0."
+      promotion_flags_1e74:
+        pos: 0x1E6C
+        type: u4
+        repeat: expr
+        repeat-expr: 6
+        doc: |
+          P+0x1E74..0x1E8B. Six BE u32 words. STATIC WALK 2026-08-21 (see
+          research/notes/2026-08-21-profile21-zero-region-walk.md): this
+          range was previously (wrongly) documented as part of the "zero in
+          both samples" reserved tail. A fresh decode of THREE real accounts
+          shows it is genuinely non-zero for one of them - comradesean has
+          all six words = 1; mgnomad2 and a third sample, gmnomad, have all
+          six = 0.
+
+          No EBOOT writer or reader was found for this range despite an
+          exhaustive trace: (1) every one of the record's universal
+          accessor's (`FUN_003cb89c`, `bl 0x3cb89c`) 436 call sites, both
+          static-immediate and dynamic loop-computed offsets - none reaches
+          past P+0x1E57 (the end of the already-confirmed
+          `pop_highwater_c`); (2) a direct byte-offset sweep of the whole
+          binary at these literal offsets, whose only hits all belong to
+          unrelated float-bearing gameplay/render classes (not the profile
+          object - confirmed via each hit's own `this` provenance), a
+          coincidental numeric collision, not a real access; (3) the
+          `milestone_latch_1e2c` setter FUN_0035f1bc (the "Added Extra
+          Supplies from Promotion!" one-shot flag) was read in full - it
+          never touches anything past P+0x1E54 even though it is the one
+          sibling field that correlates with this one 1:1 across all three
+          samples (comradesean is the only account with EITHER
+          `milestone_latch_1e2c == 1` OR these six words == 1).
+
+          DLC-ENTITLEMENT HYPOTHESIS TESTED 2026-08-21, NOT SUPPORTED (see
+          research/notes/2026-08-21-promotion-flags-dlc-hypothesis.md): the
+          prior trace above ran only against the 01.00 EBOOT, which has no
+          visible DLC awareness, unlike 01.11 - so it was worth checking
+          whether a 01.11-only writer existed and was simply invisible to a
+          01.00-only trace. It re-derived the record's universal accessor in
+          the 01.11 EBOOT independently (`0x3e6adc`, 501 call sites,
+          confirmed by convergence rather than assumed at a ported address)
+          and re-ran the same exhaustive scan: zero accessor-derived reads
+          or writes anywhere in P+0x1E74..0x1E8B in 01.11 either - the same
+          negative result as 01.00, including finding (and correctly ruling
+          out) previously-undocumented accessor traffic one field over, at
+          P+0x1E6C..0x1E73, which confirms the method would have caught a
+          real writer here if one existed through this mechanism. A
+          dedicated search for DLC/entitlement string tables in 01.11 found
+          two genuine ones (an 8-entry `-DLCITEMS*`/`-DLCITEMSNEW*` table
+          and a 4-entry `%s-THELASTOFUSDLC0{1..4}` map-pack table) - neither
+          has six entries. A directory diff of 01.11's `net10.bin` DC bundle
+          against 01.00's `net1.bin` found 46 new hash-only globals unique
+          to 01.11; none show a clean six-row shape (one coincidental
+          `count=6` hit is provably a misaligned read into an unrelated tag
+          constant, not a real table). Two angles were left genuinely open,
+          not ruled out: the known capability/entitlement register
+          (`0x01459260` in 01.00, protos/common/member_data.ksy's
+          `capability_flag` producer) was not relocated/traced against
+          01.11, and the 46 new net10.bin keys were not name-cracked
+          (no 01.11 disc wordlist was on hand). Working theory is now: NOT
+          DLC-entitlement-related via any EBOOT-code path this project's
+          tooling can currently reach in either build - most likely still a
+          DC-script-only write (the pattern already established for
+          `custom_appearance`'s `survivor_variant_id`/`equipped_item_ids`),
+          but the "shared Promotion reward-grant event" framing itself is
+          unproven, not just the writer's location. See the 2026-08-21
+          zero-region-walk note's §5 for the concrete live RPCS3
+          memory-write-breakpoint test plan that would resolve this for
+          real (a fresh/low-progress account, triggering the Promotion
+          event, watching for a write here) - if that write's call stack
+          does NOT include the accessor (`0x3e6adc` in 01.11), that itself
+          would be a notable finding, since it would mean this field is
+          written by a genuinely different mechanism than every other known
+          field in this record.
+
+          BOTH REMAINING ANGLES CHASED 2026-08-21, STATIC ANALYSIS NOW
+          EXHAUSTED (see research/notes/2026-08-21-promotion-flags-angles-2-3.md):
+          (1) The entitlement register was relocated to 01.11 by signature
+          (its consumer, not the constant, was traced): `0x01502808`, found
+          via `FUN_0037C85C` (the 01.11 refactor that fuses 01.00's party
+          capability AND-reduce `FUN_00ad2b14` with the register-compare
+          inline code, reading `*(reg+0xC)`) and independently confirmed by
+          its sibling `FUN_0037C95C` (writes a per-member capability bit
+          into `party_obj+0x90`). Neither consumer ever calls the profile
+          accessor - the register is genuinely uninvolved in both builds,
+          now proven by full relocation rather than by absence-of-evidence.
+          (2) Name-cracking was retried with a wider corpus AND a wider
+          diff surface: `*unlock-list*` (the DC entitlement/unlock table)
+          itself grew 284 -> 453 rows between builds, not just the 46
+          top-level `net10.bin` keys. 3 of the 46 new top-level keys
+          cracked (`*net-smoke-bomb-upgrades*`,
+          `*net-proximity-bomb-radius-upgrades*`,
+          `*net-molotov-radius-upgrades*` - new DLC5 skill-upgrade tables,
+          confirming the crack pipeline works against 01.11-only content),
+          but none of the 46, nor any of the `*unlock-list*` diff's 9
+          genuinely-new rows (the old "5-row category=6" group turned out
+          to be an unchanged, merely renumbered-to-7 group, not new
+          content), named as anything promotion-related. A strong
+          *circumstantial* lead did turn up outside the hash-crack path:
+          the 01.11 install's own `build/main/promo1/` directory holds
+          seven real PSN pre-order entitlement `.edat` files
+          (`PROMOEARLYBRAWLR`, `PROMOELLIESKIN01`, `PROMOEXTRASUPPLY`,
+          `PROMOHATSHELMETS`, `PROMOJOELSKIN001`, `PROMOLOADOUTPOIN`,
+          `PROMOSPUPGRADESF`) - `PROMOEXTRASUPPLY` is unmistakably
+          `milestone_latch_1e2c`'s own grant, leaving exactly **six**
+          sibling items, matching this field's six-word shape exactly. No
+          EBOOT string reference, cracked hash, or `*unlock-list*` row
+          connects them to this field, so this stays a hypothesis, not a
+          finding - but it is the single most concrete candidate either
+          pass has produced for what the six flags might *mean*, and is
+          the first thing worth checking against a live account's
+          inventory if one becomes available.
+
+          VERDICT: static analysis is exhausted for this field. Every
+          addressing idiom this project's tooling can trace (the universal
+          accessor, direct byte-offset search, the entitlement/capability
+          register fully relocated and traced in both builds, DC hash
+          cracking against a corpus of 50k+ tokens across two builds' disc
+          content) has been tried and come up empty for an EBOOT-code-path
+          writer. What remains needs either (a) the live RPCS3
+          memory-write-breakpoint test in the zero-region-walk note's §5,
+          checked specifically against whether the call stack passes
+          through `0x01459260`/`0x01502808`'s consumers (it should not,
+          per this pass), or (b) non-static artifacts this project does
+          not have locally: `pak23.psarc` (10.8 GB)/`actor34.psarc`
+          (1.9 GB) parsed to completion for their `.dci` symbols, or
+          01.11's own `text1.psarc` (to resolve `*unlock-list*`'s new
+          `string_id` entries, `0x000433xx-0x000434xx`, a text-bank
+          generation this project's only `text1.psarc` - 01.00's - doesn't
+          cover).
+
+          CORROBORATED 2026-08-21: the six-sibling reading of the
+          `promo1/` `.edat` set matches the real retail Factions
+          pre-order/promo bonus lineup for these exact items (early
+          Brawler unlock, an Ellie skin, a Joel skin, a hats/helmets
+          cosmetic pack, a loadout-point grant, and a supply-pickup
+          upgrade, alongside the already-confirmed extra-supplies grant) -
+          this is real-world domain corroboration of the SET's identity,
+          not a new EBOOT trace, so it raises confidence that the six
+          words are per-item ownership/grant flags for these specific
+          promos without yet proving the wire mechanism. The live
+          breakpoint test in the zero-region-walk note's §5 is still what
+          would prove or disprove the write path itself.
+      reserved_1e8c:
+        pos: 0x1E84
+        size: 0x317C
+        doc: |
+          P+0x1E8C..P+0x5008 (12668 bytes, through the end of `game_data`).
+          STATIC WALK 2026-08-21 (see
+          research/notes/2026-08-21-profile21-zero-region-walk.md): CLOSED,
+          high confidence - confirmed zero in three independent real
+          accounts (comradesean, mgnomad2, gmnomad), and no EBOOT code path
+          of any addressing idiom this record uses anywhere else (the
+          universal accessor `FUN_003cb89c`'s 436 call sites, both
+          static-immediate and dynamic loop-computed forms - exhaustively
+          enumerated) ever constructs an address inside this span. Genuinely
+          unused/reserved space, not merely "not yet decoded" - there is no
+          live blocker, because there is nothing here to catch a producer
+          for.
   career_stat_record:
     doc: |
       One 20-byte cumulative career-stat record, one per game mode (see

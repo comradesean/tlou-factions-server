@@ -2921,24 +2921,72 @@ def drain_rooms_for_shutdown(reason="server shutting down"):
         active_rooms.clear()
     if not entries:
         return 0
-    print(f"{_ts()} draining {len(entries)} room(s) before exit ({reason})",
-          flush=True)
+
+    # Instrumentation added 2026-08-22, in answer to "this seems to hang on
+    # shutdown" reports that turned out (once actually measured) to be the
+    # drain legitimately taking a while, not a hang - see the room-count/
+    # notify-timing reasoning in that investigation. Logged to BOTH stdout
+    # (visible in the terminal running run.sh) and LOG_PATH (survives after
+    # the fact, since the terminal's scrollback doesn't) so the next time
+    # this is slow, the actual room count and per-notify duration are on
+    # record instead of having to guess from an already-exited process.
+    def _both(text):
+        try:
+            print(text, flush=True)
+        except OSError:
+            pass    # stdout may already be gone (e.g. broken pipe) - fine
+        try:
+            with open(LOG_PATH, "a") as f:
+                f.write(text + "\n")
+        except OSError:
+            pass    # logging must not be why shutdown fails
+
+    start = time.monotonic()
+    _both(f"{_ts()} draining {len(entries)} room(s) before exit ({reason})")
     for info in entries:
+        room_start = time.monotonic()
         try:
             # 2s, not the connection's normal 600s operational timeout - see
             # close_room_and_notify's notify_timeout doc. Bounds the whole
             # drain to a couple seconds per stale connection instead of
             # minutes, so the process actually exits on SIGTERM/SIGINT.
             close_room_and_notify(info, reason, notify_timeout=2.0)
+            _both(f"{_ts()}   room {info.get('room_id', b'').hex()} drained in "
+                  f"{time.monotonic() - room_start:.2f}s")
         except Exception as e:      # never let shutdown die on a dead socket
-            print(f"{_ts()}   drain of room "
-                  f"{info.get('room_id', b'').hex()} failed: {e}", flush=True)
+            _both(f"{_ts()}   drain of room "
+                  f"{info.get('room_id', b'').hex()} failed after "
+                  f"{time.monotonic() - room_start:.2f}s: {e}")
+    _both(f"{_ts()} drain complete: {len(entries)} room(s) in "
+          f"{time.monotonic() - start:.2f}s total")
     return len(entries)
+
+
+_shutting_down = False
 
 
 def _install_shutdown_handlers():
     def _bye(signum, _frame):
-        drain_rooms_for_shutdown(f"server shutting down (signal {signum})")
+        # Hardened 2026-08-22, alongside the run_all.py fix for the same bug
+        # report ("I have to clear things every time I run the server"): a
+        # SECOND signal arriving while the first is still draining (plausible
+        # if something upstream sends both SIGINT and SIGTERM close together,
+        # or the same signal twice) used to re-enter this handler mid-drain.
+        # Now a second signal exits immediately via os._exit rather than
+        # re-running drain_rooms_for_shutdown reentrantly. And the drain
+        # itself is now wrapped so that ANY exception during shutdown
+        # (including a broken stdout pipe if whatever started this process
+        # already went away - see drain_rooms_for_shutdown's own _both()
+        # hardening) still reaches process exit, instead of leaving this
+        # process alive, orphaned, and still bound to its port forever.
+        global _shutting_down
+        if _shutting_down:
+            os._exit(1)
+        _shutting_down = True
+        try:
+            drain_rooms_for_shutdown(f"server shutting down (signal {signum})")
+        except Exception:
+            pass        # never let a shutdown-time failure prevent exit
         sys.exit(0)
     for sig in (signal.SIGTERM, signal.SIGINT):
         try:
