@@ -516,14 +516,22 @@ the reason each item stalled.
 ### Blocked on a rare or never-reproduced live condition
 
 - **"Host quit for cheating" match teardown.** Reported once, rare, trigger
-  unknown. Unlike the items above, NO static lead has been attempted yet
-  (no string/caller search has been run against the EBOOT for whatever
-  message or code path produces this) - it's not proven statically
-  unrecoverable, just unstarted. UNBLOCK (partial, doesn't need reproduction):
-  search the EBOOT's string table for a cheating/kick-for-cheating literal
-  and trace its caller, the same method used for every other client-side
-  string in this project. Full resolution of WHY it fires still needs a
-  reproduction.
+  unknown. STATIC TRACE RUN 2026-08-22
+  (`research/notes/2026-08-22-host-quit-for-cheating-string-trace.md`) -
+  the partial unblock this entry used to describe as unattempted is now
+  done. The string (VMA `0xe7fad0`) has exactly one code reference
+  (`0x003f1580`, inside a function starting at `0x003f10b8`), reached only
+  when a chain of five conditions all hold: a nonzero byte-sized "reason"
+  parameter passed into the function, an unnamed flag byte at
+  `some_object+11692` combined with an unnamed predicate (`0x3abe80`), a
+  count from an unnamed helper (`0x39935c`) `> 3`, the same party predicate
+  this project already names elsewhere (`0xad0eec`) returning true, and a
+  second unnamed flag byte at `some_object+172` being zero. Full trace with
+  every instruction cited is in the note above. STILL OPEN: none of the
+  individual predicates/flag bytes are named yet - a real reproduction
+  remains the only way to confirm which specific in-game action satisfies
+  this five-way compound condition, since it's not something to guess the
+  meaning of from addresses alone.
 
 ### Structurally closed, unless new evidence contradicts it
 
